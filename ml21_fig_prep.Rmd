@@ -2627,15 +2627,33 @@ nycomps_auc_feat_subsets_posmix <- dcast(nycomps_auc_feat_subsets_posmix,
 nycomps_auc_feat_subsets <- dcast(nycomps_auc_feat_subsets,
                                   thisidx + weight + rel ~ ci_labels,
                                   value.var = "ml21")
+```
 
-ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
+# plotting
+```{r}
+p4_base <- ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
     geom_hline(yintercept = 0.5, linetype = "longdash", color = "gray") + 
+    geom_ribbon(aes(ymin = lower95, ymax = upper95), fill = "#A4A5A5") +
     geom_line() +
-    geom_errorbar(aes(ymin = lower95, ymax = upper95)) +
     xlab("Number of Features (decreasing in weight)") +
     ylab("AUC") +
-    scale_x_continuous(expand = c(0,0), breaks = c(1, seq(0, 81, 15), 89))  +
-    scale_y_continuous(expand = c(0, 0), label = function(x) x*100)
+    scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(0, 81, 15), 89))  +
+    scale_y_continuous(expand = c(0, 0), label = function(x) x*100) +
+    theme(plot.margin = unit(c(0, 0, 0, 0), "in"))
+
+p4_weights <- ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
+    geom_line() +
+    xlab("Feature Magnitude") +
+    scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(0, 81, 15), 89),
+                       label = function(x)
+                           nycomps_auc_feat_subsets_posmix[x, "weight"] %>%
+                           abs %>% specify_decimal(k = 2))
+
+## Add secondary y-axis
+## http://stackoverflow.com/a/36761846/2320823
+p4_feat_imp <- secondary_y_axis(p4_base, p4_weights)
+rm(p4_base, p4_weights)
+
 ```
 
 ```{r pca}
