@@ -715,7 +715,13 @@ nycomps_allactions <- read.csv("large-scale/nycomps-outcomes-all-actions-raw-dum
 nycomps_vectors <- left_join(nycomps_vectors, nycomps_posmix, by = "id") %>%
     filter(!is.na(ml21), plasmid_outcome != 0)
 
-nycomps_vectors$large_scale <- nycomps_vectors$orfno %nin% filter(nycomps_allactions, action == "Passed to Large-Scale")$orfno
+# three NAs from this mapping
+nycomps_posmix$orfid <- left_join(nycomps_posmix, nycomps_vectors %>% select(orfno, id) %>% distinct, by = "id")$orfno
+
+# Passed to large_scale
+nycomps_posmix$large_scale <- nycomps_posmix$orfid %in% filter(nycomps_allactions, action == "Passed to Large-Scale")$orfno
+
+ci.auc(large_scale ~ ml21, data = nycomps_posmix) %>% str
 
 nycomps_roc <- foreach(thisplasmid = unique(nycomps_vectors$plasmid_name), .combine='rbind') %dopar% {
     thisdata <- filter(nycomps_vectors, plasmid_name == thisplasmid)
@@ -1022,6 +1028,8 @@ nycomps_auc_noRNAss <- foreach(thisplasmid = unique(nycomps_vectors_noRNAss$plas
     rbind(df1, df2)
 }
 
+ci.auc(large_scale ~ ml21, data = nycomps_vectors)
+
 nycomps_auc_noRNAss <- 
     rbind(nycomps_auc_noRNAss,
           data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
@@ -1082,51 +1090,6 @@ nycomps_auc_noRNAss <-
 
 nycomps_auc_noRNAss <- dcast(nycomps_auc_noRNAss, group + type + cterm + count + pos_count ~ ci_labels, value.var = "ml21")
 
-nycomps_median_noRNAss <- ddply(nycomps_posmix_noRNAss, .(gene_outcome), summarize,
-                        median_ml21 = median(ml21))
-
-nycomps_xscale_noRNAss <- quantile(nycomps_posmix_noRNAss$ml21, probs = c(.0025,.9975), names = FALSE)
-nycomps_xscale_noRNAss[[1]] <- nycomps_xscale_noRNAss[[1]]-1
-nycomps_xscale_noRNAss[[2]] <- nycomps_xscale_noRNAss[[2]]+1
-nycomps_breaks_noRNAss <- seq(-6,6,2)
-
-custom_histogram_data <- function(bin_data, hist_data, id) {
-    temp_hist <- hist(hist_data,
-                      breaks = seq(from = max(bin_data)+1, to = min(bin_data)-1, by = -fd_bw(bin_data)),
-                      plot=FALSE)
-    
-    temp_hist2 <- data.frame(mids = temp_hist$mids, counts = temp_hist$counts)
-    temp_hist2$id <- id
-    temp_hist2
-}
-
-nycomps_posmix_hist_noRNAss <- rbind(
-    custom_histogram_data(nycomps_posmix_noRNAss$ml21, filter(nycomps_posmix, gene_outcome != "neg")$ml21, "Expressed"),
-    custom_histogram_data(nycomps_posmix_noRNAss$ml21, filter(nycomps_posmix, gene_outcome == "neg")$ml21, "Not Expressed")
-    )
-nycomps_posmix_hist_noRNAss <- inner_join(nycomps_posmix_hist_noRNAss,
-                                  ddply(nycomps_posmix_hist_noRNAss, "mids", summarise, sumcounts = sum(counts)),
-                                  by = "mids")
-nycomps_posmix_hist_noRNAss$counts_sumcounts <- nycomps_posmix_hist_noRNAss$counts / nycomps_posmix_hist_noRNAss$sumcounts
-
-nycomps_vectors_hist_noRNAss <- rbind(
-    custom_histogram_data(nycomps_vectors_noRNAss$ml21, filter(nycomps_vectors_noRNAss, plasmid_outcome == 1)$ml21, "Positive"),
-    custom_histogram_data(nycomps_vectors_noRNAss$ml21, filter(nycomps_vectors_noRNAss, plasmid_outcome == -1)$ml21, "Negative")
-    )
-nycomps_vectors_hist_noRNAss <- inner_join(nycomps_vectors_hist_noRNAss,
-                                  ddply(nycomps_vectors_hist_noRNAss, "mids", summarise, sumcounts = sum(counts)),
-                                  by = "mids")
-nycomps_vectors_hist_noRNAss$counts_sumcounts <- nycomps_vectors_hist_noRNAss$counts / nycomps_vectors_hist_noRNAss$sumcounts
-
-nycomps_bincount_summary_noRNAss <- 
-    ddply(rbind(mutate(nycomps_posmix_hist_noRNAss, group = "posmix"), mutate(nycomps_vectors_hist_noRNAss, group = "vectors")),
-      .(group), summarize,
-      "Number of Bins Retained" = sum(sumcounts > 12),
-      "Total Number of Bins" = sum(sumcounts > 0),
-      "Percent Retained" = round(sum(sumcounts > 12) / sum(sumcounts > 0), 3) * 100
-      ) %>% select(-group)
-rownames(nycomps_bincount_summary_noRNAss) <- c("Expression by Gene", "All Expression Trials")
-
 nycomps_auc_noRNAss_table <- filter(nycomps_auc_noRNAss, cterm == "all") %>% select(-count, -pos_count, -type, -cterm) %>%
     mutate(auc = specify_decimal(auc*100, k=1),
            lower95 = specify_decimal(lower95*100, k=1),
@@ -1140,7 +1103,7 @@ nycomps_auc_noRNAss_table <- filter(nycomps_auc_noRNAss, cterm == "all") %>% sel
 
 write.csv(nycomps_auc_noRNAss, file = "nycomps_nonupack_auc.csv")
 
-table_theme2 <-  ttheme_default(
+table_theme2 <- ttheme_default(
     core = list(fg_params=list(fontsize = 5, fontfamily = "Helvetica", parse=TRUE)),
     colhead = list(fg_params=list(fontsize = 5, fontfamily = "Helvetica")),
     rowhead = list(fg_params=list(fontsize = 5, fontfamily = "Helvetica")),
@@ -1165,7 +1128,9 @@ nycomps_posmix$gene_outcome2 <- factor(as.character(nycomps_posmix$gene_outcome)
                                       labels = c("Not Expressed","Expressed"), levels = c("neg","≥1 pos"))
 p2_posmix_histogram <- ggplot(nycomps_posmix) + 
     geom_histogram(aes(x=ml21, fill = gene_outcome2), 
-                   binwidth = fd_bw(nycomps_posmix$ml21), alpha=1, position="identity") + 
+                   binwidth = fd_bw(nycomps_posmix$ml21), alpha=1, position="identity") +
+    geom_histogram(aes(x=ml21), fill="blue", binwidth = fd_bw(nycomps_posmix$ml21),
+                   data=filter(nycomps_posmix, large_scale == TRUE)) +
     geom_vline(xintercept = nycomps_svmrank_q75, linetype = "dashed") + 
     scale_x_continuous(expand=c(0,0), breaks=nycomps_breaks, limits=nycomps_xscale) +
     scale_y_continuous(expand=c(0,0)) +
@@ -1182,25 +1147,6 @@ p2_posmix_histogram <- ggplotGrob(p2_posmix_histogram)
 p2_posmix_histogram$grobs[[8]]$grobs$`99_0b89f20d561c508bc59ffe13ea616bb4`[[1]][[7]]$gp$col <- "#A4A5A5"
 p2_posmix_histogram$grobs[[8]]$grobs$`99_0b89f20d561c508bc59ffe13ea616bb4`[[1]][[8]]$gp$col <- "#A10F1C"
 
-nycomps_vectors$outcome2 <- factor(as.character(nycomps_vectors$plasmid_outcome),
-                                    labels = c("Negative","Positive"), levels = c("-1","1"))
-p2_raw_histogram <- ggplot(nycomps_vectors) + 
-    geom_histogram(aes(x=ml21, fill = factor(outcome2)),
-                   binwidth = fd_bw(nycomps_vectors$ml21), position="identity") + 
-    scale_x_continuous(expand=c(0,0), breaks=nycomps_breaks, limits=nycomps_xscale) +
-    scale_y_continuous(expand=c(0,0)) +
-    scale_fill_manual(values = c("#A4A5A5","#A10F1C"), guide = guide_legend(title = "Expression Trial:")) +
-    ylab("Count") +
-    xlab(expression("SVM"^"rank"*~"score")) + 
-    theme(legend.key = element_blank(),
-          legend.key.size = unit(0.25, "cm"),
-          legend.title = element_blank(),
-              legend.position=c(0.2, 0.8),
-              plot.margin=unit(c(0, 1/16, 0, 0), "in"))
-          
-p2_raw_histogram <- ggplotGrob(p2_raw_histogram)
-p2_raw_histogram$grobs[[8]]$grobs$`99_d5523fc5c0f7949a182beca40893c6ae`[[1]][[7]]$gp$col <- "#A4A5A5"
-p2_raw_histogram$grobs[[8]]$grobs$`99_d5523fc5c0f7949a182beca40893c6ae`[[1]][[8]]$gp$col <- "#A10F1C"
 
 # large scale split
 # ggplot(nycomps_vectors) + geom_histogram(aes(x=ml21, fill=large_scale)) 
@@ -1213,11 +1159,24 @@ p2_posmix_roc_label <- filter(nycomps_auc, group == "posmix", cterm == "all") %>
            ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')"),
            count = paste0(pos_count,"/",count)
            )
+p2_largescale_auc_ci <- ci.auc(large_scale ~ ml21, data = nycomps_posmix)
+p2_largescale_auc_ci <- specify_decimal(p2_largescale_auc_ci*100, k=1)
+p2_largescale_auc_ci <- paste0("'", p2_largescale_auc_ci[2],
+                               "'~('", p2_largescale_auc_ci[1],
+                               "'-'", p2_largescale_auc_ci[3], "')")
+
+    
 p2_posmix_roc <- ggplot(filter(nycomps_roc, group == "posmix")) +
-    geom_path(aes(x=100-specificities*100, y = sensitivities*100)) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
+    geom_path(aes(x=100-specificities*100, y = sensitivities*100)) +
+    geom_path(aes(x=100-specificities*100, y = sensitivities*100), color="blue",
+                data=my_roc(large_scale ~ ml21, data = nycomps_posmix) %>% data.frame) +
     annotate(geom = "text", x = 70, y = 19, label = p2_posmix_roc_label$count, size = 6*5/14, parse=TRUE) +
     annotate(geom = "text", x = 70, y = 10, label = p2_posmix_roc_label$ci, size = 6*5/14, parse=TRUE) +
+    annotate(geom = "text", x = 70, y = 37, color = 'blue',
+             label = sum(nycomps_posmix$large_scale), size = 6*5/14, parse=TRUE) +
+    annotate(geom = "text", x = 70, y = 28, color = 'blue',
+             label = p2_largescale_auc_ci, size = 6*5/14, parse=TRUE) +
 #    annotate("text", x = 25, y = 95, label = "By Gene:", size = 7*5/14, fontface = "bold") + 
     scale_y_continuous(expand = c(0, 0)) +
     scale_x_continuous(expand = c(0, 0)) +
@@ -1225,73 +1184,6 @@ p2_posmix_roc <- ggplot(filter(nycomps_roc, group == "posmix")) +
     ylab("True Positive Rate") +
     scale_fill_manual(values = c("#A4A5A5","#A10F1C")) + 
     theme(aspect.ratio = 1, legend.position = "None", plot.margin=unit(c(0, 0, 0, 0), "in"))
-
-
-p2_raw_roc_label <- filter(nycomps_auc, group == "vectors", cterm == "all") %>% 
-    mutate(auc = specify_decimal(auc*100, k = 1),
-           lower95 = specify_decimal(lower95*100, k = 1),
-           upper95 = specify_decimal(upper95*100, k = 1),
-           ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')"),
-           count = paste0(pos_count,"/",count)
-           )
-p2_raw_roc <- ggplot(filter(nycomps_roc, group == "vectors")) +
-    geom_path(aes(x=100-specificities*100, y=sensitivities*100)) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-    annotate(geom = "text", x = 70, y = 19, label = p2_raw_roc_label$count, size = 6*5/14, parse=TRUE) +
-    annotate(geom = "text", x = 70, y = 10, label = p2_raw_roc_label$ci, size = 6*5/14, parse=TRUE) +
-    annotate("text", x = 33, y = 90, label = "By Expression\nTrial:", size = 7*5/14, fontface = "bold") + 
-    scale_y_continuous(expand = c(0, 0)) +
-    scale_x_continuous(expand = c(0, 0)) +
-    xlab("False Positive Rate") + 
-    ylab("True Positive Rate") + 
-    scale_fill_manual(values = c("#A4A5A5","#A10F1C")) + 
-    theme(aspect.ratio = 1, legend.position = "None", plot.margin=unit(c(0, 0, 0, 0), "in"))
-
-
-p2_bycount_roc_rel_count <- ggplot(filter(nycomps_roc_bycount, outcome_key == "rel_count")) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", size = 0.25) +
-    geom_path(aes(x=100-specificities*100, y = sensitivities*100, color = threshold), size = 0.25) +
-    scale_y_continuous(expand = c(0, 0)) +
-    scale_x_continuous(expand = c(0, 0)) +
-    scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
-    xlab("False Positive Rate") + 
-    ylab("True Positive Rate") +
-    ggtitle("Relative Outcomes (positive-negative)") + 
-    scale_fill_manual(values = c("#A4A5A5","#A10F1C")) + 
-    theme(aspect.ratio = 1, legend.position = "None", plot.margin=unit(c(0, 0, 0, 0), "in"))
-
-p2_bycount_roc_pos_count <- ggplot(filter(nycomps_roc_bycount, outcome_key == "pos_count")) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", size = 0.25) +
-    geom_path(aes(x=100-specificities*100, y = sensitivities*100, color = threshold), size = 0.25) +
-    scale_y_continuous(expand = c(0, 0)) +
-    scale_x_continuous(expand = c(0, 0)) +
-    scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
-    xlab("False Positive Rate") + 
-    ylab("True Positive Rate") +
-    ggtitle("Positive Outcomes") + 
-    scale_fill_manual(values = c("#A4A5A5","#A10F1C")) + 
-    theme(aspect.ratio = 1, legend.position = "None", plot.margin=unit(c(0, 0, 0, 0), "in"))
-
-p2_bycount_auc <- tableGrob(mutate(nycomps_auc_bycount,
-                                   auc = specify_decimal(auc*100, 1),
-                                   lower95 = specify_decimal(lower95*100, 1),
-                                   upper95 = specify_decimal(upper95*100, 1),
-                                   'AUC (95% CI)' = paste0(auc, " (", lower95, "-", upper95, ")")) %>%
-                                select(-auc, -lower95, -upper95, -count),
-                            theme = table_theme2,
-                            rows = NULL)
-
-p2_bycount_auc <- change_cell(p2_bycount_auc, 2, 1, tnew = 2, bnew = 9)
-p2_bycount_auc <- change_cell(p2_bycount_auc, 10, 1, tnew = 10, bnew = 23)
-
-p2_bycount_auc <- ggdraw() +
-    draw_plot(p2_bycount_auc, x = 0, y = 0, width = .5, height = 1) + 
-    draw_plot(p2_bycount_roc_pos_count, x = .5, y = .5, width = .5, height = .5) + 
-    draw_plot(p2_bycount_roc_rel_count, x = .5, y = 0, width = .5, height = .5) + 
-    draw_plot_label(label = letters[1:3], x = c(0, .5, .5), y = c(1, 1, .5), size = 8)
-    
-save_plot(filename = "plots/nycomps_auc_by_positive_count.pdf", plot = p2_bycount_auc, base_width = uconv(136, "mm", "in", "Length"))
-
 
 
 prep_for_polygon <- function(df, x = "thresholds", y = "ppv", min_y = "min_ppv") {
@@ -1333,34 +1225,6 @@ p2_posmix_ppv <- ggplot(p2_posmix_ppv_prep) +
     scale_y_continuous(expand=c(0,0), limits=c(0,60), breaks=seq(0, 100, 20)) +
     xlab(expression("Percentile SVM"^"rank"*~"score")) + 
     ylab("PPV") +
-    scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
-    theme(legend.position="None", plot.margin=unit(c(1/16, 1/16, 1/16, 0), "in"))
-
-p2_raw_ppv_prep <- prep_for_polygon(filter(nycomps_roc, group == "vectors"))
-p2_raw_ppv <- ggplot(p2_raw_ppv_prep) + 
-    geom_polygon(aes(x=threshold_percentiles*100, y=ppv*100, group=id, fill=y_greater_min, color = y_greater_min), size = 0.1) +
-    geom_path(aes(x=threshold_percentiles*100, y=ppv*100), size = 0.25, 
-              data = filter(p2_raw_ppv_prep, type != "min_ppv") %>% distinct(thresholds, ppv)) +
-    geom_hline(aes(yintercept = min(min_ppv)*100), linetype="dashed", color="darkgrey", size = 0.5) +
-    annotate("text", x = 20, y = 55, label = "By Expression Trial:", size = 7*5/14, fontface = "bold", family = "Helvetica") + 
-    scale_x_continuous(expand=c(0,0), limits=c(0,100)) +
-    scale_y_continuous(expand=c(0,0), limits=c(0,60), breaks=seq(0, 100, 20)) +
-    xlab(expression("Percentile SVM"^"rank"*~"score")) + 
-    ylab("PPV") +
-    scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
-    theme(legend.position="None", plot.margin=unit(c(1/16, 1/16, 1/16, 0), "in"))
-
-p2_raw_npv_prep <- prep_for_polygon(filter(nycomps_roc, group == "vectors"), y = "npv", min_y = "min_npv")
-p2_raw_npv <- ggplot(p2_raw_npv_prep) + 
-    geom_polygon(aes(x=threshold_percentiles*100, y=npv*100, group=id, fill=y_greater_min, color = y_greater_min), size = 0.1) +
-    geom_path(aes(x=threshold_percentiles*100, y=npv*100), size = 0.25, 
-              data = filter(p2_raw_npv_prep, type != "min_npv") %>% distinct(thresholds, ppv)) +
-    geom_hline(aes(yintercept = min(min_npv)*100), linetype="dashed", color="darkgrey", size = 0.5) +
-    annotate("text", x = 20, y = 55, label = "By Expression Trial:", size = 7*5/14, fontface = "bold") + 
-    scale_x_continuous(expand=c(0,0), limits=c(0,100)) +
-#    scale_y_continuous(expand=c(0,0), limits=c(0,60), breaks=seq(0, 100, 20)) +
-    xlab(expression("Percentile SVM"^"rank"*~"score")) + 
-    ylab("NPV") +
     scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
     theme(legend.position="None", plot.margin=unit(c(1/16, 1/16, 1/16, 0), "in"))
 
@@ -1414,14 +1278,14 @@ p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) +
 write.csv(nycomps_auc, file = "nycomps_auc.csv", row.names = FALSE)
 
 nycomps_cterm <- filter(nycomps_auc, type == "plasmid" | (type == "all" & group == "vectors"), cterm == "all") %>%
-    inner_join(filter(nycomps_auc, type == "plasmid" | (type == "all" & group == "vectors"), cterm != "all"), by = c("group" = "group")) %>% 
+    inner_join(filter(nycomps_auc, type == "plasmid" | (type == "all" & group == "vectors"), cterm != "all"), by = c("group" = "group")) %>%
     arrange(desc(count.x), cterm.y) %>%
     mutate(auc.x = specify_decimal(auc.x*100, k=1),
            lower95.x = specify_decimal(lower95.x*100, k=1),
            upper95.x = specify_decimal(upper95.x*100, k=1),
            auc.y = specify_decimal(auc.y*100, k=1),
            lower95.y = specify_decimal(lower95.y*100, k=1),
-           upper95.y = specify_decimal(upper95.y*100, k=1)) %>% 
+           upper95.y = specify_decimal(upper95.y*100, k=1)) %>%
     transmute(
         group = factor(group,
                levels = c("vectors", "N", "C", "C_LDAO", 
@@ -1480,7 +1344,7 @@ p2_main <- ggdraw() +
     draw_plot(p2_auc_table, x = .32, y = 0, width = 2/3, height = .35) + 
     draw_plot_label(label = c("a", "d", "e"), x = c(0, 0, 1/3), y = c(1, .35, .35), size = 8)
     
-save_plot(filename = "plots/fig2_w_panels_newtable.pdf", plot = p2_main, base_width = uconv(136, "mm", "in", "Length")) #, base_height = 6)
+save_plot(filename = "plots/fig2_w_panels_largescale.pdf", plot = p2_main, base_width = uconv(136, "mm", "in", "Length")) #, base_height = 6)
 
 ```
 
