@@ -1,5 +1,5 @@
 ---
-title: "ml21_fig_prep_v8"
+title: "ml21_fig_prep_v9"
 author: "Shyam Saladi"
 date: "11/20/2015"
 output: html_document
@@ -25,7 +25,7 @@ library(plyr)
 library(dplyr)
 library(tidyr)
 
-#library(boot)
+library(boot)
 library(caret)
 
 library(pROC)
@@ -257,6 +257,18 @@ find_cell <- function(table, row, col, name="core-fg"){
   which(l$t==row & l$l==col & l$name==name)
 }
 
+# analytic method (didn't end up using this)
+spearman_95ci <- function(spearman, nobs) {
+    # http://stats.stackexchange.com/questions/18887/how-to-calculate-a-confidence-interval-for-spearmans-rank-correlation
+    # http://www.ncss.com/wp-content/themes/ncss/pdf/Procedures/PASS/Confidence_Intervals_for_Spearmans_Rank_Correlation.pdf
+    base <- atanh(spearman)
+    delta <- 1.96/sqrt(nobs-3)
+    c(tanh(base - delta), tanh(base + delta))
+}
+
+cor_boot <- function(data, indices, method="spearman", use = "pairwise.complete.obs", ...) {
+   cor(data[indices,]$ml21, data[indices,]$outcome, method=method, use = use, ...)
+} 
 ```
 
 
@@ -404,6 +416,7 @@ ecoli_cor <- mutate(ecoli_cor, total = disconcor + concor) %>%
               total = sum(total, na.rm = TRUE),
               kendall = (concor - disconcor)/total)
 
+# make table from here:
 ecoli_stats <- ecoli_training %>% 
     group_by(cterm) %>%
     summarize(plates = length(unique(grouping)),
@@ -417,15 +430,13 @@ ecoli_stats <- ecoli_training %>%
 rownames(ecoli_stats) <- ecoli_stats$cterm
 ecoli_stats <- select(ecoli_stats, -cterm)
 
-
 ecoli_stats$kendall <- round(ecoli_stats$kendall, 3)
-
 colnames(ecoli_stats) <- c("Plates", "Genes", "Observations", # "Concordant Pairs", "Disconcordant Pairs", 
-                           "Total Pairs", "Kendall's τ")
+                           "Total~Pairs", "Kendall's"~tau)
 
 table_theme <-  ttheme_default(
     core = list(fg_params=list(fontsize = 6)),
-    colhead = list(fg_params=list(fontsize = 6)),
+    colhead = list(fg_params=list(fontsize = 6, parse=TRUE)),
     rowhead = list(fg_params=list(fontsize = 6, parse=TRUE)),
     padding = unit(c(2, 3), "mm"))
 
@@ -433,9 +444,9 @@ tab <- tableGrob(data.frame(t(ecoli_stats)), theme = table_theme,
                  cols = c("C-terminal Cytoplasmic\n(GFP)", 
                           "C-terminal Periplasmic\n(PhoA)", 
                           "C-terminal Cytoplasmic\n(GFP, folded protein)"))
-header <- tableGrob(data.frame(t(ecoli_stats))[1,1:2], 
+header <- tableGrob(data.frame(t(ecoli_stats))[1,1:2],
                     theme = table_theme,
-                    cols=c("Daley, et al., 2005", "Fluman, et al., 2014")) 
+                    cols=c("Daley, Rapp, et al., 2005", "Fluman, et al., 2014")) 
 
 p1_table <- gridExtra::join(header[1,], tab, along=2) 
 p1_table$layout[1:6 , c("l", "r")] <- list(c(2, 4), c(3, 4))
@@ -455,6 +466,58 @@ p1_table$grobs[ind][[1]][["gp"]]$col <- brewer.pal(3, "Dark2")[[2]]
 ind <- find_cell(p1_table, 2, 4, "colhead-fg")
 p1_table$grobs[ind][[1]][["gp"]]$col <- brewer.pal(3, "Dark2")[[3]]
 
+
+# correlation metrics
+ecoli_xy_cor <- filter(ecoli_training, cterm != "out") %>% group_by(cterm) %>%
+    summarize(count = length(outcome),
+              spearman = cor(outcome, ml21, method = "spearman"),
+              lower95 = specify_decimal(spearman_95ci(spearman, count), k=2)[1],
+              upper95 = specify_decimal(spearman_95ci(spearman, count), k=2)[2],
+              spearman = specify_decimal(spearman, k=2),
+              ci = paste0(spearman, " (", lower95, "-", upper95, ")"),
+              x = min(ml21)+(max(ml21)-min(ml21))*(6/20), 
+              ylab = max(outcome)*(1-1/50),
+              y = ylab-max(outcome)*(1/20)
+    )
+
+ecoli_daley_fluman <- filter(ecoli_training, cterm != "out") %>% group_by(cterm, ID) %>% 
+    summarize(outcome_max = max(outcome, na.rm = TRUE),
+              outcome_avg = mean(outcome, na.rm = TRUE),
+              outcome_min = min(outcome, na.rm = TRUE))
+ecoli_daley_fluman <- cbind(
+    dcast(ecoli_daley_fluman, ID ~ cterm, value.var = "outcome_min"),
+    dcast(ecoli_daley_fluman, ID ~ cterm, value.var = "outcome_avg"),
+    dcast(ecoli_daley_fluman, ID ~ cterm, value.var = "outcome_max"))
+colnames(ecoli_daley_fluman) <- c("id", "daley_min", "fluman_min", "id2", "daley_avg", "fluman_avg", "id3", "daley_max", "fluman_max")
+ecoli_daley_fluman <- filter(ecoli_daley_fluman, !is.na(fluman_min), !is.na(daley_min))
+
+ecoli_daley_fluman_cor <- cor(ecoli_daley_fluman$fluman_avg, ecoli_daley_fluman$daley_avg, method="spearman")
+ecoli_daley_fluman_cor_ci <- specify_decimal(spearman_95ci(ecoli_daley_fluman_cor, nrow(ecoli_daley_fluman)), k=2)
+```
+
+# better not to run this everytime but rather just save the results
+# Commented to avoid running by mistake. Just load "bootstraps_with_bca_ci.RData"
+```{r}
+# bs_count <- 10^6
+# library(magrittr)
+# library(dplyr)
+# library(boot)
+# ecoli_xy_boot_in <- boot(data=filter(ecoli_training, cterm == "in") %>% select(ml21, outcome), 
+#                statistic=cor_boot, R=bs_count, parallel="multicore", ncpus=20)
+# ecoli_xy_boot_fluman <- boot(data=filter(ecoli_training, cterm == "fluman") %>% select(ml21, outcome), 
+#                statistic=cor_boot, R=bs_count, parallel="multicore", ncpus=25)
+# ecoli_daley_fluman_boot <- boot(data=select(ecoli_daley_fluman, fluman_avg, daley_avg) 
+#                                     %>% rename(ml21=fluman_avg, outcome=daley_avg), 
+#                statistic=cor_boot, R=bs_count, parallel="multicore", ncpus=25)
+# 
+# ecoli_xy_boot_in_ci <- boot.ci(ecoli_xy_boot_in, type="bca")
+# ecoli_xy_boot_fluman_ci <- boot.ci(ecoli_xy_boot_fluman, type="bca")
+# ecoli_daley_fluman_boot_ci <- boot.ci(ecoli_daley_fluman_boot, type="bca")
+
+load("bootstraps_with_bca_ci.RData")
+```
+
+```{r}
 # all possible cutoffs with AUCs
 p1_ecoli_auc <- ggplot(ecoli_auc, aes(x=response_threshold_percentile*100, color = cterm)) + 
     geom_line(aes(y = auc*100)) + 
@@ -479,38 +542,90 @@ ecoli_selected_auc <- filter(ecoli_roc, percentile %in% c(50, 97)) %>%
 p1_ecoli_roc <- ggplot(filter(ecoli_roc, percentile %in% c(50, 97))) + 
     geom_path(aes(x=100-specificities*100, y=sensitivities*100, color = cterm)) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-    geom_text(aes(x = 80, y = 8*(4-as.numeric(cterm))-3, color = cterm, label = ci), size = 5*5/14,
+    geom_text(aes(x = 75, y = 8*(4-as.numeric(cterm))-3, color = cterm, label = ci), size = 5*5/14,
              data = ecoli_selected_auc) +
     scale_y_continuous(expand = c(0, 0)) +
     scale_x_continuous(expand = c(0, 0)) +
     xlab("False Positive Rate") + ylab("True Positive Rate") + 
     scale_color_manual(values = brewer.pal(3, "Dark2")) +
     facet_wrap(~percentile, nrow=1, scales = "free")  +
-    theme_pub(legend.position = "None", aspect.ratio = 1)
+    theme_pub(legend.position = "None", aspect.ratio = 1,
+              plot.margin = unit(c(0, 0, 0, 0), "mm"))
 
-p1_ecoli_xy <- ggplot(filter(ecoli_training, cterm != "out"), aes(x = ml21, y = outcome)) +t 
+filter(ecoli_training, cterm != "out") %>% group_by(cterm) %>%
+    summarize(count = length(outcome),
+              spearman = cor(outcome, ml21, method = "spearman"),
+              lower95 = specify_decimal(spearman_95ci(spearman, count), k=2)[1],
+              upper95 = specify_decimal(spearman_95ci(spearman, count), k=2)[2],
+              spearman = specify_decimal(spearman, k=2),
+              ci = paste0(spearman, " (", lower95, "-", upper95, ")"),
+              x = min(ml21)+(max(ml21)-min(ml21))*(6/20), 
+              ylab = max(outcome)*(1-1/50),
+              y = ylab-max(outcome)*(1/20)
+    )
+
+ecoli_xy_cor$lower95_boot <- -1
+ecoli_xy_cor$upper95_boot <- -1
+ecoli_xy_cor[ecoli_xy_cor$cterm == "in", c('lower95_boot', 'upper95_boot')] <- ecoli_xy_boot_in_ci$bca[c(4,5)]
+ecoli_xy_cor[ecoli_xy_cor$cterm == "fluman", c('lower95_boot', 'upper95_boot')] <- ecoli_xy_boot_fluman_ci$bca[c(4,5)]
+ecoli_xy_cor <- mutate(ecoli_xy_cor, 
+                       lower95_boot = specify_decimal(lower95_boot, k=2),
+                       upper95_boot = specify_decimal(upper95_boot, k=2),
+                       ci_boot = paste0(spearman, '~(plain(', lower95_boot, ')-plain(', upper95_boot, '))')
+                       )
+    
+p1_ecoli_xy <- ggplot(filter(ecoli_training, cterm != "out"), aes(x = ml21, y = outcome)) +
     stat_summary(fun.ymin = min, fun.ymax = max, geom = "linerange", size = 0.25) +
-    stat_summary(fun.y = mean, geom="point", size = .75, shape = 21) +
-    geom_smooth(aes(color = cterm), method=lm, se = FALSE, fullrange=TRUE, size = 0.5)  +
-    scale_y_continuous(expand = c(.01, 0)) +
+    stat_summary(fun.y = mean, geom="point", size = .25, shape = 21) +
+#    geom_smooth(aes(color = cterm), method=lm, se = FALSE, fullrange=TRUE, size = 0.5) +
+    geom_text(aes(x=x, y=ylab), label = "italic(rho)[spearman]", size = 5*5/14, parse=TRUE, data = ecoli_xy_cor) +
+    geom_text(aes(x=x, y=y, color=cterm, label=ci_boot), size = 5*5/14, parse=TRUE, data = ecoli_xy_cor) +
+    scale_y_continuous(expand = c(.01, 0), breaks=c(0:3, 4, 6, 8)) +
     scale_x_continuous(expand = c(.01, 0.01)) +
     scale_color_manual(values = brewer.pal(3, "Dark2")[c(1,3)]) + 
     ylab("Mean Normalized Activity") +
     xlab(expression( paste( "SVM"^"rank", " score"))) + 
     theme_pub(legend.position = "None",
-              strip.text = element_blank()) +
+              strip.text = element_blank(),
+              plot.margin = unit(c(0, 0, 0, 0), "mm")) +
     facet_wrap(~cterm, ncol=2, scales = "free")
 
+#temp <- ggplotGrob(p1_ecoli_xy)
+
+ecoli_daley_fluman_cor_label <- specify_decimal(c(ecoli_daley_fluman_cor, 
+                                                  ecoli_daley_fluman_boot_ci$bca[4], 
+                                                  ecoli_daley_fluman_boot_ci$bca[5]), 
+                                                k=2)
+ecoli_daley_fluman_cor_label <- paste0(ecoli_daley_fluman_cor_label[1], "~(",
+                                       ecoli_daley_fluman_cor_label[2], "-",
+                                       ecoli_daley_fluman_cor_label[3], ")")
+
+p1_daley_fluman <- ggplot(ecoli_daley_fluman) + 
+    geom_segment(aes(x=fluman_min, xend=fluman_max, y=daley_avg, yend=daley_avg), size=0.25) +
+    geom_segment(aes(x=fluman_avg, xend=fluman_avg, y=daley_min, yend=daley_max), size=0.25) +
+    geom_point(aes(x=fluman_avg, y=daley_avg), size=0.25) +
+    annotate("text", x = 1, y = 7.9, label = "italic(rho)[spearman]", size = 5*5/14, parse=TRUE) +
+    annotate("text", x = 1, y = 7.45, label = ecoli_daley_fluman_cor_label, size = 5*5/14, parse=TRUE) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_continuous(expand = c(.01, 0)) + 
+    ylab("Normalized GFP activity") +
+    xlab("Normalized folded protein") + 
+    theme_pub(axis.title.x = element_text(size=7, color=brewer.pal(3, "Dark2")[3]),
+              axis.title.y = element_text(size=7, color=brewer.pal(3, "Dark2")[1]),
+              plot.margin = unit(c(0, 0, 0, .5), "mm"))
+    
 p1_main <- plot_grid(p1_table, nrow = 2, ncol = 2) +
-    draw_plot(p1_ecoli_xy, x = 0, y = 0, width = .5, height = 0.5) + 
     draw_plot(p1_ecoli_auc, .5, .5, .5, .5) +
-    draw_plot(p1_ecoli_roc, x = 0.5, y = 0, width = .5, height = .5) +
-    draw_plot_label(letters[1:4], c(0, 0, 0.5, 0.5), c(1, 0.5, 1, 0.5), size = 8)
+#    draw_plot(p1_ecoli_xy, x = 0, y = 0, width = .5, height = 0.5) + 
+    draw_plot(plot_grid(p1_daley_fluman, p1_ecoli_xy, p1_ecoli_roc, nrow = 1, rel_widths = c(1,2,2)), 
+              x = 0, y = 0, width = 1, height = .5) + 
+#    draw_plot(p1_ecoli_roc, x = 0.5, y = 0, width = .5, height = .5) +
+    draw_plot_label(letters[1:5], c(0, 0, 0.18, 0.5, 0.6), c(1, 0.52, 0.52, 1, 0.52), size = 8)
 
 save_plot(filename = "plots/fig1_w_panels.pdf", 
           plot = p1_main,
           base_width = uconv(183, "mm", "in", "Length"),
-          base_height = 4)
+          base_height = 3)
 ```
 
 # p2 - nycomps
@@ -905,7 +1020,7 @@ nycomps_cterm <-  transmute(nycomps_cterm,
 table_theme2 <-  ttheme_default(
     core = list(fg_params=list(fontsize = 5, fontfamily = "Helvetica")),
     colhead = list(fg_params=list(fontsize = 5, fontfamily = "Helvetica")),
-    rowhead = list(fg_params=list(fontsize = 5, parse=TRUE, fontfamily = "Helvetica")),
+    rowhead = list(fg_params=list(fontsize = 5, fontfamily = "Helvetica")),
     padding = unit(c(1, 2), "mm"))
 
 # table_nobg <-  ttheme_minimal(
@@ -1239,10 +1354,10 @@ p3_mt <- ggplot(filter(tcross_outcomes, score_type == "ml21", fraction == "MEM")
     geom_vline(aes(xintercept = median(score_value)), linetype="dotted", color="black", size = 0.5) + 
     geom_jitter(aes(x=score_value, y=outcome, fill=as.numeric(outcome), color=as.numeric(outcome)) , shape=21, size = .95,
             position = position_quasirandom(varwidth = TRUE), 
-            data=filter(tcross_outcomes, score_type == "ml21", host != "C42(DE3)", fraction == "MEM")) +
-    geom_jitter(aes(x=score_value, y=outcome, fill=as.numeric(outcome)), color="black", shape=21, size = .95,
-                position = position_quasirandom(varwidth = TRUE), 
-                data=filter(tcross_outcomes, score_type == "ml21", host == "C42(DE3)", fraction == "MEM")) +
+            data=filter(tcross_outcomes, score_type == "ml21", fraction == "MEM")) + # host != "C42(DE3)",
+#    geom_jitter(aes(x=score_value, y=outcome, fill=as.numeric(outcome)), color="black", shape=21, size = .95,
+#                position = position_quasirandom(varwidth = TRUE), 
+#                data=filter(tcross_outcomes, score_type == "ml21", host == "C42(DE3)", fraction == "MEM")) +
     annotate("text", x = -3.7, y = 3.1, label = "M. tuberculosis", size = 7*5/14, fontface = "bold.italic") + 
     scale_y_discrete(labels=c("WB" = "Western\nBlot", "CB" = "Coomassie\nBlue", "No" = "No\nExpression")) +
     scale_fill_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
@@ -1358,8 +1473,8 @@ p3_gpcr_1 <- ggplot(p3_gpcr_data) +
                  data = filter(lundstrom_median, host == "E..coli")) +
     geom_segment(aes(x=median, xend=median, y=-0.5, yend=0.5), size = 0.5, linetype = "dotted", 
                  data = filter(lundstrom_median, host == "P..pastoris")) +
-    geom_point(aes(x=x, y=y, color=group), shape=21, size=0.95) +
-    annotate("text", x = -8.2, y = 1.38, label = "Mammalian G-Protein-Coupled Receptors", size = 7*5/14, fontface = "bold") + 
+    geom_point(aes(x=x, y=PANEL-1, color=group), shape=124, size=0.95) +
+    annotate("text", x = -8.2, y = 1.38, label = "Mammalian GPCRs", size = 7*5/14, fontface = "bold") + 
     xlab(expression( paste( "SVM"^"rank", " score"))) +
     scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") + 
     scale_y_continuous(labels=c("0" = "P. pastoris", "1" = "E. coli"), breaks=c(0, 1), limits=c(-0.5, 1.5), expand=c(0,0)) +
@@ -1773,9 +1888,6 @@ hpylori_max_auc <- mutate(hpylori_max_auc[1,],
 p3_hpylori_roc <- ggplot(filter(hpylori_roc, group == "all", type == "mean")) + 
     geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-#    geom_text(aes(x=.8, y = 0.2+as.numeric(positive_threshold)/20, color = factor(positive_threshold), 
-#                  label=sprintf("AUC=%s (%s-%s)", rnd_pct(auc), rnd_pct(lower95), rnd_pct(upper95))), 
-#              data = filter(hpylori_auc, group == "all", type == "mean")) +
     annotate(geom = "text", x = .68, y = .10, label = hpylori_max_auc$ci, size = 5*5/14, color = "#A10F1C") +
     scale_color_manual(values = ggplot_build(p3_hpylori)$data[[2]] %>% 
                            arrange(desc(-group)) %>% select(colour) %>% unique %>% unlist %>% unname %>% tail(-1), 
@@ -1793,7 +1905,7 @@ p3_hpylori_roc <- ggplot(filter(hpylori_roc, group == "all", type == "mean")) +
 p3_main <- ggdraw() +
     draw_plot(
         plot_grid(p3_archaea_sdspage, p3_archaea_western, p3_mt, p3_gpcr_1,
-                  labels = c("a",NULL,"c","e"), label_size = 8, ncol = 1, align = "v"),
+                  labels = c("a", "","c","e"), label_size = 8, ncol = 1, align = "v"),
         x = 0, y = .23, width = .8, height = 1-.23) + 
     draw_label("Percentage of\nMembrane Protein", x = .03, y = .91, angle = 90, size = 7) + 
     draw_label("Count", x = .03, y = .72, angle = 90, size = 7) + 
@@ -1950,40 +2062,6 @@ euk_preds$feature <- factor(as.character(euk_preds$feature),
 euk_preds$value <- factor(as.character(euk_preds$value),
                           levels = c("FALSE", "TRUE"),
                           labels = c("No", "Yes"))
-
-p4_metazoa_polytopic_supp <- ggplot(filter(euk_preds, numTMs > 1), aes(x=ml21, y=value, fill=ml21, color=ml21)) + 
-    geom_jitter(position=position_quasirandom(varwidth = TRUE)) + 
-    #stat_summary(fun.data = count_fun, geom = "text") +
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
-    scale_x_continuous(limits=nycomps_xscale, breaks=nycomps_breaks, expand=c(0,0)) +
-    scale_y_discrete(expand=c(0,0)) +
-    scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
-    scale_fill_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
-    facet_grid(species~feature) + 
-    theme_pub(base_size = 12,
-              axis.title.y = element_blank(), 
-              legend.position="None", 
-              aspect.ratio=1,
-              strip.text.y = element_text(face="italic"))
-
-p4_tm_hist_supp <- ggplot(forward_preds) + 
-    geom_histogram(aes(x=factor(numTMs), y=..density..*100, fill=group, group=group), binwidth = 1, position="dodge") +
-    xlab("Number of Transmembrane Segments per Protein Sequence") +
-    ylab("Percent of Dataset") +
-    scale_y_continuous(expand = c(0, 0)) + 
-    scale_x_discrete(expand = c(0,0)) +
-    scale_fill_manual(values = brewer.pal(4, "Dark2")) +
-    #scale_color_manual(values = brewer.pal(4, "Dark2")) +
-    theme_pub(legend.position="None", base_size=10)
-
-p4_tm_hist_supp_zoom <- ggplot(filter(forward_preds, numTMs <= 14)) + 
-    geom_histogram(aes(x=factor(numTMs), y=..density..*100, fill=group, group=group), binwidth = 1, position="dodge") + 
-    scale_y_continuous(expand = c(0, 0)) + 
-    scale_x_discrete(expand = c(0,0)) +
-    scale_fill_manual(values = brewer.pal(4, "Dark2")) +
-    scale_color_manual(values = brewer.pal(4, "Dark2")) +
-    theme_pub(legend.position=c(.8,.8), axis.title.x = element_blank(), axis.title.y=element_blank(),
-              legend.title=element_blank(), base_size=10)
 
 # give a table with counts in each category, counts above score 0, counts above score 2
 forward_tufte_boxplots <- ddply(filter(forward_preds, numTMs > 1), .(group, species), summarize,
