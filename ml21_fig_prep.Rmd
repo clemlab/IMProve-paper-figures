@@ -21,10 +21,11 @@ library(gridExtra)
 library(gridGraphics)
 library(scales)
 library(RColorBrewer)
-
 library(reshape2)
 library(plyr)
 library(dplyr)
+library(dplyrExtras)
+
 library(tidyr)
 
 library(boot)
@@ -272,6 +273,7 @@ ecoli_daley_fluman_cor <- cor(ecoli_daley_fluman$fluman_avg, ecoli_daley_fluman$
 # Just load RData file
 ```{r}
 # save.image("training_bootstraps_with_bca_ci_envinput.RData")
+# `Rscript training_bootstraps_with_bca_ci.R`
 load("training_bootstraps_with_bca_ci_summary.RData")
 ```
 
@@ -397,124 +399,249 @@ save_plot(filename = "plots/fig1_w_panels.pdf",
 # p2 - nycomps
 ```{r}
 # Load features as well as well as scores
-nycomps_allstats <- read.csv("large-scale/nycomps_061116.fna.allstats.csv", header = TRUE, as.is = TRUE) %>%
-    separate(title, c("del", "orfid"), sep = "\\$|\\.|_") %>%
-    mutate(orfno = as.integer(orfid)) %>%
-    select(-del, -orfid) %>%
-    cbind(read.table("large-scale/nycomps_061116.fna.allstats.ml21", header = FALSE) %>% rename(ml21 = V1)) %>%
-    cbind(read.table("large-scale/nycomps_061116.fna.phobiuscterm", header = FALSE) %>% rename(cterm = V1))
+nycomps_pos_scores <- read.csv("large-scale/nycomps_only_pos.fna.allstats.csv", header = TRUE) %>%
+    mutate(ml21 = read.table("large-scale/nycomps_only_pos.fna.allstats.daley_only_raw_exp_ml21", header = FALSE)$V1,
+           cterm = read.table("large-scale/nycomps_only_pos_phobius.phobiuscterm", header = FALSE)$V1,
+           gene_outcome = "pos")
 
-# Load outcomes from NYCOMPS and join ml21 by row
-nycomps_outcomes <- read.csv("large-scale/nycomps-outcomes-all-actions-raw-dump.csv", header = TRUE) %>%
-    left_join(nycomps_allstats %>% select(orfno, ml21), by = "orfno")
+nycomps_neg_scores <- read.csv("large-scale/nycomps_only_neg.fna.allstats.csv", header = TRUE) %>%
+    mutate(ml21 = read.table("large-scale/nycomps_only_neg.fna.allstats.daley_only_raw_exp_ml21", header = FALSE)$V1,
+           cterm = read.table("large-scale/nycomps_only_neg_phobius.phobiuscterm", header = FALSE)$V1,
+           gene_outcome = "neg")
 
-# Find out how many we don't have sequence information for
-nycomps_outcomes %>% filter(is.na(ml21)) %>% distinct(orfno) %>% nrow
-nycomps_outcomes$orfno %>% unique %>% length
-# 817 are missing out of 12697 genes (6.434591%)
+nycomps_mixed_scores <- read.csv("large-scale/nycomps_mixed.fna.allstats.csv", header = TRUE) %>%
+    mutate(ml21 = read.table("large-scale/nycomps_mixed.fna.allstats.daley_only_raw_exp_ml21", header = FALSE)$V1,
+           cterm = read.table("large-scale/nycomps_mixed_phobius.phobiuscterm", header = FALSE)$V1,
+           gene_outcome = "mix")
 
-# As throughout, can only work with those targets for which we have sequences/scores along with the 
-nycomps_outcomes <- filter(nycomps_outcomes, !is.na(ml21))
+nycomps_posmix <- rbind(nycomps_pos_scores, nycomps_neg_scores, nycomps_mixed_scores) %>%
+    separate(title, c("gi", "id", "name"), convert = TRUE) %>%
+    select(-gi) %>%
+    mutate_rows(gene_outcome %in% c("mix", "pos"), gene_outcome = "≥1 pos") %>%
+    mutate(gene_outcome = factor(gene_outcome, 
+                                levels = c("neg", "≥1 pos"), 
+                                labels = c("neg", "≥1 pos"),
+                                ordered = TRUE))
+rm(nycomps_pos_scores, nycomps_neg_scores, nycomps_mixed_scores)
 
-# AUC for all small scale expression trials
-nycomps_all_trials <- nycomps_outcomes %>%
-    filter(action %in% c(#"Expression by western -",
-                                      "Coomassie Negative",
-                                      "Coomassie Positive",
-                                      "Passed to Large-Scale"),
-           grepl('Expressed-', type)) %>%
-    mutate(action = factor(as.character(action),
-                           levels = c("Expression by western -",
-                                      "Coomassie Negative",
-                                      "Coomassie Positive",
-                                      "Passed to Large-Scale"),
-                           labels = c("Expression by western -",
-                                      "Coomassie Negative",
-                                      "Coomassie Positive",
-                                      "Passed to Large-Scale"),
-                           ordered = TRUE))
+nycomps_vectors <- read.csv("large-scale/nycomps_outcomes.csv", header = TRUE, as.is = TRUE) %>% 
+    rename(id = X,
+           sum_outcomes = sum) %>%
+    gather(plasmid_name, plasmid_outcome, N:MSGC.9_LDAO) %>%
+    filter(Analyze == 1) %>%
+    select(orfno, id, sum_outcomes, tot_neg, tot_pos, pos_neg, plasmid_name, plasmid_outcome)
 
+nycomps_vectors <- left_join(nycomps_vectors, nycomps_posmix, by = "id") %>%
+    filter(!is.na(ml21), plasmid_outcome != 0)
 
-nycomps_ <- nycomps_outcomes %>%
-    filter(action %in% c(#"Expression by western -",
-                                      "Coomassie Negative",
-                                      "Coomassie Positive",
-                                      "Passed to Large-Scale"),
-           grepl('Expressed-', type)) %>%
-    mutate(action = factor(as.character(action),
-                           levels = c("Expression by western -",
-                                      "Coomassie Negative",
-                                      "Coomassie Positive",
-                                      "Passed to Large-Scale"),
-                           labels = c("Expression by western -",
-                                      "Coomassie Negative",
-                                      "Coomassie Positive",
-                                      "Passed to Large-Scale"),
-                           ordered = TRUE))
+nycomps_roc <- foreach(thisplasmid = unique(nycomps_vectors$plasmid_name), .combine='rbind') %dopar% {
+    thisdata <- filter(nycomps_vectors, plasmid_name == thisplasmid)
+    thisdata <- transmute(thisdata, 
+                          thisresponse = plasmid_outcome == 1,
+                          ml21 = ml21)
+    df <- data.frame(
+        my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
+        group = thisplasmid,
+        type = "plasmid"
+        )
+}
 
-# Looking at the level of proteins, so only look at distinct outcomes (not retests)
-nycomps_largescale <- nycomps_outcomes %>%
-    filter(action %in% c("Passed to Large-Scale", "Coomassie Negative"),
-           grepl('Expressed-', type)) %>%
-    distinct(orfno, ml21, type, action) %>%
-    group_by(orfno, ml21, type)
-    group_by(orfno, ml21) %>%
-    summarize(ntrials = n(),
-              pos_count = sum(action %in% "Passed to Large-Scale"),
-              class = ifelse(pos_count == 0, "neg", 
-                          ifelse(pos_count == ntrials, "pos", "mix")))  %>%
-    ungroup %>%
-    mutate(class = factor(class,
-                          levels = c("neg", "mix", "pos"),
-                          labels = c("neg", "mix", "pos"),
-                          ordered = TRUE)) %>% 
-    as.data.frame
+nycomps_roc <- 
+    rbind(nycomps_roc,
+          data.frame(my_roc(gene_outcome == "≥1 pos" ~ ml21, data = nycomps_posmix, direction = "<"), group = "posmix", type = "all"),
+          data.frame(my_roc(plasmid_outcome == 1 ~ ml21, data = nycomps_vectors, direction = "<"), group = "vectors", type = "all")
+    )
 
-# Looking at the level of proteins, so only look at distinct outcomes (not retests)
-nycomps_genes <- nycomps_vectors %>%
-    distinct(orfno, ml21, type, action) %>%
-    group_by(orfno, ml21) %>%
-    summarise(ntrials = n(),
-              pos_count = sum(action %in% "Coomassie Positive"),
-              class = ifelse(pos_count == 0, "neg", 
-                          ifelse(pos_count == ntrials, "pos", "mix")))  %>%
-    ungroup %>%
-    mutate(class = factor(class,
-                          levels = c("neg", "mix", "pos"),
-                          labels = c("neg", "mix", "pos"),
-                          ordered = TRUE)) %>% 
-    as.data.frame
+nycomps_auc <- foreach(thisplasmid = unique(nycomps_vectors$plasmid_name), .combine=rbind) %dopar% {
+    thisdata <- filter(nycomps_vectors, plasmid_name == thisplasmid)
+    thisdata <- transmute(thisdata, 
+                          thisresponse = plasmid_outcome == 1,
+                          ml21 = ml21)
+    df1 <- data.frame(
+        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
+        group = thisplasmid,
+        type = "plasmid",
+        cterm = "all",
+        ci_labels = c("lower95", "auc", "upper95"),
+        count = nrow(thisdata),
+        pos_count = sum(thisdata$thisresponse)
+        )
     
+    df2 <- foreach(thiscterm = unique(nycomps_vectors$cterm), .combine=rbind) %dopar% {
+        thisdata <- filter(nycomps_vectors, plasmid_name == thisplasmid, cterm == thiscterm)
+        thisdata <- transmute(thisdata, 
+                              thisresponse = plasmid_outcome == 1,
+                              ml21 = ml21)
+        data.frame(
+            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
+            group = thisplasmid,
+            type = "plasmid",
+            cterm = thiscterm,
+            ci_labels = c("lower95", "auc", "upper95"),
+            count = nrow(thisdata),
+            pos_count = sum(thisdata$thisresponse)
+            )
+    }
+    
+    rbind(df1, df2)
+}
 
-nycomps_auc <- rbind(
-    calc_auc_roc(nycomps_vectors %>% mutate(vectors = "all"), # %>% filter(action != "Expression by western -"),
-                 grouping_col = "vectors",
-                 outcome_col = "action"),
-    calc_auc_roc(nycomps_vectors %>% mutate(vectors = type),
-                 grouping_col = "vectors",
-                 outcome_col = "action"),
-    calc_auc_roc(nycomps_genes %>% mutate(genes = "all"),
-             grouping_col = "genes",
-             outcome_col = "class"),
-    calc_auc_roc(nycomps_largescale %>% mutate(largescale = "all"),
-                 grouping_col = "largescale",
-                 outcome_col = "class")) %>%
-    rename(metagroup = grouping_col)
+nycomps_auc <- 
+    rbind(nycomps_auc,
+          data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
+                                   data = nycomps_posmix, direction = "<"),
+                    group = "posmix", 
+                    type = "all", 
+                    cterm = "all",
+                    ci_labels = c("lower95", "auc", "upper95"),
+                    count = nrow(nycomps_posmix),
+                    pos_count = sum(nycomps_posmix$gene_outcome == "≥1 pos")
+                    ),
+          data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
+                                   data = filter(nycomps_posmix, cterm == "CYTOPLASMIC."), direction = "<"),
+                    group = "posmix", 
+                    type = "all", 
+                    cterm = "CYTOPLASMIC.",
+                    ci_labels = c("lower95", "auc", "upper95"),
+                    count = nrow( filter(nycomps_posmix, cterm == "CYTOPLASMIC.") ),
+                    pos_count = sum(filter(nycomps_posmix, cterm == "CYTOPLASMIC.")$gene_outcome == "≥1 pos")
+                    ),
+          data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
+                                   data = filter(nycomps_posmix, cterm == "NON-CYTOPLASMIC."), direction = "<"),
+                    group = "posmix", 
+                    type = "all", 
+                    cterm = "NON-CYTOPLASMIC.",
+                    ci_labels = c("lower95", "auc", "upper95"),
+                    count = nrow( filter(nycomps_posmix, cterm == "NON-CYTOPLASMIC.") ),
+                    pos_count = sum(filter(nycomps_posmix, cterm == "NON-CYTOPLASMIC.")$gene_outcome == "≥1 pos")
+                    ),
+          data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
+                                   data = nycomps_vectors, direction = "<"),
+                    group = "vectors", 
+                    type = "all", 
+                    cterm = "all",
+                    ci_labels = c("lower95", "auc", "upper95"),
+                    count = nrow(nycomps_vectors),
+                    pos_count = sum(nycomps_vectors$plasmid_outcome == 1)
+                    ),
+          data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
+                                   data = filter(nycomps_vectors, cterm == "CYTOPLASMIC."), direction = "<"),
+                    group = "vectors", 
+                    type = "all", 
+                    cterm = "CYTOPLASMIC.",
+                    ci_labels = c("lower95", "auc", "upper95"),
+                    count = nrow( filter(nycomps_vectors, cterm == "CYTOPLASMIC.") ),
+                    pos_count = sum(filter(nycomps_vectors, cterm == "CYTOPLASMIC.")$plasmid_outcome == 1)
+                    ),
+          data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
+                                   data = filter(nycomps_vectors, cterm == "NON-CYTOPLASMIC."), direction = "<"),
+                    group = "vectors", 
+                    type = "all", 
+                    cterm = "NON-CYTOPLASMIC.",
+                    ci_labels = c("lower95", "auc", "upper95"),
+                    count = nrow( filter(nycomps_vectors, cterm == "NON-CYTOPLASMIC.") ),
+                    pos_count = sum(filter(nycomps_vectors, cterm == "NON-CYTOPLASMIC.")$plasmid_outcome == 1)
+                    )
+    )
 
-nycomps_roc <- rbind(
-    calc_auc_roc(nycomps_vectors %>% mutate(vectors = "all"),
-                 grouping_col = "vectors",
-                 outcome_col = "action",
-                 method = "roc"),
-    calc_auc_roc(nycomps_genes %>% mutate(genes = "all"),
-                 grouping_col = "genes",
-                 outcome_col = "class",
-                 method = "roc"),
-    calc_auc_roc(nycomps_largescale %>% mutate(largescale = "all"),
-                 grouping_col = "largescale",
-                 outcome_col = "action",
-                 method = "roc")) %>%
-    rename(metagroup = grouping_col)
+nycomps_auc <- dcast(nycomps_auc, group + type + cterm + count + pos_count ~ ci_labels, value.var = "ml21")
+
+nycomps_genes <- dplyr::select(nycomps_vectors, orfno, plasmid_name, plasmid_outcome, ml21, cterm) %>% 
+    dplyr::group_by(orfno, ml21) %>%
+    dplyr::summarize(
+        pos_count = sum(plasmid_outcome == 1),
+        rel_count = sum(plasmid_outcome)
+    ) %>% ungroup %>%
+    gather(outcome_key, outcome_value, pos_count:rel_count, factor_key = TRUE)
+
+nycomps_roc_bycount <- foreach(thiskey = levels(nycomps_genes$outcome_key), .combine=rbind) %do% {
+    thisdata <- filter(nycomps_genes, outcome_key == thiskey)
+    thresholds <- filter(nycomps_genes, outcome_key == thiskey) %>% 
+        dplyr::select(outcome_value) %>% 
+        arrange(desc(outcome_value)) %>% 
+        unique %>% head(-1)
+    foreach(thisthreshold = thresholds[[1]], .combine=rbind) %dopar% {
+        thisdata <- mutate(thisdata, thisresponse = outcome_value >= thisthreshold)
+        df <- data.frame(
+            my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
+            outcome_key = thiskey,
+            threshold = thisthreshold,
+            pos_count = sum(thisdata$thisresponse),
+            count = length(thisdata$thisresponse)
+            )
+        # add NA between groups for geom_path with facet_wrap
+        df <- rbind(df[1,], df)
+        df[1,c("specificities", "sensitivities")] <- NA
+        df
+    }
+}
+
+nycomps_auc_bycount <- foreach(thiskey = levels(nycomps_genes$outcome_key), .combine=rbind) %do% {
+    thisdata <- filter(nycomps_genes, outcome_key == thiskey)
+    thresholds <- filter(nycomps_genes, outcome_key == thiskey) %>% 
+        dplyr::select(outcome_value) %>% 
+        arrange(desc(outcome_value)) %>% 
+        unique %>% head(-1)
+    foreach(thisthreshold = thresholds[[1]], .combine=rbind) %dopar% {
+        thisdata <- mutate(thisdata, thisresponse = outcome_value >= thisthreshold)
+        data.frame(
+            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
+            outcome_key = thiskey,
+            threshold = thisthreshold,
+            pos_count = sum(thisdata$thisresponse),
+            count = length(thisdata$thisresponse),
+            ci_labels = c("lower95", "auc", "upper95")
+            )
+    }
+}
+
+nycomps_auc_bycount <- dcast(nycomps_auc_bycount, outcome_key + threshold + pos_count + count ~ ci_labels, value.var = "ml21")
+
+
+nycomps_median <- ddply(nycomps_posmix, .(gene_outcome), summarize,
+                        median_ml21 = median(ml21))
+
+nycomps_xscale <- quantile(nycomps_posmix$ml21, probs = c(.0025,.9975), names = FALSE)
+nycomps_xscale[[1]] <- nycomps_xscale[[1]]-1
+nycomps_xscale[[2]] <- nycomps_xscale[[2]]+1
+nycomps_breaks <- seq(-6,6,2)
+
+custom_histogram_data <- function(bin_data, hist_data, id) {
+    temp_hist <- hist(hist_data,
+                      breaks = seq(from = max(bin_data)+1, to = min(bin_data)-1, by = -fd_bw(bin_data)),
+                      plot=FALSE)
+    
+    temp_hist2 <- data.frame(mids = temp_hist$mids, counts = temp_hist$counts)
+    temp_hist2$id <- id
+    temp_hist2
+}
+
+nycomps_posmix_hist <- rbind(
+    custom_histogram_data(nycomps_posmix$ml21, filter(nycomps_posmix, gene_outcome != "neg")$ml21, "Expressed"),
+    custom_histogram_data(nycomps_posmix$ml21, filter(nycomps_posmix, gene_outcome == "neg")$ml21, "Not Expressed")
+    )
+nycomps_posmix_hist <- inner_join(nycomps_posmix_hist,
+                                  ddply(nycomps_posmix_hist, "mids", summarise, sumcounts = sum(counts)),
+                                  by = "mids") %>%
+    mutate(counts_sumcounts = counts/sumcounts)
+
+nycomps_vectors_hist <- rbind(
+    custom_histogram_data(nycomps_vectors$ml21, filter(nycomps_vectors, plasmid_outcome == 1)$ml21, "Positive"),
+    custom_histogram_data(nycomps_vectors$ml21, filter(nycomps_vectors, plasmid_outcome == -1)$ml21, "Negative")
+    )
+nycomps_vectors_hist <- inner_join(nycomps_vectors_hist,
+                                  ddply(nycomps_vectors_hist, "mids", summarise, sumcounts = sum(counts)),
+                                  by = "mids") %>%
+    mutate(counts_sumcounts = counts/sumcounts)
+
+nycomps_bincount_summary <- 
+    ddply(rbind(mutate(nycomps_posmix_hist, group = "posmix"), mutate(nycomps_vectors_hist, group = "vectors")),
+      .(group), summarize,
+      "Number of Bins Retained" = sum(sumcounts > 12),
+      "Total Number of Bins" = sum(sumcounts > 0),
+      "Percent Retained" = round(sum(sumcounts > 12) / sum(sumcounts > 0), 3) * 100
+      ) %>% select(-group)
+rownames(nycomps_bincount_summary) <- c("Expression by Gene", "All Expression Trials")
 
 nycomps_xscale <- quantile(nycomps_genes$ml21, probs = c(.0025,.9975), names = FALSE)
 nycomps_xscale[[1]] <- nycomps_xscale[[1]]-1
