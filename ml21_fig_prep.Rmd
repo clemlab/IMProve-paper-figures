@@ -19,24 +19,6 @@ library(RColorBrewer)
 
 library(fitdistrplus)
 
-Sys.setenv(
-    JAVA_HOME = '/temp/saladi/jdk1.8.0_25/jre',
-    JAVA = '/temp/saladi/jdk1.8.0_25/bin/java',
-    JAVAC = '/temp/saladi/jdk1.8.0_25/bin/javac',
-    JAVAH = '/temp/saladi/jdk1.8.0_25/bin/javah',
-    JAR = '/temp/saladi/jdk1.8.0_25/bin/jar',
-    JAVA_LIBS = '-L/temp/saladi/jdk1.8.0_25/jre/lib/amd64/server -ljvm',
-    JAVA_CPPFLAGS = '-I/temp/saladi/jdk1.8.0_25/jre/../include -I/temp/saladi/jdk1.8.0_25/jre/../include/linux',
-    JAVA_LD_LIBRARY_PATH = '/temp/saladi/jdk1.8.0_25/jre/lib/amd64/server'
-    )
-
-Sys.setenv(LD_LIBRARY_PATH = 
-    paste(
-        Sys.getenv('LD_LIBRARY_PATH'),
-        Sys.getenv('JAVA_LD_LIBRARY_PATH'), sep = ':'))
-
-
-library(xlsx)
 library(reshape2)
 library(plyr)
 library(dplyr)
@@ -46,6 +28,7 @@ library(boot)
 library(caret)
 
 library(pROC)
+library(locfit)
 
 library(foreach)
 library(doMC)
@@ -1006,7 +989,7 @@ p2_raw_npv <- ggplot(p2_raw_npv_prep) +
     scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
     theme_pub(legend.position="None", plot.margin=unit(c(1/16, 1/16, 1/16, 0), "in"))
 
-p3_trial_counts <- ggplot(group_by(nycomps_vectors, id) %>% 
+p2_trial_counts <- ggplot(group_by(nycomps_vectors, id) %>% 
                               summarize(count = length(id), 
                                         pos_neg = factor(pos_neg[1], levels = c("neg", "mix", "pos")))) +
     geom_bar(aes(x = factor(count, levels = 1:8), fill = pos_neg), position = "stack", width = 0.5) +
@@ -1043,7 +1026,7 @@ p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) +
     geom_path(aes(x=thresholds, y=ppv*100), size = 0.5, data = filter(nycomps_nvector_ppv_smooth, window == "1")) +
 #    geom_path(aes(x=thresholds, y=ppv*100), data = filter(nycomps_nvector_ppv_smooth, window == "50")) +
     geom_hline(aes(yintercept = min(min_ppv)*100), linetype="dashed", color="darkgrey", size = 0.5) +
-    annotate("text", x = -1.7, y = 55, label = "Expression in (N) His-FLAG-TEV-", size = 7*5/14, fontface = "bold") + 
+    annotate("text", x = -1.7, y = 55, label = "Expression in\n(N) His-FLAG-TEV-", size = 7*5/14, fontface = "bold") + 
     coord_cartesian(xlim=nycomps_xscale) +
     scale_x_continuous(expand=c(0,0), breaks=nycomps_breaks) +
     scale_y_continuous(expand=c(0,0), limits=c(0,60), breaks=seq(0, 100, 20)) +
@@ -1051,7 +1034,7 @@ p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) +
     ylab("Positive Predictive Value") +
     scale_color_manual(values = c("#A4A5A5", "#A10F1C")) + 
     scale_fill_manual(values = c("#A4A5A5", "#A10F1C")) + 
-    theme_pub(legend.position="None", plot.margin=unit(c(1/16, 1/16, 1/16, 0), "in"))
+    theme_pub(legend.position="None", plot.margin=unit(c(0, 0, 0, 0), "in"))
 
 
 #cterm split and summary
@@ -1134,6 +1117,11 @@ p2_auc_table <- gtable_add_grob(p2_auc_table,
             x1 = unit(1,"npc"), y1 = unit(0,"npc"),
             gp = gpar(lwd = 2.0)), t = 2, b = 2, l = 2, r = 7)
 p2_auc_table <- gtable_add_grob(p2_auc_table,
+        grobs = segmentsGrob(
+            x0 = unit(0,"npc"), y0 = unit(0,"npc"),
+            x1 = unit(1,"npc"), y1 = unit(0,"npc"),
+            gp = gpar(lwd = 1.0, lty = "dashed")), t = 3, b = 3, l = 2, r = 7)
+p2_auc_table <- gtable_add_grob(p2_auc_table,
         grobs = segmentsGrob( 
             x0 = unit(0,"npc"), y0 = unit(0,"npc"),
             x1 = unit(0,"npc"), y1 = unit(1,"npc"),
@@ -1144,7 +1132,6 @@ p2_auc_table <- gtable_add_grob(p2_auc_table,
             x1 = unit(0,"npc"), y1 = unit(1,"npc"),
             gp = gpar(lwd = 2.0)), t = 1, b = 11, l = 6, r = 6)
 
-
 p2_main <- ggdraw() +
     draw_plot(
         plot_grid(p2_posmix_ppv, p2_posmix_histogram, 
@@ -1153,7 +1140,7 @@ p2_main <- ggdraw() +
 #    annotate(geom="text", x = 0.55, y = 0.98, label = "933 complete successes (~11%)", size = 6*5/14, color = "#A10F1C") +
 #    annotate(geom="text", x = 0.55, y = 0.95, label = "1189 mixed outcomes (~14%)", size = 6*5/14, color = "#A10F1C") +
 #    annotate(geom="text", x = 0.55, y = 0.92, label = "6325 complete failures (~75%)", size = 6*5/14, color = "#A4A5A5") +
-    draw_plot(p3_trial_counts, x = 0, y = .5, width = .33, height = .35) + 
+    draw_plot(p2_trial_counts, x = 0, y = .5, width = .33, height = .35) + 
     draw_plot(p2_posmix_roc, x = -.1, y = 0, width = .5, height = .35) + 
     draw_plot(p2_auc_table, x = .32, y = 0, width = 2/3, height = .35) + 
     draw_plot_label(label = c("a", "d", "e"), x = c(0, 0, 1/3), y = c(1, .35, .35), size = 8)
@@ -1624,85 +1611,115 @@ p3_gpcr_roc$grobs$strip_t1$grobs[[1]]$children[[2]]$children[[1]]$label <- "E. c
 p3_gpcr_roc$grobs$strip_t2$grobs[[1]]$children[[2]]$children[[1]]$label <- "P. pastoris"
 p3_gpcr_roc$grobs$strip_t2$grobs[[1]]$children[[2]]$children[[1]]$gp$col <- "#D95F02"
 
-# t maritima
-tmaritima_scores <- read.csv("small-scale/koth_tmaritima.ffn.allstats.csv", header = TRUE, row.names = 1,  stringsAsFactors = FALSE)
-rownames(tmaritima_scores) <- getname(rownames(tmaritima_scores))
+# e. coli Koth
+koth_ec_scores <- read.csv("small-scale/koth_ec.ffn.allstats.csv_namefix", 
+                           header = TRUE, stringsAsFactors = FALSE) %>% select(Gene)
+koth_ec_scores$ml21 <- read.table("small-scale/koth_ec.ffn.allstats.daley_only_raw_exp_ml21")$V1
+
+koth_ec_outcomes <- read.csv("small-scale/koth_ec.outcomes.csv", 
+                             header = TRUE, stringsAsFactors = FALSE) %>%
+    inner_join(koth_ec_scores, by = c("Gene" = "Gene"))
+
+# remove these two since the calculated ORF is larger by 21 and 13 residues 
+# than what's reported in the paper
+# ycdG is greater by a single residue
+koth_ec_outcomes <- filter(koth_ec_outcomes, !(Gene %in% c('yihO', 'kup')))
+
+# t maritima Koth
+tmaritima_scores <- read.csv("small-scale/koth_tmaritima.ffn.allstats.csv", header = TRUE, stringsAsFactors = FALSE) %>% 
+    transmute(Gene = getname(title))
 tmaritima_scores$ml21 <- read.table("small-scale/koth_tmaritima.ffn.allstats.daley_only_raw_exp_ml21")$V1
 
-tmaritima_outcomes <- read.csv("small-scale/koth_tmaritima.outcomes.csv", header = TRUE, row.names = 3,  stringsAsFactors = FALSE)
-tmaritima_outcomes <- rename(tmaritima_outcomes, Purified = Puriﬁed)
-tmaritima_outcomes$ml21 <- tmaritima_scores[rownames(tmaritima_outcomes),]$ml21
-rm(tmaritima_scores)
+tmaritima_outcomes <- read.csv("small-scale/koth_tmaritima.outcomes.csv", header = TRUE, stringsAsFactors = FALSE) %>%
+    select(-len.diff, -weight.diff) %>% 
+    inner_join(tmaritima_scores, by = c("Gene" = "Gene"))
 
-tmaritima_outcomes$Purified <- tmaritima_outcomes$Purified * 2
-tmaritima_outcomes <- transform(tmaritima_outcomes, outcome = pmax(Expressed, Purified))
-tmaritima_outcomes$outcome <- factor(tmaritima_outcomes$outcome,
-                                     labels = c("No", "Expressed", "Purified"),
-                                     levels = c(0, 1, 2))
-tmaritima_outcomes <- select(tmaritima_outcomes, ml21, outcome)
+koth_ec_outcomes$group <- "E. coli"
+tmaritima_outcomes$group <- "T. maritima"
 
+koth_outcomes <- rbind(koth_ec_outcomes, tmaritima_outcomes) %>%
+    mutate(group = factor(group),
+           Purified = Purified * 2)
+koth_outcomes$outcome <- factor(pmax(koth_outcomes$Expressed, koth_outcomes$Purified),
+                                labels = c("Neither", "Expressed", "Purified"),
+                                levels = c(0, 1, 2),
+                                ordered = TRUE)
 
-# > table(tmaritima_outcomes$outcome)
-#        No Expressed  Purified 
-#        58        14         5 
-# > table(as.numeric(tmaritima_outcomes$outcome))
-#  1  2  3 
-# 58 14  5 
-tmaritima_roc <- rbind(
-    data.frame(
-        my_roc(as.numeric(outcome) >= 3 ~ ml21, direction = "<", data = tmaritima_outcomes),
-        positive_threshold = "Purified"),
-    data.frame(
-        my_roc(as.numeric(outcome) >= 2 ~ ml21, direction = "<", data = tmaritima_outcomes),
-        positive_threshold = "Expressed")
-)
-
-tmaritima_auc <- rbind(
-    data.frame(
-        ci = ci.auc(as.numeric(outcome) >= 3 ~ ml21, direction = "<", data = tmaritima_outcomes),
-        positive_threshold = "Purified",
-        pos_count = sum(tmaritima_outcomes$outcome %>% as.numeric >= 3),
-        count = length(tmaritima_outcomes$outcome %>% as.numeric >= 3),
-        ci_labels = c("lower95", "auc", "upper95")
-        ),
-    data.frame(
-        ci = ci.auc(as.numeric(outcome) >= 2 ~ ml21, direction = "<", data = tmaritima_outcomes),
-        positive_threshold = "Expressed",
-        pos_count = sum(tmaritima_outcomes$outcome %>% as.numeric >= 2),
-        count = length(tmaritima_outcomes$outcome %>% as.numeric >= 2),
-        ci_labels = c("lower95", "auc", "upper95")
-        )
-)
-
-tmaritima_auc <- dcast(tmaritima_auc, positive_threshold + pos_count + count ~ ci_labels, value.var = "ci")
+rm(koth_ec_scores, tmaritima_scores, koth_ec_outcomes, tmaritima_outcomes)
 
 
-p3_tmaritima <- ggplot(tmaritima_outcomes) +
+koth_roc <- foreach(thisgroup = unique(koth_outcomes$group), .combine = rbind) %dopar% {
+    foreach(thisthreshold=levels(koth_outcomes$outcome) %>% tail(-1), .combine = rbind) %do% {
+        thisdata <- filter(koth_outcomes, group == thisgroup)
+        data.frame(
+            group = thisgroup,
+            positive_threshold = thisthreshold,
+            my_roc(thisdata$outcome >= thisthreshold ~ ml21, direction = "<", data = thisdata)
+            )
+    }
+}
+
+koth_auc <- foreach(thisgroup = unique(koth_outcomes$group), .combine = rbind) %dopar% {
+    foreach(thisthreshold=levels(koth_outcomes$outcome) %>% tail(-1), .combine = rbind) %do% {
+        thisdata <- filter(koth_outcomes, group == thisgroup)
+        data.frame(
+            group = thisgroup,
+            positive_threshold = thisthreshold,
+            ci = ci.auc(outcome >= thisthreshold ~ ml21, direction = "<", data = thisdata),
+            pos_count = sum(thisdata$outcome >= thisthreshold),
+            count = length(thisdata$outcome),
+            ci_labels = c("lower95", "auc", "upper95")
+            )
+    }
+}
+
+koth_auc <- dcast(koth_auc, group + positive_threshold + pos_count + count ~ ci_labels, value.var = "ci")
+
+p3_koth <- ggplot(koth_outcomes) +
+    geom_segment(aes(y=median(ml21), yend=median(ml21), x=1.5, xend=2.5), size = 0.5, linetype = "dashed", 
+                 data = filter(koth_outcomes, group == "T. maritima")) +
+    geom_segment(aes(y=median(ml21), yend=median(ml21), x=0.5, xend=1.5), size = 0.5, linetype = "dashed", 
+                 data = filter(koth_outcomes, group == "E. coli")) +
+    geom_quasirandom(aes(x=group, y=ml21, color=outcome), 
+                     varwidth = TRUE, width = 0.3, dodge.width=.7, size=0.75) + 
+    annotate("text", x = 2.36, y = -4.6, label = "E. coli & T. maritima", size = 7*5/14, fontface = "bold.italic") + 
+    scale_color_manual(values=c("#A4A5A5","#AD665D","#A10F1C")) +
+    scale_x_discrete(expand=c(0,0)) +
+    ylab(expression("SVM"^"rank"*~"score")) + 
+    theme_pub(legend.position = "None",
+              axis.title.y = element_blank(),
+              axis.text.y = element_text(face= "italic")) +
+    coord_flip()
+
+p3_tmaritima <- ggplot(filter(koth_outcomes, group == "T. maritima")) +
     geom_vline(aes(xintercept=median(ml21)), linetype = "dashed") +
     geom_quasirandom(aes(x=ml21, y=factor(outcome), color=as.numeric(outcome)), varwidth = TRUE, width = 0.3, size=0.75) +
     annotate("text", x = -4.6, y = 3.36, label = "T. maritima", size = 7*5/14, fontface = "bold.italic") + 
     scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
     xlab(expression("SVM"^"rank"*~"score")) + 
     theme_pub(legend.position = "None",
-              axis.title.y = element_blank())
+              axis.title = element_blank())
 
-tmaritima_auc_labels <- mutate(tmaritima_auc, auc = specify_decimal(auc*100, k = 1),
+koth_auc <- mutate(koth_auc, auc = specify_decimal(auc*100, k = 1),
                            lower95 = specify_decimal(lower95*100, k = 1),
                            upper95 = specify_decimal(upper95*100, k = 1),
-                           ci = paste0(auc, "~('", lower95, "'-", upper95, ")"))
-tmaritima_auc_labels$y <- c(.07, .16)
+                           ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')")) %>%
+    arrange(group, -as.numeric(positive_threshold))
+koth_auc$y <- c(.16, .07)
 
-tmaritima_auc_counts <- tmaritima_auc$pos_count %>% toString %>% paste
-tmaritima_auc_counts <- paste0("list(", tmaritima_auc_counts, "/", tmaritima_auc$count[[1]], ")")
+koth_auc_counts <- group_by(koth_auc, group, count) %>%
+    summarize(counts_label = pos_count %>% toString %>% paste) %>% ungroup %>%
+    mutate(counts_label = paste0("list(", counts_label, "/", count, ")"))
 
-p3_tmaritima_roc <- ggplot(tmaritima_roc) + 
+
+p3_tmaritima_roc <- ggplot(filter(koth_roc, group == "T. maritima")) + 
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
     geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
-    geom_text(aes(x=.65, y=y, label=ci, color=positive_threshold), parse=TRUE, size = 5*5/14, data=tmaritima_auc_labels) +
-    annotate(geom="text", x=.65, y=.24, label=tmaritima_auc_counts, size = 5*5/14, parse=TRUE) +
-    scale_color_manual(values = ggplot_build(p3_tmaritima)$data[[2]] %>% arrange(desc(-group)) %>% 
-                           select(colour) %>% unique %>% unlist %>% unname %>% tail(-1), 
-                         na.value="black") +
+    geom_text(aes(x=.65, y=y, label=ci, color=positive_threshold), parse=TRUE, size = 5*5/14, 
+              data=filter(koth_auc, group == "T. maritima")) +
+    annotate(geom="text", x=.65, y=.24, label=filter(koth_auc_counts, group == "T. maritima")$counts_label,
+             size = 5*5/14, parse=TRUE) +
+    scale_color_manual(values = c("#AD665D", "#A10F1C"), na.value="black") +
     ylab("True Positive Rate") +
     xlab("False Positive Rate") +
     ggtitle("T. maritima") +
@@ -1713,43 +1730,48 @@ p3_tmaritima_roc <- ggplot(tmaritima_roc) +
               plot.title = element_text(size = 7, face = "italic"),
         axis.title = element_text(size = 6))
 
-# surade
-surade_scores <- read.csv("small-scale/surade.fna.allstats.csv", header = TRUE, row.names = 1, stringsAsFactors = FALSE)
-rownames(surade_scores) <- getname(rownames(surade_scores))
-surade_scores$ml21 <- read.table("small-scale/surade.fna.allstats.daley_only_raw_exp_ml21")$V1
+p3_koth_roc <- ggplot(koth_roc) + 
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+    geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
+    geom_text(aes(x=.65, y=y, label=ci, color=positive_threshold), parse=TRUE, size = 5*5/14, data=koth_auc) +
+    geom_text(aes(x=.65, y=.24, label=counts_label), size = 5*5/14, parse=TRUE, data = koth_auc_counts) +
+    scale_color_manual(values = c("#AD665D", "#A10F1C"), na.value="black") +
+    ylab("True Positive Rate") +
+    xlab("False Positive Rate") +
+    ggtitle("Dobrovetsky, et al., 2005") +
+    scale_y_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) + 
+    scale_x_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) +
+    facet_wrap(~group, ncol=1) +
+    theme_pub(legend.position="None", aspect.ratio = 1,
+              plot.margin = unit(c(0, 0, 0, 0), "lines"),
+        axis.title = element_text(size = 6))
 
-surade_outcomes <- read.csv("small-scale/surade.060915.outcomes.csv", header = TRUE, stringsAsFactors = FALSE)
-surade_outcomes$ml21 <- surade_scores[as.character(surade_outcomes$GI.number),]$ml21
+# surade
+surade_scores <- read.csv("small-scale/surade.fna.allstats.csv", header = TRUE, stringsAsFactors = FALSE) %>%
+    transmute(
+        gi = as.numeric(getname(title)),
+        ml21 = read.table("small-scale/surade.fna.allstats.daley_only_raw_exp_ml21")$V1
+    )
+
+surade_outcomes <- read.csv("small-scale/surade.060915.outcomes.csv", header = TRUE, stringsAsFactors = FALSE) %>%
+    inner_join(surade_scores, by = c("GI.number" = "gi")) %>%
+    filter(!is.na(as.numeric(Outcome))) %>% 
+    mutate(outcome = factor(Outcome, levels = c("0", "10", "100"), ordered = TRUE),
+           vector = factor(Vector, 
+                           labels = c("E. coli pTTQ18-A", "E. coli pTTQ18-C", "E. coli pQE-A", "E. coli pQE-C",
+                                      "E. coli pBAD-A", "E. coli pBAD-C", "L. lactis pNZ-A", "L. lactis pNZ-C"),
+                           levels = c("pTTQ18-A", "pTTQ18-C", "pQE-A", "pQE-C",
+                                      "pBAD-A", "pBAD-C", "pNZ-A", "pNZ-C")),
+           gi = GI.number) %>%
+    select(vector, gi, outcome, ml21)
+
 rm(surade_scores)
 
-surade_vectors <- data.frame(
-    name = rownames(read.csv("small-scale/surade_vectors.fna.allstats.csv", header = TRUE, row.names = 1)),
-    ml21_vector = read.table("small-scale/surade_vectors.fna.allstats.daley_only_raw_exp_ml21")$V1
-    )
-surade_vectors$vector <- getname(surade_vectors$name, token = 3)
-surade_vectors$vector <- substr(surade_vectors$vector, start = 1, stop = nchar(surade_vectors$vector)-1)
-surade_vectors$GI <- as.integer(getname(surade_vectors$name, token = 1))
-
-surade_outcomes <- left_join(surade_vectors, surade_outcomes, by=c("vector" = "Vector",
-                                                                  "GI" = "GI.number"))
-rm(surade_vectors)
-
-surade_outcomes$outcome <- factor(as.integer(surade_outcomes$Outcome))
-surade_outcomes <- filter(surade_outcomes, !is.na(outcome))
-
-surade_outcomes$vector <- factor(surade_outcomes$vector, 
-       labels = c("E. coli pTTQ18-A", "E. coli pTTQ18-C", "E. coli pQE-A", "E. coli pQE-C",
-                  "E. coli pBAD-A", "E. coli pBAD-C", "L. lactis pNZ-A", "L. lactis pNZ-C"),
-       levels = c("pTTQ18-A", "pTTQ18-C", "pQE-A", "pQE-C", 
-                  "pBAD-A", "pBAD-C", "pNZ-A", "pNZ-C"))
-surade_outcomes <- select(surade_outcomes, vector, GI, outcome, ml21, ml21_vector)
-
-
-surade_roc <- foreach(thisthreshold = c(10, 100), .combine='rbind') %dopar% {
+surade_roc <- foreach(thisthreshold = levels(surade_outcomes$outcome) %>% tail(-1), .combine='rbind') %dopar% {
     # ROC for each vector separately
-    roc1 <- foreach(thisvector=unique(surade_outcomes$vector), .combine='rbind') %dopar% {
-        thisdata <- filter(surade_outcomes, vector == thisvector)
-        thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
+    roc1 <- foreach(thisvector=levels(surade_outcomes$vector), .combine='rbind') %dopar% {
+        thisdata <- filter(surade_outcomes, vector == thisvector) %>%
+            mutate(thisresponse = outcome >= thisthreshold)
         data.frame(
             my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
             vector = thisvector,
@@ -1758,23 +1780,38 @@ surade_roc <- foreach(thisthreshold = c(10, 100), .combine='rbind') %dopar% {
     # ROC for pET vectors together
     thisdata <- filter(surade_outcomes, vector %in%
                       c("E. coli pTTQ18-A", "E. coli pTTQ18-C", "E. coli pQE-A", "E. coli pQE-C"))
-    thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
+    thisdata <- mutate(thisdata, thisresponse = outcome >= thisthreshold)
     roc2 <- data.frame(
         my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
         vector = "pETonly",
         positive_threshold = thisthreshold)
+
+    # ROC for pBAD together
+    thisdata <- filter(surade_outcomes, vector %in% c("E. coli pBAD-A", "E. coli pBAD-C"))
+    thisdata <- mutate(thisdata, thisresponse = outcome >= thisthreshold)
+    roc3 <- data.frame(
+        my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
+        vector = "pBADonly",
+        positive_threshold = thisthreshold)
     
-    rbind(roc1, roc2)
+    # ROC for all together
+    thisdata <- surade_outcomes
+    thisdata <- mutate(thisdata, thisresponse = outcome >= thisthreshold)
+    roc4 <- data.frame(
+        my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
+        vector = "all",
+        positive_threshold = thisthreshold)
+    
+    rbind(roc1, roc2, roc3, roc4)
 }
 
-surade_auc <- foreach(thisthreshold = c(10, 100), .combine='rbind') %dopar% {
+surade_auc <- foreach(thisthreshold = levels(surade_outcomes$outcome) %>% tail(-1), .combine='rbind') %dopar% {
     # AUC for each vector separately
-    auc1 <- foreach(thisvector=unique(surade_outcomes$vector), .combine='rbind') %dopar% {
+    auc1 <- foreach(thisvector=levels(surade_outcomes$vector), .combine='rbind') %dopar% {
         thisdata <- filter(surade_outcomes, vector == thisvector)
-        thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
+        thisdata <- mutate(thisdata, thisresponse = outcome >= thisthreshold)
         data.frame(
             ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
-            ml21_vector = ci.auc(thisresponse ~ ml21_vector, data = thisdata, direction = "<", method = "delong"),
             vector = thisvector,
             positive_threshold = thisthreshold,
             pos_count = sum(thisdata$thisresponse),
@@ -1786,22 +1823,69 @@ surade_auc <- foreach(thisthreshold = c(10, 100), .combine='rbind') %dopar% {
     # AUC for pET vectors together
     thisdata <- filter(surade_outcomes, vector %in%
                       c("E. coli pTTQ18-A", "E. coli pTTQ18-C", "E. coli pQE-A", "E. coli pQE-C"))
-    thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
+    thisdata <- mutate(thisdata, thisresponse = outcome >= thisthreshold)
     auc2 <- data.frame(
         vector = "pETonly",
         ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method="delong"),
-        ml21_vector = ci.auc(thisresponse ~ ml21_vector, data = thisdata, direction = "<", method="delong"),
+        positive_threshold = thisthreshold,
+        pos_count = sum(thisdata$thisresponse),
+        count = length(thisdata$thisresponse),
+        ci_labels = c("lower95", "auc", "upper95")
+        )
+
+    # ROC for pBAD together
+    thisdata <- filter(surade_outcomes, vector %in% c("E. coli pBAD-A", "E. coli pBAD-C"))
+    thisdata <- mutate(thisdata, thisresponse = outcome >= thisthreshold)
+    auc3 <- data.frame(
+        vector = "pBADonly",
+        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method="delong"),
         positive_threshold = thisthreshold,
         pos_count = sum(thisdata$thisresponse),
         count = length(thisdata$thisresponse),
         ci_labels = c("lower95", "auc", "upper95")
         )
     
-    rbind(auc1, auc2)
+    # ROC for all E. coli together
+    thisdata <- filter(surade_outcomes, vector %in% c("E. coli pTTQ18-A", "E. coli pTTQ18-C",
+                                                      "E. coli pQE-A", "E. coli pQE-C",
+                                                      "E. coli pBAD-A", "E. coli pBAD-C"))
+    thisdata <- mutate(thisdata, thisresponse = outcome >= thisthreshold)
+    auc4 <- data.frame(
+        vector = "allec",
+        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method="delong"),
+        positive_threshold = thisthreshold,
+        pos_count = sum(thisdata$thisresponse),
+        count = length(thisdata$thisresponse),
+        ci_labels = c("lower95", "auc", "upper95")
+        )
+
+    # ROC for all L. lactis together
+    thisdata <- filter(surade_outcomes, vector %in% c("L. lactis pNZ-A", "L. lactis pNZ-A"))
+    thisdata <- mutate(thisdata, thisresponse = outcome >= thisthreshold)
+    auc5 <- data.frame(
+        vector = "all_ll",
+        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method="delong"),
+        positive_threshold = thisthreshold,
+        pos_count = sum(thisdata$thisresponse),
+        count = length(thisdata$thisresponse),
+        ci_labels = c("lower95", "auc", "upper95")
+        )
+    
+    thisdata <- surade_outcomes
+    thisdata <- mutate(thisdata, thisresponse = outcome >= thisthreshold)
+    auc6 <- data.frame(
+        vector = "all",
+        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method="delong"),
+        positive_threshold = thisthreshold,
+        pos_count = sum(thisdata$thisresponse),
+        count = length(thisdata$thisresponse),
+        ci_labels = c("lower95", "auc", "upper95")
+        )
+    
+    rbind(auc1, auc2, auc3, auc4, auc5, auc6)
 }
 
-surade_auc <- gather(surade_auc, score_type, ci, ml21:ml21_vector)
-surade_auc <- dcast(surade_auc, vector + positive_threshold + score_type + pos_count + count ~ ci_labels, value.var = "ci") 
+surade_auc <- dcast(surade_auc, vector + positive_threshold + pos_count + count ~ ci_labels, value.var = "ml21") 
 
 surade_median <- ddply(surade_outcomes, .(vector), summarize,
                      median = median(ml21),
@@ -1818,10 +1902,10 @@ p3_surade <- ggplot(filter(surade_outcomes, vector %in%
     xlab(expression("SVM"^"rank"*~"score")) + 
     ylab("Dot Density") +
     theme_pub(legend.position = "None",
-              axis.title.x = element_blank(),
+#              axis.title.x = element_blank(),
               axis.title.y = element_blank())
 
-surade_auc_labels <- filter(surade_auc, vector == "pETonly", score_type == "ml21") %>% 
+surade_auc_labels <- filter(surade_auc, vector == "pETonly") %>% 
     mutate(auc = specify_decimal(auc*100, k = 1),
            lower95 = specify_decimal(lower95*100, k = 1),
            upper95 = specify_decimal(upper95*100, k = 1),
@@ -1829,8 +1913,8 @@ surade_auc_labels <- filter(surade_auc, vector == "pETonly", score_type == "ml21
            positive_threshold = factor(positive_threshold))
 surade_auc_labels$y <- c(.07, .16)
 
-surade_auc_counts <- filter(surade_auc, vector == "pETonly", score_type == "ml21")$pos_count %>% rev %>% toString %>% paste
-surade_auc_counts <- paste0("list(", surade_auc_counts,"/", filter(surade_auc, vector == "pETonly", score_type == "ml21")$count[[1]], ")")
+surade_auc_counts <- filter(surade_auc, vector == "pETonly")$pos_count %>% rev %>% toString %>% paste
+surade_auc_counts <- paste0("list(", surade_auc_counts,"/", filter(surade_auc, vector == "pETonly")$count[[1]], ")")
 
 p3_surade_roc <- ggplot(filter(surade_roc, vector == "pETonly")) + 
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
@@ -1848,32 +1932,31 @@ p3_surade_roc <- ggplot(filter(surade_roc, vector == "pETonly")) +
         axis.title = element_text(size = 6))
 
 # hpylori
-hpylori_scores <- read.csv("small-scale/hpylori_psakis.ffn.allstats.csv", header = TRUE, 
-                    row.names = 1, stringsAsFactors = FALSE)
-hpylori_scores$ml21 <- read.table("small-scale/hpylori_psakis.ffn.allstats.daley_only_raw_exp_ml21")$V1
+hpylori_scores <- read.csv("small-scale/hpylori_psakis.ffn.allstats.csv", header = TRUE, stringsAsFactors = FALSE) %>%
+    transmute(gene = title,
+              ml21 = read.table("small-scale/hpylori_psakis.ffn.allstats.daley_only_raw_exp_ml21")$V1)
 
-hpylori_outcomes <- read.xlsx2("small-scale/hpylori-psakis.xlsx", sheetName="Hpylori", stringsAsFactors = FALSE)
-hpylori_outcomes <- mutate(hpylori_outcomes, code = toupper(Code),
-                           outcome = factor(as.numeric(Outcome)),
-                           group = Vector,
-                           vector = factor(substring(Vector, 1, 3)),
-                           scoring = factor(substrRight(Vector, 1)))
-#hpylori_outcomes[hpylori_outcomes$scoring == "T",]$scoring <- NA
-hpylori_outcomes <- select(hpylori_outcomes, code, group, vector, scoring, outcome)
-hpylori_outcomes$group <- factor(hpylori_outcomes$group, 
-                                   levels = c("pET", "LAC / A", "LAC / M", "TEV / A", "TEV / M"),
-                                   labels = c("pET28 / pET36", "pQL60Lac / Automatic", "pQL60Lac / Manual", 
-                                              "pQTev / Automatic", "pQTev / Manual"))
-hpylori_outcomes <- filter(hpylori_outcomes, !is.na(outcome))
-hpylori_outcomes$ml21 <- hpylori_scores[hpylori_outcomes$code,]$ml21
+hpylori_outcomes <- read.csv("small-scale/hpylori-psakis.csv", header = TRUE, stringsAsFactors = FALSE) %>%
+    filter(!is.na(as.numeric(Outcome))) %>% 
+    mutate(gene = toupper(Code),
+           outcome = factor(Outcome),
+           group = factor(Vector,
+                          levels = c("pET", "LAC / A", "LAC / M", "TEV / A", "TEV / M"),
+                          labels = c("pET28 / pET36", "pQL60Lac / Automatic", "pQL60Lac / Manual", 
+                                     "pQTev / Automatic", "pQTev / Manual")),
+           vector = factor(substring(Vector, 1, 3)),
+           scoring = factor(substrRight(Vector, 1))) %>%
+    select(gene, group, vector, scoring, outcome) %>%
+    inner_join(hpylori_scores, by = c("gene" = "gene"))
+
 rm(hpylori_scores)
 
-hpylori_outcomes_means <- ddply(hpylori_outcomes, .(code, vector), summarize,
-                                outcome = mean(as.numeric(as.character(outcome)), na.rm = TRUE),
-                                ml21 = ml21[[1]])
+hpylori_outcomes_means <- group_by(hpylori_outcomes, gene, vector) %>%
+    summarize(outcome = mean(as.numeric(as.character(outcome)), na.rm = TRUE),
+              ml21 = ml21[[1]])
 
 hpylori_median <- rbind(
-    ddply(hpylori_outcomes, .(group), summarise,
+    group_by(hpylori_outcomes, group) %>% summarise(
           count = length(ml21),
           median = median(ml21),
           type = "direct"
@@ -1882,7 +1965,7 @@ hpylori_median <- rbind(
            count = length(rbind(hpylori_outcomes, filter(hpylori_outcomes, vector == "pET"))$ml21),
            median = median(rbind(hpylori_outcomes, filter(hpylori_outcomes, vector == "pET"))$ml21),
            type = "direct"),
-    ddply(hpylori_outcomes_means, .(vector), summarise,
+    group_by(hpylori_outcomes, vector) %>% summarise(
           count = length(ml21),
           median = median(ml21),
           type = "mean"
@@ -2086,16 +2169,32 @@ save_plot(filename = "plots/fig3_w_panels.pdf", plot = p3_main, base_width = uco
 
 p3_extended <- ggdraw() +
     draw_plot(
-        plot_grid(p3_hpylori, p3_surade, p3_tmaritima,
+        plot_grid(p3_hpylori, p3_tmaritima, p3_surade,
                   labels = c("a","c","e"), label_size = 8, ncol = 1, align = "v", rel_heights = c(5, 2.5, 2.5)),
+        x = 0, y = 0, width = .8, height = 1) +
+    draw_label("Expression Score", x = .03, y = .755, angle = 90, size = 7) + 
+    draw_label("Dot Density", x = .03, y = .15, angle = 90, size = 7) + 
+    draw_plot(
+        plot_grid(p3_hpylori_roc, p3_hpylori_auc, p3_tmaritima_roc, p3_surade_roc, rel_heights = c(1, .8, 1, 1),
+                  labels = c("b", "", "d", "f"), label_size = 8, ncol = 1, align = "hv"),
+        x = .80, y = 0, width = .17, height = 1)
+save_plot(filename = "plots/extfig1.pdf", plot = p3_extended, base_width = uconv(183, "mm", "in", "Length"), base_height = 5)
+
+p3_koth
+p3_koth_roc
+
+p3_extended_koth_all <- ggdraw() +
+    draw_plot(
+        plot_grid(p3_hpylori, p3_surade, p3_koth,
+                  labels = c("a","c","e"), label_size = 8, ncol = 1, align = "v", rel_heights = c(5, 2.5, 5)),
         x = 0, y = 0, width = .8, height = 1) +
     draw_label("Expression Score", x = .03, y = .755, angle = 90, size = 7) + 
     draw_label("Dot Density", x = .03, y = .385, angle = 90, size = 7) + 
     draw_plot(
-        plot_grid(p3_hpylori_roc, p3_hpylori_auc, p3_surade_roc, p3_tmaritima_roc, rel_heights = c(1, .8, 1, 1),
+        plot_grid(p3_hpylori_roc, p3_hpylori_auc, p3_surade_roc, p3_koth_roc, rel_heights = c(1, .8, 1, 2),
                   labels = c("b", "", "d", "f"), label_size = 8, ncol = 1, align = "hv"),
         x = .80, y = 0, width = .17, height = 1)
-save_plot(filename = "plots/extfig1.pdf", plot = p3_extended, base_width = uconv(183, "mm", "in", "Length"), base_height = 5)
+save_plot(filename = "plots/extfig1_koth_all.pdf", plot = p3_extended_koth_all, base_width = uconv(183, "mm", "in", "Length"), base_height = 7)
 ```
 
 # p4 - forward predictions
@@ -2236,7 +2335,9 @@ euk_preds$value <- factor(as.character(euk_preds$value),
                           labels = c("No", "Yes"))
 
 # give a table with counts in each category, counts above score 0, counts above score 2
-forward_tufte_boxplots <- ddply(filter(forward_preds, numTMs > 1), .(group, species), summarize,
+forward_tufte_boxplots <- filter(forward_preds, numTMs >= 1) %>% 
+    group_by(group, species) %>%
+    summarise(
       count = length(ml21),
       # for tufte like boxplots, if the min is < xrange min, then the whole linepart doesnt show:
       boxplot_1 = boxplot.stats(ml21, coef = 1.5, do.conf = TRUE, do.out = TRUE)$stats[[1]],
@@ -2245,19 +2346,21 @@ forward_tufte_boxplots <- ddply(filter(forward_preds, numTMs > 1), .(group, spec
       boxplot_3_median = boxplot.stats(ml21, coef = 1.5, do.conf = TRUE, do.out = TRUE)$stats[[3]],
       boxplot_4 = boxplot.stats(ml21, coef = 1.5, do.conf = TRUE, do.out = TRUE)$stats[[4]],
       boxplot_5 = boxplot.stats(ml21, coef = 1.5, do.conf = TRUE, do.out = TRUE)$stats[[5]],
-      boxplot_5 = ifelse(boxplot_5 > nycomps_xscale[[2]], nycomps_xscale[[2]], boxplot_5)
-      ) %>% arrange(species == "Escherichia coli", group == "Metazoa", boxplot_3_median)
+      boxplot_5 = ifelse(boxplot_5 > nycomps_xscale[[2]], nycomps_xscale[[2]], boxplot_5)) %>%
+    mutate(species_count = paste0(species, " (", count, ")") ) %>%
+    arrange(species == "Escherichia coli", group == "Metazoa", boxplot_3_median) %>% ungroup
 
 forward_ec_thresholds <- filter(forward_tufte_boxplots, species == "Escherichia coli") %>% 
-    select(-group, -species,-count) %>% matrix %>% unlist
+    select(-group, -species, -count, -species_count) %>% matrix %>% unlist
 
-forward_targets_table <- ddply(forward_preds, .(group, species), summarize, 
-      totalMPs = length(ml21),
-      MPs_ge_ECmed = sum(ml21 >= forward_ec_thresholds[[3]]),
-      MPs_ge_ECq3 = sum(ml21 > forward_ec_thresholds[[4]]),
-      polyMPs_ge_ECmed = sum(ml21 > forward_ec_thresholds[[3]] & numTMs > 1),
-      polyMPs_ge_ECq3 = sum(ml21 > forward_ec_thresholds[[4]] & numTMs > 1)
-      )
+forward_targets_table <- group_by(forward_preds, group, species) %>%
+    summarise( 
+        totalMPs = length(ml21),
+        MPs_ge_ECmed = sum(ml21 >= forward_ec_thresholds[[3]]),
+        MPs_ge_ECq3 = sum(ml21 > forward_ec_thresholds[[4]]),
+        polyMPs_ge_ECmed = sum(ml21 > forward_ec_thresholds[[3]] & numTMs > 1),
+        polyMPs_ge_ECq3 = sum(ml21 > forward_ec_thresholds[[4]] & numTMs > 1)
+      ) %>% ungroup
 
 forward_preds_order <- c(
     "Vibrio cholerae",
@@ -2287,13 +2390,13 @@ forward_preds_order <- c(
     "Homo sapiens")
 
 p4_all_violin <- ggplot(forward_preds) + 
+    geom_hline(yintercept=forward_ec_thresholds[[3]], linetype="dashed", color="darkgrey") +
     geom_point(aes(x=species, y=boxplot_3_median), color = "darkgrey", data = forward_tufte_boxplots) + 
-    geom_text(aes(x=species, y=-6, label = species), vjust = 2, fontface = "italic", size = 7*5/14, data = forward_tufte_boxplots) + 
+    geom_text(aes(x=species, y=-6, label = species_count), vjust = 2, fontface = "italic", size = 7*5/14, data = forward_tufte_boxplots) + 
     geom_linerange(aes(x=species, ymin=boxplot_1, ymax=boxplot_2), color = "darkgrey", data = forward_tufte_boxplots)+ 
     geom_linerange(aes(x=species, ymin=boxplot_4, ymax=boxplot_5), color = "darkgrey", data = forward_tufte_boxplots) +
     geom_violin2(aes(y=ml21, x=species), color = "black", adjust = 0.3, alpha = 0) + 
     # to get the tufte-like boxplots
-    geom_hline(yintercept=forward_ec_thresholds[[3]], linetype="dashed", color="darkgrey") +
     #geom_hline(yintercept=forward_ec_thresholds[[4]], linetype="dashed", color="darkgrey") +
     coord_flip() +
     ylab(expression("SVM"^"rank"*~"score")) + 
@@ -2329,8 +2432,6 @@ p4_ecoli <- ggplot(daley_outcomes) +
 
 ## deal with feature distributions
 ```{r}
-library(overlap)
-
 forward_features <- read.csv("forward-preds/microbial_query.fna.allstats.csv", stringsAsFactors = FALSE, header = TRUE)
 microbial_query <- read.delim("forward-preds/microbial_query.dat", header = TRUE)
 forward_features$species <- microbial_query$species
@@ -2355,10 +2456,7 @@ ecoli_features$set <- "ecoli"
 
 all_features <- rbind(nycomps_features, ecoli_features, forward_features)
 
-# get rid of one of the E. coli strains
-unique(all_features$species)
-
-all_features <- filter(all_features, numTMs > 0, species != "Escherichia coli (strain ATCC 33849 / DSM 4235 / NCIB 12045 / K12 / DH1)")
+all_features <- filter(all_features, numTMs > 0)
 all_features$species <- regmatches(all_features$species, 
                                     regexpr('\\w+\\W{1,2}\\w+', all_features$species, perl=TRUE))
 
@@ -2380,99 +2478,230 @@ all_features <- all_features[, c(prediction_features, "set", "title", "species")
 all_features <- gather(all_features, featuretype, featurevalue, CAI:GC10max)
 all_features$thermophile <- all_features$species %in% c("Aquifex aeolicus", "Spirochaeta thermophila", "Thermus thermophilus")
 
-px_training_forward <- ggplot(filter(all_features, set != "nycomps")) +
-    geom_histogram(aes(x=featurevalue, y=..density.., fill=set), alpha=0.5, position = "identity") +
-    facet_wrap(~featuretype, ncol=9, scales="free") +
-    theme_pub(legend.position="bottom",
-          axis.title = element_blank())
-
-px_training_thermophile <- ggplot(filter(all_features, set == "ecoli" | thermophile)) +
-    geom_histogram(aes(x=featurevalue, y=..density.., fill=thermophile), alpha=0.5, position = "identity") +
-    facet_wrap(~featuretype, ncol=9, scales="free") +
-    theme_pub(legend.position="bottom",
-          axis.title = element_blank())
-
-px_training_nycomps <- ggplot(filter(all_features, set %in% c("ecoli", "nycomps"))) +
-    geom_histogram(aes(x=featurevalue, y=..density.., fill=set), alpha=0.5, position = "identity") +
-    facet_wrap(~featuretype, ncol=9, scales="free") +
-    theme_pub(legend.position="bottom",
-          axis.title = element_blank())
-
-px_nycomps_thermophile <- ggplot(filter(all_features, set == "nycomps" | thermophile)) +
-    geom_histogram(aes(x=featurevalue, y=..density.., fill=thermophile), alpha=0.5, position = "identity") +
-    facet_wrap(~featuretype, ncol=9, scales="free") +
-    theme_pub(legend.position="bottom",
-          axis.title = element_blank())
-
-px_training_plasmodium <- ggplot(filter(all_features, set == "ecoli" | species == "Plasmodium falciparum")) +
-    geom_histogram(aes(x=featurevalue, y=..density.., fill= set == "ecoli"), alpha=0.5, position = "identity") +
-    facet_wrap(~featuretype, ncol=9, scales="free") +
-    theme_pub(legend.position="bottom",
-          axis.title = element_blank())
-
-px_training_ecoli <- ggplot(filter(all_features, set == "ecoli" | species == "Escherichia coli")) +
-    geom_histogram(aes(x=featurevalue, y=..density.., fill= set == "ecoli"), alpha=0.5, position = "identity") +
-    facet_wrap(~featuretype, ncol=9, scales="free") +
-    theme_pub(legend.position="bottom",
-          axis.title = element_blank())
-
-ggsave("plots/training_all_forward.pdf", px_training_forward, width = 22, height = 17)
-ggsave("plots/training_thermophile.pdf", px_training_thermophile, width = 22, height = 17)
-ggsave("plots/training_nycomps.pdf", px_training_nycomps, width = 22, height = 17)
-ggsave("plots/nycomps_thermophile.pdf", px_nycomps_thermophile, width = 22, height = 17)
-ggsave("plots/training_plasmodium.pdf", px_training_plasmodium, width = 22, height = 17)
-ggsave("plots/training_ecoli.pdf", px_training_ecoli, width = 22, height = 17)
-
-getoverlap <- function(set1, set2) {
-    if(length(set1) != 0 & length(set2) != 0) {
-        overlapEst(set1, set2, kmax = 10, adjust = c(0.8, NA, NA))[[1]]
-    } else {
-        NA
+estimate_overlap <- function (A, B, method = 'locfit', n.grid = 2^13) {
+    require(gss)
+    # if both values are only positive
+    # take the log
+#     if(all(A >= 0) & all(A >= 0)) {
+#         A <- log(A)
+#         B <- log(B)
+#     }
+    
+    # if the length of the sets are non-zero, the calculate a KDE
+    if(length(A) == 0 | length(B) == 0) {
+        return(NA)
     }
+    
+    # rangeA <- range(A)
+    # rangeB <- range(B)
+    # range_all <- c(min(rangeA[[1]], rangeB[[1]]), max(rangeA[[2]], rangeB[[2]]))
+    
+    # Calculate Extent
+    range_all <- c(min(A, B), max(A, B))
+    # Set up mesh
+    mesh <- seq(range_all[[1]], range_all[[2]], length = n.grid)
+    
+    if(method == 'gss') {
+        # fit each density independently, set extent with `domain`
+        fitA <- gss::ssden(~A, domain=data.frame(A=range_all))
+        fitB <- gss::ssden(~B, domain=data.frame(B=range_all))
+        
+        # calculate density at each grid point
+        densityA <- gss::dssden(fitA, mesh)
+        densityB <- gss::dssden(fitB, mesh)
+    } else if(method == 'locfit') {
+        # calculate density at each grid point
+        densityA <- locfit::density.lf(A, ev = mesh, maxit = 10000)$y
+        densityB <- locfit::density.lf(B, ev = mesh, maxit = 10000)$y
+    } else if(method == 'logspline') {
+        # Doesn't work for edge cases, e.g. freqens
+ #       tryCatch({
+            fitA <- logspline::logspline(A)
+            fitB <- logspline::logspline(B)
+            
+            densityA <- logspline::dlogspline(mesh, fitA)
+            densityB <- logspline::dlogspline(mesh, fitB)
+  #      },  error = function(e) err <- TRUE)
+    } else {
+        stop("Unrecognized method")
+    }
+    # normalize density to 1
+    densityA <- densityA / sum(densityA)
+    densityB <- densityB / sum(densityB)
+    # calculate overall overlap
+    sum(pmin(densityA, densityB))
 }
 
 getoverlap_thermo <- function(name) {
     set1 <- filter(all_features, thermophile, featuretype == name, !is.na(featurevalue))$featurevalue
     set2 <- filter(all_features, set == "ecoli", featuretype == name, !is.na(featurevalue))$featurevalue
-    getoverlap(set1, set2)
+    estimate_overlap(set1, set2)
 }
 
 getoverlap_set <- function(name, settype) {
     set1 <- filter(all_features, set == settype, featuretype == name, !is.na(featurevalue))$featurevalue
     set2 <- filter(all_features, set == "ecoli", featuretype == name, !is.na(featurevalue))$featurevalue
-    getoverlap(set1, set2)
+    estimate_overlap(set1, set2)
 }
 
 getoverlap_species <- function(name, speciesname) {
     set1 <- filter(all_features, species == speciesname, featuretype == name, !is.na(featurevalue))$featurevalue
     set2 <- filter(all_features, set == "ecoli", featuretype == name, !is.na(featurevalue))$featurevalue
-    getoverlap(set1, set2)
+    estimate_overlap(set1, set2)
+}
+name <- 'freqens'
+getoverlap_thermo('freqens')
+
+for(i in unique(all_features$featuretype)) {
+    print(c(i, getoverlap_thermo(i)))
+}
+
+# temp <- filter(all_features, featuretype == 'tAI')
+# temp2 <- npudens(~ temp)
+# temp3 <- head(temp$featurevalue, n=100)
+
+overlap_locfit <- overlap
+# overlap$ecoli <- mclapply(unique(all_features$featuretype), getoverlap_species, speciesname = "Escherichia coli", 
+#                   mc.cores = 12, mc.preschedule = FALSE) %>% simplify2array
+    
+overlap <- data.frame(
+    feature = unique(all_features$featuretype),
+    thermo = mclapply(unique(all_features$featuretype), getoverlap_thermo, 
+                      mc.cores = 12, mc.preschedule = FALSE) %>% simplify2array,
+    nycomps = mclapply(unique(all_features$featuretype), getoverlap_set, settype = "nycomps", 
+                       mc.cores = 12, mc.preschedule = FALSE) %>% simplify2array,
+    forward = mclapply(unique(all_features$featuretype), getoverlap_set, settype = "forward", 
+                       mc.cores = 12, mc.preschedule = FALSE) %>% simplify2array,
+    pf = mclapply(unique(all_features$featuretype), getoverlap_species, speciesname = "Plasmodium falciparum", 
+                  mc.cores = 12, mc.preschedule = FALSE) %>% simplify2array,
+    ecoli = mclapply(unique(all_features$featuretype), getoverlap_species, speciesname = "Escherichia coli", 
+                  mc.cores = 12, mc.preschedule = FALSE) %>% simplify2array,
+    stringsAsFactors = FALSE)
+
+p4_ecoli_dist <- ggplot(overlap) + 
+    geom_vline(xintercept = 0.75, size = 0.7, linetype = "dotted", color = "#00b1b9") +
+    geom_point(aes(x=ecoli,y=1), shape=17, alpha = 0.5, size = 0.4) +
+    scale_x_continuous(expand = c(0,0), limits=c(0,1)) +
+    xlab("E. coli vs E. coli (Training Set)") +
+    theme_pub(axis.title.y = element_blank(),
+              axis.text.y = element_blank(),
+              axis.line.y = element_blank(),
+              axis.ticks.y = element_blank())
+
+selected_features <- data.frame(
+    feature = c("seqLen", "GC", "tAI", "CPS", "relareaSD", "zeroto38avgRNAss",
+              "pI", "membrCont", "numPosNormCyt", "delGallTMs", "len1_2loop", "avgRONN"),
+    x = c(1300, 0.7, 0.4, 100, 0.29, 0.8, 12, 450, .9, 3.5, 480, 0.7),
+    y = c(0.0025, 14, 16, 0.018, 28, 5, 0.48, 0.016, 6, 0.5, 0.03, 12), stringsAsFactors = FALSE)
+
+selected_features <- gdata:::interleave(selected_features[1:6,], selected_features[7:12,]) %>% 
+    inner_join(overlap) %>%
+    mutate(featuretype = factor(feature, levels = selected_features$feature),
+           plotlabel = paste0(specify_decimal(thermo, k=2), "\n", specify_decimal(pf, k=2)))
+
+selected_density <- foreach(thisfeat=selected_features$feature, .combine = rbind) %dopar% {
+
+    thermo <- filter(all_features, thermophile, featuretype == thisfeat, !is.na(featurevalue))$featurevalue
+    pf <- filter(all_features, species == "Plasmodium falciparum", featuretype == thisfeat, !is.na(featurevalue))$featurevalue
+    
+    training <- filter(all_features, set == "ecoli", featuretype == thisfeat, !is.na(featurevalue))$featurevalue
+    range_all <- range(c(thermo, pf, training))
+    
+    # calculate density at each grid point
+#     locfit_thermo <- locfit::locfit(~lp(thermo, adpen = 1.05 * 2*var(thermo), deg=2), 
+#                                     ev = lfgrid(mg = 2^13, ll = range_all[[1]], ur = range_all[[2]]),
+#                                     maxk = 500, maxit = 500)
+
+#     locfit_thermo <- locfit::locfit(~thermo, alpha = c(0, 0, 1.05 * 2*var(thermo)))
+#                                     ev = lfgrid(mg = 2^13, ll = range_all[[1]], ur = range_all[[2]]),
+#                                     maxk = 500, maxit = 500)
+    
+#    locfit_training <- locfit::locfit(~lp(training, nn = 0, h = 0, adpen = 1.05 * 2*var(thermo)), 
+#                                    ev = lfgrid(mg = 2^13, ll = range_all[[1]], ur = range_all[[2]]),
+#                                    maxk = 500, maxit = 500)
+    
+    density_thermo <- locfit::density.lf(lp(thermo, nn = 0, h = 0, adpen = 1.05 * 2*var(thermo)), 
+                                         n = 2^13, from = range_all[[1]], to = range_all[[2]]) %>% data.frame
+        
+    density_thermo <- locfit::density.lf(thermo, alpha = c(0, 0, 2*var(thermo)), n = 2^13, 
+                                         from = range_all[[1]], to = range_all[[2]]) %>% data.frame
+    density_pf <- locfit::density.lf(pf, alpha = c(0, 0, 2*var(pf)), n = 2^13, 
+                                         from = range_all[[1]], to = range_all[[2]]) %>% data.frame
+    density_training <- locfit::density.lf(training, alpha = c(0, 0, 2*var(training)), n = 2^13, 
+                                         from = range_all[[1]], to = range_all[[2]]) %>% data.frame
+
+    # normalize density to 1
+    density_thermo$y <- density_thermo$y / sum(density_thermo$y)
+    density_pf$y <- density_pf$y / sum(density_pf$y)
+    density_training$y <- density_training$y / sum(density_training$y)
+    
+    density_thermo$group <- "Thermophiles"
+    density_pf$group <- "P. falciparum"
+    density_training$group <- "E. coli (Training Data)"
+    
+    # add NA between groups for geom_path with facet_wrap
+    density_thermo <- rbind(density_thermo[1,], density_thermo)
+    density_pf <- rbind(density_pf[1,], density_pf)
+    density_training <- rbind(density_training[1,], density_training)
+    density_thermo[1, c("x", "y")] <- c(NA, NA)
+    density_pf[1, c("x", "y")] <- c(NA, NA)
+    density_training[1, c("x", "y")] <- c(NA, NA)
+
+    df <- rbind(density_thermo, density_pf, density_training)
+    df$feature <- thisfeat
+    df
+}
+
+selected_density$feature <- factor(selected_density$feature, levels = selected_features$feature)
+
+p2ext_feature_dist_prep <- filter(all_features, set == "ecoli" | thermophile | species == "Plasmodium falciparum", 
+                                  featuretype %in% selected_features$feature) %>%
+    mutate(group = "E. coli (Training Data)", 
+           featuretype = factor(as.character(featuretype), levels = selected_features$feature)) %>%
+    # cull some of the features so plots are more meaningful
+    filter(featuretype != 'len1_2loop' | featuretype == 'len1_2loop' & featurevalue < 500) %>%
+    filter(featuretype != 'seqLen' | featuretype == 'seqLen' & featurevalue < 3000)
+
+p2ext_feature_dist_prep[p2ext_feature_dist_prep$thermophile,]$group <- "Thermophiles"
+p2ext_feature_dist_prep[p2ext_feature_dist_prep$species == "Plasmodium falciparum",]$group <- "P. falciparum"
+p2ext_feature_dist_prep$group <- factor(p2ext_feature_dist_prep$group, 
+                                        levels = c("E. coli (Training Data)", "Thermophiles", "P. falciparum"))
+
+# thisgrp <- "Thermophiles"
+# thistype <- "tAI"
+
+p2ext_feature_dist_prep <- foreach(thisgrp=unique(p2ext_feature_dist_prep$group), .combine = rbind) %dopar% {
+    foreach(thistype=unique(p2ext_feature_dist_prep$featuretype), .combine = rbind) %do% {
+            thisdata <- filter(p2ext_feature_dist_prep, featuretype == thistype, group == thisgrp)
+            thisrange <- range(thisdata$featurevalue)
+            nbins <- 50
+            grid <- seq(thisrange[[1]], thisrange[[2]], by = (thisrange[[2]]-thisrange[[1]])/nbins)
+            freqs <- cut(thisdata$featurevalue, breaks = grid, ordered_result = TRUE) %>% table %>% data.frame
+            data.frame(
+                group = thisgrp,
+                featuretype = thistype,
+                x_left = grid[1:length(grid)-1],
+                count = freqs$Freq,
+                density = freqs$Freq / sum(freqs$Freq),
+                labels = freqs$.)
+    }
 }
 
 
-overlap <- data.frame(
-    feature = unique(all_features$featuretype),
-    thermo = mclapply(unique(all_features$featuretype), getoverlap_thermo, mc.cores = 12) %>% simplify2array,
-    nycomps = mclapply(unique(all_features$featuretype), getoverlap_set, settype = "nycomps", mc.cores = 12) %>% simplify2array,
-    forward = mclapply(unique(all_features$featuretype), getoverlap_set, settype = "forward", mc.cores = 12) %>% simplify2array,
-    pf = mclapply(unique(all_features$featuretype), getoverlap_species, speciesname = "Plasmodium falciparum", mc.cores = 12) %>% simplify2array
-    )
+selected_density_plot <- mutate(selected_density, featuretype = feature, featurevalue = x) %>% 
+    filter(featuretype != 'len1_2loop' | featuretype == 'len1_2loop' & featurevalue < 500) %>%
+    filter(featuretype != 'seqLen' | featuretype == 'seqLen' & featurevalue < 3000)
 
-selected_features <- data.frame(
-    names = c("seqLen", "GC", "tAI", "CPS", "relareaSD", "zeroto38avgRNAss",
-              "pI", "membrCont", "numPosNormCyt", "delGallTMs", "len1_2loop", "avgRONN"),
-    x = c(1300, 0.7, 0.4, 100, 0.29, 0.8, 12, 450, .9, 3.5, 480, 0.7),
-    y = c(0.0025, 14, 16, 0.018, 28, 5, 0.48, 0.016, 6, 0.5, 0.03, 12))
 
-selected_features <- gdata:::interleave(selected_features[1:6,], selected_features[7:12,]) %>%
-    inner_join(overlap, by = c("names", "feature"))
-
-px_selected <- ggplot(filter(all_features, set == "ecoli" | thermophile, featuretype %in% selected_features) %>%
-                          mutate(featuretype = factor(as.character(featuretype), levels = selected_features),
-                                 thermophile = factor(thermophile, levels = c(FALSE, TRUE)))) +
-    geom_histogram(aes(x=featurevalue, y=..density.., fill=thermophile), alpha=0.5, position = "identity") +
-    geom_text(aes(x = 1, y = 1, label = specify_decimal(thermo, k=2)), size = 5*5/14) + 
-    scale_fill_manual(values = brewer.pal(3, "Dark2"), labels=c("FALSE" = "E. coli", "TRUE" = "Thermophiles")) + 
+pext2_feature_dist <- ggplot(p2ext_feature_dist_prep) +
+     geom_histogram(aes(x=featurevalue, y=..density.., fill=group), alpha=0.7, position = "identity", bins = 50) +
+    geom_text(aes(x = x, y = y, label = specify_decimal(thermo, k=2)), size = 5*5/14, color = brewer.pal(3, "Dark2")[[2]],
+              data = selected_features) + 
+    geom_text(aes(x = x, y = y*.9, label = specify_decimal(pf, k=2)), size = 5*5/14, color = brewer.pal(3, "Dark2")[[3]],
+              data = selected_features) + 
+#    geom_line(aes(x=x, y=y, color=group), data = selected_density_plot) + 
+    scale_fill_manual(values = brewer.pal(3, "Dark2")) + 
+    scale_color_manual(values = brewer.pal(3, "Dark2")) + 
     scale_y_continuous(expand=c(0,0)) + 
     scale_x_continuous(expand=c(0,0)) +
     xlab("Value") + ylab("Density") + 
@@ -2480,68 +2709,74 @@ px_selected <- ggplot(filter(all_features, set == "ecoli" | thermophile, feature
     theme_pub(legend.position="bottom",
           axis.title = element_blank(),
           legend.title = element_blank(),
-          legend.margin = unit(c(-.0115,0,0,0), "npc"))
+          legend.margin = unit(c(-.0115,0,0,0), "npc")) 
 
-p_selected_features_labels <- ggplot(filter(overlap, feature %in% selected_features) %>%
-                                         mutate(feature = factor(as.character(feature), levels = selected_features))) +
-    geom_text(aes(x = 1, y = 1, label = specify_decimal(thermo, k=2)), size = 5*5/14) + 
-    facet_wrap(~feature, ncol = 2) + 
-    theme_pub(strip.text = element_blank(),
-              axis.line = element_blank(),
-           #   axis.title = element_blank(),
-              axis.text = element_blank(),
-              axis.ticks = element_blank())
-
-
-pext2_thermo <- ggplot(select(overlap, -pf) %>% gather(name, value, nycomps:forward), 
-                       aes(x=thermo, y=value, label=feature, color=factor(name))) +
-    geom_point() + 
+pext2_thermo <- ggplot(overlap, aes(x=nycomps, y=thermo, label=feature)) +
+    geom_hline(yintercept = 0.75, linetype = "dotted", size = 0.7, color = "#00b1b9") + 
+    geom_vline(xintercept = 0.75, linetype = "dotted", size = 0.7, color = "#00b1b9") +
+    geom_abline(color="grey", linetype="dashed") +
+    geom_point(size=0.25) + 
     #geom_text(size = 5*5/14, nudge_y = .005) +
-    geom_segment(aes(x = thermo, xend = thermo, y = nycomps, yend = forward), color = "black", size = 0.25,
-                 arrow = arrow(length = unit(3, "pt"), type = "closed"), data = overlap) +
-    xlab("Thermophiles vs. E. coli") +
-    ylab("NYCOMPS vs. E. coli − Forward vs. E. coli") +
+#    geom_segment(aes(x = thermo, xend = thermo, y = nycomps, yend = forward), color = "black", size = 0.25,
+#                 arrow = arrow(angle = 30, length = unit(1.25, "pt"), type = "closed"), data = overlap) +
+    xlab("NYCOMPS vs. Training") +
+    ylab("Thermophiles vs. Training") +
     scale_x_continuous(limits = c(0,1), expand = c(0,0)) +
     scale_y_continuous(limits = c(0,1), expand = c(0,0)) +
-    theme_pub(legend.position=c(.9, .1), aspect.ratio = 1)
+    theme_pub(legend.position="none", legend.title = element_blank(), aspect.ratio = 1)
 
-
-pext2_pf <- ggplot(select(overlap, -thermo) %>% gather(name, value, nycomps:forward), 
-                       aes(x=pf, y=value, label=feature, color=factor(name))) +
-    geom_point() + 
+pext2_pf <- ggplot(overlap, aes(x=nycomps, y=pf, label=feature)) +
+    geom_hline(yintercept = 0.75, linetype = "dotted", size = 0.7, color = "#00b1b9") + 
+    geom_vline(xintercept = 0.75, linetype = "dotted", size = 0.7, color = "#00b1b9") +
+    geom_abline(color="grey", linetype="dashed") +
+    geom_point(size=0.25) + 
     #geom_text(size = 5*5/14, nudge_y = .005) +
-    geom_segment(aes(x = pf, xend = pf, y = nycomps, yend = forward), color = "black", size = 0.25,
-                 arrow = arrow(length = unit(3, "pt"), type = "closed"), data = overlap) +
-    xlab("P. falciparum vs. E. coli") +
-    ylab("NYCOMPS vs. E. coli − Forward vs. E. coli") +
+    xlab("NYCOMPS vs. Training") +
+    ylab("P. falciparum vs. Training") +
+    scale_color_manual(values = brewer.pal(3, "Dark2")[2:1]) + 
+  #  scale_linetype_manual(values = 1) +
     scale_x_continuous(limits = c(0,1), expand = c(0,0)) +
     scale_y_continuous(limits = c(0,1), expand = c(0,0)) +
-    theme_pub(legend.position=c(.9, .1), aspect.ratio = 1)
+    theme_pub(legend.position="none", legend.title = element_blank(), aspect.ratio = 1)
 
 pext2_nycomps_forward <- ggplot(overlap, aes(x=nycomps, y=forward, label=feature)) +
+    geom_hline(yintercept = 0.75, linetype = "dotted", size = 0.7, color = "#00b1b9") + 
+    geom_vline(xintercept = 0.75, linetype = "dotted", size = 0.7, color = "#00b1b9") +
     geom_abline(color="grey", linetype="dashed") +
  #   geom_segment(x=.75, xend=.75, y = 0, yend = .75) + 
-    geom_point(size = 0.25) + geom_text(size = 8*5/14, nudge_y = .005) +
-    xlab("NYCOMPS vs. E. coli") +
-    ylab("Forward vs. E. coli") +
+    geom_point(size = 0.25) + 
+#    geom_text(size = 5*5/14, nudge_y = .005) +
+    xlab("NYCOMPS vs. Training") +
+    ylab("Forward vs. Training") +
     scale_x_continuous(limits = c(0,1), expand = c(0,0)) +
     scale_y_continuous(limits = c(0,1), expand = c(0,0)) +
-    theme(legend.position="bottom", aspect.ratio = 1)
+    theme_pub(aspect.ratio = 1)
 
-p_feature <- 
-    plot_grid(pext2_nycomps_forward, pext2_thermo, pext2_pf, labels = letters[1:3], label_size = 8, ncol = 1, align = "h")
+# Mean absolute deviations:
+mean(abs(overlap$nycomps - overlap$forward), na.rm = TRUE)
+mean(abs(overlap$pf - overlap$nycomps), na.rm = TRUE)
+mean(abs(overlap$thermo - overlap$nycomps), na.rm = TRUE)
 
 
 p4_main <- ggdraw() + 
-    draw_plot(plot_grid(p4_ecoli, p4_nvector_ppv, nrow = 1, align = "hv"), x = 0, y = 0, width = 1, height = .33) +
-    draw_plot(p4_selected_violin, x = 0, y = .33, width = 1, height = .69) +
-    draw_plot_label(letters[1:3], c(0, 0, 0.48), c(1, .35, .35), size = 8)
+    draw_plot(plot_grid(p4_ecoli, p4_nvector_ppv, nrow = 1, align = "h"), x = -.01, y = 0, width = .72, height = .25) +
+    draw_plot(plot_grid(p4_ecoli_dist, pext2_nycomps_forward, pext2_thermo, pext2_pf, 
+                        labels = letters[4:7], label_size = 8, ncol = 1, align = "hv", rel_heights = c(1, 3, 3, 3)),
+              x = .72, y = 0, width = .27, height = 1) +
+#    draw_label("NYCOMPS vs. E. coli (Training) -> Forward vs. E. coli (Training)", angle = 90, size = 7,
+#               x = .73, y = .33) +
+    draw_plot(p4_selected_violin, x = 0, y = .25, width = .72, height = .79) +
+    draw_plot_label(letters[1:3], c(0, 0, 0.33), c(1, .28, .28), size = 8)
 
-save_plot(filename = "plots/fig4_w_panels.pdf", plot = p4_main, base_width = uconv(120, "mm", "in", "Length"))
+save_plot(filename = "plots/fig4_w_panels_new.pdf", plot = p4_main,
+          base_width = uconv(136, "mm", "in", "Length"),
+          base_height = 4.5)
+
+pext2 <- plot_grid(p4_all_violin, pext2_feature_dist, rel_widths = c(2,1), labels = letters[1:2], label_size = 8, ncol = 2)
 
 # RGB by default
 save_plot(filename = "plots/extfig2.pdf", 
-          plot = plot_grid(px_selected, p4_all_violin, rel_widths = c(1,2), labels = letters[1:2], label_size = 8, ncol = 2), 
+          plot = pext2, 
           base_width = uconv(183, "mm", "in", "Length"), base_height = 7,
           dpi = 300)
 
