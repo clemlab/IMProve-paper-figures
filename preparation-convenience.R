@@ -1,0 +1,359 @@
+# A set of functions written to make data munging and preparation easier
+
+specify_decimal <- function(x, k) format(round(x, k), nsmall=k)
+
+substrRight <- function(x, n){
+    substr(x, nchar(x)-n+1, nchar(x))
+}
+
+perc.rank <- function(x) trunc(rank(x))/length(x)
+perc_rank_single <- function(x, xo)  length(x[x <= xo])/length(x)*100
+
+rem_extrema <- function(x, max = TRUE, min = TRUE) {
+    x <- data.frame(V1 = x, V2 = x)
+    if (max & min) {
+        x[x$V1 != min(x$V1) & x$V1 != max(x$V1), ]$V1
+    }
+    else if (max) {
+        x[x$V1 != max(x$V1), ]$V1
+    }
+    else if (min) {
+        x[x$V1 != min(x$V1), ]$V1
+    }
+    else {
+        x
+    }
+}
+
+getname <- function(vector, token = 1) {
+    vector <- as.character(vector)
+    unlist(lapply(vector, function(x) strsplit(x, "[[:space:]]|(?=[|])", perl=TRUE)[[1]][token]))
+}
+
+fd_bw <- function (x) { 2 * IQR(x) * length(x)^(-1/3) }
+
+level_ranks <- function(x, extra_starting_level = FALSE) {
+    x <- as.numeric(factor(x))
+    x_levels <- unique(x)
+    
+    if(extra_starting_level) {
+        x_levels <- c(min(x_levels)-1, x_levels)
+    }
+    map_df <- data.frame(old = x_levels, 
+                         new = percent_rank(x_levels))
+    map_df$new[match(x, map_df$old)]
+}
+
+# modified from from asbio::ConDis.matrix  http://www.inside-r.org/packages/cran/asbio/docs/ConDis.matrix
+ConDis.matrix2 <- function (Y1, Y2) 
+{
+    n <- length(Y1)
+    m <- as.data.frame(matrix(nrow = n, ncol = n, dimnames = list(seq(1, 
+                                                                      n), seq(1, n))))
+    foreach (i=1:n, .combine = 'c') %do% {
+        foreach (j=i:n, .combine = 'c') %do% { # changed bounds from 1:n to i:n
+            ifelse((Y1[i] > Y1[j] & Y2[i] > Y2[j]) | (Y1[i] < Y1[j] & Y2[i] < Y2[j]), 1,
+                   ifelse((Y1[i] < Y1[j] & Y2[i] > Y2[j]) | (Y1[i] > Y1[j] & Y2[i] < Y2[j]), -1, 0))
+        }
+    }
+    #    m[upper.tri(m, diag = TRUE)] <- NA
+    #    m
+}
+
+# analytic method (didn't end up using this)
+spearman_95ci <- function(spearman, nobs) {
+    # http://stats.stackexchange.com/questions/18887/how-to-calculate-a-confidence-interval-for-spearmans-rank-correlation
+    # http://www.ncss.com/wp-content/themes/ncss/pdf/Procedures/PASS/Confidence_Intervals_for_Spearmans_Rank_Correlation.pdf
+    base <- atanh(spearman)
+    delta <- 1.96/sqrt(nobs-3)
+    c(tanh(base - delta), tanh(base + delta))
+}
+
+estimate_overlap <- function (A, B, method = 'locfit', n.grid = 2^13) {
+    require(gss)
+    # if both values are only positive
+    # take the log
+    #     if(all(A >= 0) & all(A >= 0)) {
+    #         A <- log(A)
+    #         B <- log(B)
+    #     }
+    
+    # if the length of the sets are non-zero, the calculate a KDE
+    if(length(A) == 0 | length(B) == 0) {
+        return(NA)
+    }
+    
+    # rangeA <- range(A)
+    # rangeB <- range(B)
+    # range_all <- c(min(rangeA[[1]], rangeB[[1]]), max(rangeA[[2]], rangeB[[2]]))
+    
+    # Calculate Extent
+    range_all <- c(min(A, B), max(A, B))
+    # Set up mesh
+    mesh <- seq(range_all[[1]], range_all[[2]], length = n.grid)
+    
+    if(method == 'gss') {
+        # fit each density independently, set extent with `domain`
+        fitA <- gss::ssden(~A, domain=data.frame(A=range_all))
+        fitB <- gss::ssden(~B, domain=data.frame(B=range_all))
+        
+        # calculate density at each grid point
+        densityA <- gss::dssden(fitA, mesh)
+        densityB <- gss::dssden(fitB, mesh)
+    } else if(method == 'locfit') {
+        # calculate density at each grid point
+        densityA <- locfit::density.lf(A, ev = mesh, maxit = 10000)$y
+        densityB <- locfit::density.lf(B, ev = mesh, maxit = 10000)$y
+    } else if(method == 'logspline') {
+        # Doesn't work for edge cases, e.g. freqens
+        #       tryCatch({
+        fitA <- logspline::logspline(A)
+        fitB <- logspline::logspline(B)
+        
+        densityA <- logspline::dlogspline(mesh, fitA)
+        densityB <- logspline::dlogspline(mesh, fitB)
+        #      },  error = function(e) err <- TRUE)
+    } else {
+        stop("Unrecognized method")
+    }
+    # normalize density to 1
+    densityA <- densityA / sum(densityA)
+    densityB <- densityB / sum(densityB)
+    # calculate overall overlap
+    sum(pmin(densityA, densityB))
+}
+
+calc_auc_roc <- function(data, grouping_col, outcome_col, score_col = "ml21", method = "auc") {
+    require(foreach)
+    
+    foreach(this_group = data[, grouping_col] %>% unique, .combine = rbind) %do% {
+        this_subset <- data[data[, grouping_col] == this_group, ]
+        
+        # within each grouping and go through each activity
+        foreach(this_threshold = this_subset[, outcome_col] %>% unique %>% rem_extrema(max = FALSE), .combine = rbind) %dopar% {
+            # take all activities greater than the current one as true
+            this_response <- this_subset[, outcome_col] >= this_threshold
+            this_perc_rank <- perc_rank_single(this_subset[, outcome_col], this_threshold)
+            
+            results_df <- data.frame(grouping_col = grouping_col,
+                                     group = this_group,
+                                     outcome_threshold = this_threshold,
+                                     outcome_percentile = this_perc_rank,
+                                     stringsAsFactors = FALSE)
+            
+            if(method == "auc") {
+                ci_obj <- ci.auc(response = this_response,
+                                 predictor = this_subset[, score_col],
+                                 direction = "<",
+                                 method = "delong")
+                data.frame(
+                    results_df,
+                    count = nrow(this_subset),
+                    pos_count = sum(this_response),
+                    lower95 = ci_obj[[1]],
+                    auc = ci_obj[[2]],
+                    upper95 = ci_obj[[3]],
+                    stringsAsFactors = FALSE
+                )
+            } else if (method == "roc") {
+                data.frame(
+                    results_df,
+                    my_roc(response = this_response,
+                           predictor = this_subset[, score_col],
+                           direction = "<"),
+                    stringsAsFactors = FALSE
+                )
+            }
+        }
+    }
+} 
+
+my_roc <- function(...) {
+    require(pROC)
+    require(dplyr)
+    pROC_outcome <- roc(...)
+    pROC_outcome$ppv <- foreach(thisthreshold = pROC_outcome$thresholds, .combine='c') %dopar% {
+        truepos <- sum(pROC_outcome$cases >= thisthreshold)
+        predpos <- sum(c(pROC_outcome$cases, pROC_outcome$controls) >= thisthreshold)
+        truepos/predpos
+    }
+    pROC_outcome$npv <- foreach(thisthreshold = pROC_outcome$thresholds, .combine='c') %dopar% {
+        trueneg <- sum(pROC_outcome$controls <= thisthreshold)
+        predneg <- sum(c(pROC_outcome$cases, pROC_outcome$controls) <= thisthreshold)
+        trueneg/predneg
+    }
+    pROC_outcome$threshold_percentiles <- percent_rank(pROC_outcome$thresholds)
+    pROC_outcome$min_ppv <- length(pROC_outcome$cases) / (length(pROC_outcome$cases) + length(pROC_outcome$controls))
+    pROC_outcome$min_npv <- length(pROC_outcome$controls) / (length(pROC_outcome$cases) + length(pROC_outcome$controls))
+    #    pROC_outcome$pos_count <- length(pROC_outcome$cases)
+    pROC_outcome[c("thresholds", "threshold_percentiles", "sensitivities","specificities","ppv", "min_ppv", "npv", "min_npv")]
+}
+
+
+# http://stackoverflow.com/a/34859307/2320823
+GeomStepHist <- ggproto("GeomStepHist", GeomPath,
+                        required_aes = c("x"),
+                        
+                        draw_panel = function(data, panel_scales, coord, direction) {
+                            data <- as.data.frame(data)[order(data$x), ]
+                            
+                            n <- nrow(data)
+                            i <- rep(1:n, each=2)
+                            newdata <- rbind(
+                                transform(data[1, ], x=x - width/2, y=0),
+                                transform(data[i, ], x=c(rbind(data$x-data$width/2, data$x+data$width/2))),
+                                transform(data[n, ], x=x + width/2, y=0)
+                            )
+                            rownames(newdata) <- NULL
+                            
+                            GeomPath$draw_panel(newdata, panel_scales, coord)
+                        }
+)
+
+geom_step_hist <- function(mapping = NULL, data = NULL, stat = "bin",
+                           direction = "hv", position = "stack", na.rm = FALSE, 
+                           show.legend = NA, inherit.aes = TRUE, ...) {
+    layer(
+        data = data,
+        mapping = mapping,
+        stat = stat,
+        geom = GeomStepHist,
+        position = position,
+        show.legend = show.legend,
+        inherit.aes = inherit.aes,
+        params = list(
+            direction = direction,
+            na.rm = na.rm,
+            ...
+        )
+    )
+}
+
+# GeomPolygon2, GeomViolin2, geom_violin2
+# Used to create a violin plot where alpha pertain only to fill (not outline)
+# http://stackoverflow.com/questions/34754357/fill-transparency-with-geom-violin/34762360#34762360
+GeomPolygon2 <- ggproto("GeomPolygon2", Geom,
+                        draw_panel = function(data, panel_scales, coord) {
+                            n <- nrow(data)
+                            if (n == 1) return(zeroGrob())
+                            munched <- coord_munch(coord, data, panel_scales)
+                            munched <- munched[order(munched$group), ]
+                            first_idx <- !duplicated(munched$group)
+                            first_rows <- munched[first_idx, ]
+                            ggplot2:::ggname("geom_polygon",
+                                             polygonGrob(munched$x, munched$y, default.units = "native",
+                                                         id = munched$group,
+                                                         gp = gpar(
+                                                             col = first_rows$colour,
+                                                             fill = alpha(first_rows$fill, first_rows$alpha),
+                                                             lwd = first_rows$size * .pt,
+                                                             lty = first_rows$linetype
+                                                         )
+                                             )
+                            )
+                        },
+                        default_aes = aes(colour = "NA", fill = "grey20", size = 0.5, linetype = 1,
+                                          alpha = NA),
+                        handle_na = function(data, params) {
+                            data
+                        },
+                        required_aes = c("x", "y"),
+                        draw_key = draw_key_polygon
+)
+
+GeomViolin2 <- ggproto("GeomViolin", Geom,
+                       setup_data = function(data, params) {
+                           data$width <- data$width %||%
+                               params$width %||% (resolution(data$x, FALSE) * 0.9)
+                           plyr::ddply(data, "group", transform,
+                                       xmin = x - width / 2,
+                                       xmax = x + width / 2
+                           )
+                       },
+                       
+                       draw_group = function(self, data, ..., draw_quantiles = NULL) {
+                           data <- transform(data,
+                                             xminv = x - violinwidth * (x - xmin),
+                                             xmaxv = x + violinwidth * (xmax - x)
+                           )
+                           newdata <- rbind(
+                               plyr::arrange(transform(data, x = xminv), y),
+                               plyr::arrange(transform(data, x = xmaxv), -y)
+                           )
+                           newdata <- rbind(newdata, newdata[1,])
+                           if (length(draw_quantiles) > 0) {
+                               stopifnot(all(draw_quantiles >= 0), all(draw_quantiles <= 1))
+                               quantiles <- create_quantile_segment_frame(data, draw_quantiles)
+                               aesthetics <- data[
+                                   rep(1, nrow(quantiles)),
+                                   setdiff(names(data), c("x", "y")),
+                                   drop = FALSE
+                                   ]
+                               both <- cbind(quantiles, aesthetics)
+                               quantile_grob <- GeomPath$draw_panel(both, ...)
+                               ggplot2:::ggname("geom_violin", grobTree(
+                                   GeomPolygon2$draw_panel(newdata, ...),
+                                   quantile_grob)
+                               )
+                           } else {
+                               ggplot2:::ggname("geom_violin", GeomPolygon2$draw_panel(newdata, ...))
+                           }
+                       },
+                       draw_key = draw_key_polygon,
+                       default_aes = aes(weight = 1, colour = "grey20", fill = "white", size = 0.5,
+                                         alpha = NA, linetype = "solid"),
+                       required_aes = c("x", "y")
+)
+
+geom_violin2 <- function(mapping = NULL, data = NULL, stat = "ydensity",
+                         draw_quantiles = NULL, position = "dodge",
+                         trim = TRUE, scale = "area",
+                         na.rm = FALSE, show.legend = NA, inherit.aes = TRUE,
+                         ...) {
+    layer(
+        data = data,
+        mapping = mapping,
+        stat = stat,
+        geom = GeomViolin2,
+        position = position,
+        show.legend = show.legend,
+        inherit.aes = inherit.aes,
+        params = list(
+            trim = trim,
+            scale = scale,
+            draw_quantiles = draw_quantiles,
+            na.rm = na.rm,
+            ...
+        )
+    )
+}
+
+change_cell <- function(table, row, col, name="core", tnew=NA, bnew=NA, lnew=NA, rnew=NA, znew=TRUE) {
+    l <- table$layout
+    
+    ind_fg = which(l$t==row & l$l==col & l$name==paste0(name, '-fg'))
+    ind_bg = which(l$t==row & l$l==col & l$name==paste0(name, '-bg'))
+    
+    if(!is.na(tnew)) {
+        table$layout[ind_fg, 't'] <- tnew
+        table$layout[ind_bg, 't'] <- tnew
+    }
+    if(!is.na(bnew)) {
+        table$layout[ind_fg, 'b'] <- bnew
+        table$layout[ind_bg, 'b'] <- bnew
+    }
+    if(!is.na(lnew)) {
+        table$layout[ind_fg, 'l'] <- lnew
+        table$layout[ind_bg, 'l'] <- lnew
+    }
+    if(!is.na(rnew)) {
+        table$layout[ind_fg, 'r'] <- rnew
+        table$layout[ind_bg, 'r'] <- rnew
+    }
+    if(znew) {
+        zpos <- max(p2_auc_table$layout$z)
+        table$layout[ind_fg, 'z'] <- zpos+1
+        table$layout[ind_bg, 'z'] <- zpos
+    }
+    table
+}
