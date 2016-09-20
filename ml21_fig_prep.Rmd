@@ -1,5 +1,5 @@
 ---
-title: "ml21_fig_prep_v7"
+title: "ml21_fig_prep_v8"
 author: "Shyam Saladi"
 date: "11/20/2015"
 output: html_document
@@ -11,6 +11,7 @@ library(ggplot2)
 library(ggbeeswarm) # https://github.com/eclarke/ggbeeswarm
 library(ggthemes)
 library(cowplot)
+library(gtable)
 library(grid)
 library(gridExtra)
 library(scales)
@@ -41,6 +42,8 @@ Careful not to re-overwrite things! If you do, then load the dataset given above
 
 # figure preparation and helper functions
 ```{r}
+specify_decimal <- function(x, k) format(round(x, k), nsmall=k)
+
 substrRight <- function(x, n){
   substr(x, nchar(x)-n+1, nchar(x))
 }
@@ -54,7 +57,7 @@ theme_pub <- function(base_size = 7, base_family = "Helvetica", ...)
     theme_bw(base_size = base_size, base_family = base_family) +
         theme(
             ..., 
-            legend.key.size = unit(0.5, "cm"),
+            legend.key.size = unit(0.25, "cm"),
             
             legend.background = element_blank(),
             legend.key = element_blank(),
@@ -78,7 +81,7 @@ theme_pub <- function(base_size = 7, base_family = "Helvetica", ...)
             axis.title = element_text(family = base_family, size = base_size, colour = "black", face = "plain"),
             
             legend.title = bold_txt,
-            legend.text = txt
+            legend.text = element_text(family = base_family, size = base_size-1, colour = "black", face = "plain")
         )
 }
 
@@ -248,6 +251,12 @@ geom_violin2 <- function(mapping = NULL, data = NULL, stat = "ydensity",
     )
   )
 }
+
+find_cell <- function(table, row, col, name="core-fg"){
+  l <- table$layout
+  which(l$t==row & l$l==col & l$name==name)
+}
+
 ```
 
 
@@ -329,10 +338,16 @@ ecoli_roc <- foreach (thiscterm = unique(ecoli_training$cterm), .combine='rbind'
         # take all activities greater than the current one as true
         thisquantile <- quantile(thisgroup$outcome, probs = thispercentile/100, na.rm = TRUE, names = FALSE)
         thisresponse <- thisgroup$outcome > thisquantile
+        
+        thisci <- ci.auc(response = thisresponse, predictor = thisgroup$ml21, direction = "<")
+        
         data.frame(
             cterm = thiscterm,
             quantile = thisquantile,
             percentile = thispercentile,
+            lower95 = thisci[[1]], 
+            auc = thisci[[2]],
+            upper95 = thisci[[3]],
             my_roc(response = thisresponse, predictor = thisgroup$ml21, direction = "<")
             )
     }
@@ -395,7 +410,7 @@ ecoli_stats <- ecoli_training %>%
               genes = length(unique(ID)),
               observations = length(ID)) %>%
     inner_join(ecoli_cor, by = c("cterm" = "cterm")) %>%
-#    select(-disconcor, -concor) %>%
+    select(-disconcor, -concor) %>%
     rename(total_pairs = total) %>% 
     data.frame
 
@@ -405,13 +420,13 @@ ecoli_stats <- select(ecoli_stats, -cterm)
 
 ecoli_stats$kendall <- round(ecoli_stats$kendall, 3)
 
-colnames(ecoli_stats) <- c("Plates", "Genes", "Observations", "Concordant Pairs", 
-                           "Disconcordant Pairs", "Total Pairs", "Kendall's τ")
+colnames(ecoli_stats) <- c("Plates", "Genes", "Observations", # "Concordant Pairs", "Disconcordant Pairs", 
+                           "Total Pairs", "Kendall's τ")
 
 table_theme <-  ttheme_default(
-    core = list(fg_params=list(cex = 0.45)),
-    colhead = list(fg_params=list(cex = 0.45)),
-    rowhead = list(fg_params=list(cex = 0.45, parse=TRUE)),
+    core = list(fg_params=list(fontsize = 6)),
+    colhead = list(fg_params=list(fontsize = 6)),
+    rowhead = list(fg_params=list(fontsize = 6, parse=TRUE)),
     padding = unit(c(2, 3), "mm"))
 
 tab <- tableGrob(data.frame(t(ecoli_stats)), theme = table_theme, 
@@ -451,10 +466,21 @@ p1_ecoli_auc <- ggplot(ecoli_auc, aes(x=response_threshold_percentile*100, color
     xlab("Activity Percentile") + 
     scale_color_manual(values = brewer.pal(3, "Dark2")) +
     theme_pub(legend.position = "None")
-    
-p1_ecoli_roc <- ggplot(filter(ecoli_roc, percentile %in% c(15, 25, 50, 97))) + 
+
+ecoli_selected_auc <- filter(ecoli_roc, percentile %in% c(50, 97)) %>%
+    select(cterm, percentile, lower95, auc, upper95) %>%
+    distinct() %>%
+    mutate(cterm = factor(cterm),
+           auc = specify_decimal(auc*100, k = 1),
+           lower95 = specify_decimal(lower95*100, k = 1),
+           upper95 = specify_decimal(upper95*100, k = 1),
+           ci = paste0(auc, " (", lower95, "-", upper95, ")"))
+
+p1_ecoli_roc <- ggplot(filter(ecoli_roc, percentile %in% c(50, 97))) + 
     geom_path(aes(x=100-specificities*100, y=sensitivities*100, color = cterm)) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
+    geom_text(aes(x = 80, y = 8*(4-as.numeric(cterm))-3, color = cterm, label = ci), size = 5*5/14,
+             data = ecoli_selected_auc) +
     scale_y_continuous(expand = c(0, 0)) +
     scale_x_continuous(expand = c(0, 0)) +
     xlab("False Positive Rate") + ylab("True Positive Rate") + 
@@ -462,10 +488,24 @@ p1_ecoli_roc <- ggplot(filter(ecoli_roc, percentile %in% c(15, 25, 50, 97))) +
     facet_wrap(~percentile, nrow=1, scales = "free")  +
     theme_pub(legend.position = "None", aspect.ratio = 1)
 
+p1_ecoli_xy <- ggplot(filter(ecoli_training, cterm != "out"), aes(x = ml21, y = outcome)) +t 
+    stat_summary(fun.ymin = min, fun.ymax = max, geom = "linerange", size = 0.25) +
+    stat_summary(fun.y = mean, geom="point", size = .75, shape = 21) +
+    geom_smooth(aes(color = cterm), method=lm, se = FALSE, fullrange=TRUE, size = 0.5)  +
+    scale_y_continuous(expand = c(.01, 0)) +
+    scale_x_continuous(expand = c(.01, 0.01)) +
+    scale_color_manual(values = brewer.pal(3, "Dark2")[c(1,3)]) + 
+    ylab("Mean Normalized Activity") +
+    xlab(expression( paste( "SVM"^"rank", " score"))) + 
+    theme_pub(legend.position = "None",
+              strip.text = element_blank()) +
+    facet_wrap(~cterm, ncol=2, scales = "free")
+
 p1_main <- plot_grid(p1_table, nrow = 2, ncol = 2) +
-  draw_plot(p1_ecoli_auc, .5, .5, .5, .5) +
-  draw_plot(p1_ecoli_roc, 0, 0, 1, .5) +
-  draw_plot_label(LETTERS[1:3], c(0, 0.5, 0), c(1, 1, 0.5)) #, size = 15)
+    draw_plot(p1_ecoli_xy, x = 0, y = 0, width = .5, height = 0.5) + 
+    draw_plot(p1_ecoli_auc, .5, .5, .5, .5) +
+    draw_plot(p1_ecoli_roc, x = 0.5, y = 0, width = .5, height = .5) +
+    draw_plot_label(letters[1:4], c(0, 0, 0.5, 0.5), c(1, 0.5, 1, 0.5), size = 8)
 
 save_plot(filename = "plots/fig1_w_panels.pdf", 
           plot = p1_main,
@@ -664,8 +704,10 @@ nycomps_bincount_summary <-
       "Percent Retained" = round(sum(sumcounts > 12) / sum(sumcounts > 0), 3) * 100
       ) %>% select(-group)
 rownames(nycomps_bincount_summary) <- c("Expression by Gene", "All Expression Trials")
+```
 
-
+# nycomps plotting
+```{r}
 nycomps_posmix$gene_outcome2 <- factor(as.character(nycomps_posmix$gene_outcome), 
                                       labels = c("Not Expressed","Expressed"), levels = c("neg","≥1 pos"))
 p2_posmix_histogram <- ggplot(nycomps_posmix) + 
@@ -676,9 +718,15 @@ p2_posmix_histogram <- ggplot(nycomps_posmix) +
     scale_fill_manual(values = c("#A4A5A5","#A10F1C"), guide = guide_legend(title = "Gene of Interest:")) +
     ylab("Count") +
     xlab(expression( paste( "SVM"^"rank", " score"))) +
-    theme_pub(legend.position=c(0.2, 0.8), plot.margin=unit(c(0, 0, 0, 0), "in"))
+    theme_pub(legend.title = element_blank(),
+              legend.position=c(0.2, 0.8), 
+              plot.margin=unit(c(0, 0, 0, 0), "in"))
 
-nycomps_vectors$outcome2 <- factor(as.character(nycomps_vectors$plasmid_outcome), 
+p2_posmix_histogram <- ggplotGrob(p2_posmix_histogram)
+p2_posmix_histogram$grobs[[8]]$grobs$`99_0b89f20d561c508bc59ffe13ea616bb4`[[1]][[7]]$gp$col <- "#A4A5A5"
+p2_posmix_histogram$grobs[[8]]$grobs$`99_0b89f20d561c508bc59ffe13ea616bb4`[[1]][[8]]$gp$col <- "#A10F1C"
+
+nycomps_vectors$outcome2 <- factor(as.character(nycomps_vectors$plasmid_outcome),
                                     labels = c("Negative","Positive"), levels = c("-1","1"))
 p2_raw_histogram <- ggplot(nycomps_vectors) + 
     geom_histogram(aes(x=ml21, fill = factor(outcome2)),
@@ -688,134 +736,26 @@ p2_raw_histogram <- ggplot(nycomps_vectors) +
     scale_fill_manual(values = c("#A4A5A5","#A10F1C"), guide = guide_legend(title = "Expression Trial:")) +
     ylab("Count") +
     xlab(expression( paste( "SVM"^"rank", " score"))) +
-    theme_pub(legend.position=c(0.2, 0.8), plot.margin=unit(c(0, 1/16, 0, 0), "in"))
+    theme_pub(legend.title = element_blank(),
+              legend.position=c(0.2, 0.8), 
+              plot.margin=unit(c(0, 1/16, 0, 0), "in"))
 
-nycomps_vectors$outcome2 <- factor(as.character(nycomps_vectors$outcome2), 
-                                   levels = c("Negative", "Positive"), 
-                                   labels = c("Negative", "Positive"))
-p2_vectors_histogram_supp <- ggplot(nycomps_vectors)
-for(thisplasmid in unique(nycomps_vectors$plasmid_name)) {
-    p2_vectors_histogram_supp <- p2_vectors_histogram_supp + geom_histogram(aes(x=ml21, fill = factor(outcome2)), position="identity", 
-                   binwidth = fd_bw(filter(nycomps_vectors, plasmid_name==plasmid_name)$ml21), 
-                   data=filter(nycomps_vectors, plasmid_name==plasmid_name)) 
-}
-rm(thisplasmid)
-p2_vectors_histogram_supp <- p2_vectors_histogram_supp + 
-    scale_x_continuous(expand=c(0,0), breaks=nycomps_breaks, limits=nycomps_xscale) +
-    scale_y_continuous(expand=c(0,0)) +
-    scale_fill_manual(values = c("#A4A5A5","#A10F1C"), guide = guide_legend(title = "Expression Trial:")) +
-    ylab("Count") +
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
-    theme_pub(base_size=12, legend.position="top", aspect.ratio=1, legend.key.size = unit(0.5, "cm")) +
-    facet_wrap(~plasmid_name, scales="free", nrow=2)
+p2_raw_histogram <- ggplotGrob(p2_raw_histogram)
+p2_raw_histogram$grobs[[8]]$grobs$`99_d5523fc5c0f7949a182beca40893c6ae`[[1]][[7]]$gp$col <- "#A4A5A5"
+p2_raw_histogram$grobs[[8]]$grobs$`99_d5523fc5c0f7949a182beca40893c6ae`[[1]][[8]]$gp$col <- "#A10F1C"
 
-nycomps_posmix$gene_outcome2 <- factor(as.character(nycomps_posmix$gene_outcome), 
-                                      labels = c("Expressed","Not Expressed"), levels = c("≥1 pos", "neg"))
-p2_posmix_fill_supp <- ggplot(nycomps_posmix, aes(x=ml21, fill=gene_outcome2)) + 
-    geom_bar(binwidth = fd_bw(nycomps_posmix$ml21), alpha=1, position="fill") + 
-#    stat_ecdf(aes(color=gene_outcome)) +
-    coord_cartesian(xlim=nycomps_xscale) +
-    scale_x_continuous(expand=c(0,0), breaks=nycomps_breaks) +
-    scale_y_continuous(expand=c(0,0), labels=function(x){x*100}) +
-    xlab(expression( paste( "SVM"^"rank", " score"))) + ylab("Percentage") +
-    scale_fill_manual(values = c("#A10F1C","#A4A5A5"), guide = guide_legend(title = "Gene of Interest:")) + 
-    theme_pub(legend.position = "top", legend.margin = unit(-0.7, "cm"))
-
-nycomps_vectors$outcome2 <- factor(nycomps_vectors$plasmid_outcome, 
-                                    labels = c("Positive", "Negative"), levels = c("1", "-1"))
-p2_raw_fill_supp <- ggplot(nycomps_vectors, aes(x=ml21, fill=outcome2)) + 
-    geom_bar(binwidth = fd_bw(nycomps_posmix$ml21), alpha=1, position="fill") + 
-#    stat_ecdf(aes(color=outcome2)) +
-    coord_cartesian(xlim=nycomps_xscale) +
-    scale_x_continuous(expand=c(0,0), breaks=nycomps_breaks) +
-    scale_y_continuous(expand=c(0,0), labels=function(x){x*100}) +
-    xlab(expression( paste( "SVM"^"rank", " score"))) + 
-    ylab("Percentage") +
-    scale_fill_manual(values = c("#A10F1C","#A4A5A5"), guide = guide_legend(title = "Expression Trial:")) + 
-    theme_pub(legend.position = "top", legend.margin = unit(-0.7, "cm"))
-
-nycomps_vectors$outcome2 <- factor(as.character(nycomps_vectors$outcome2), 
-                                   levels = c("Positive", "Negative"), 
-                                   labels = c("Positive", "Negative"))
-p2_vectors_fill_supp <- ggplot(nycomps_vectors)
-for(thisplasmid in unique(nycomps_vectors$plasmid_name)) {
-    p2_vectors_fill_supp <- p2_vectors_fill_supp + 
-        geom_bar(aes(x=ml21, fill=outcome2),
-                 binwidth = fd_bw(filter(nycomps_vectors, plasmid_name==plasmid_name)$ml21), alpha=1, position="fill",
-                 data=filter(nycomps_vectors, plasmid_name==plasmid_name))
-}
-rm(thisplasmid)
-p2_vectors_fill_supp <- p2_vectors_fill_supp + 
-    coord_cartesian(xlim=nycomps_xscale) +
-    scale_x_continuous(expand=c(0,0), breaks=nycomps_breaks) +
-    scale_y_continuous(expand=c(0,0), labels=function(x){x*100}) +
-    scale_fill_manual(values = c("#A10F1C","#A4A5A5"), guide = guide_legend(title = "Expression Trial:")) +
-    ylab("Percentage") +
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
-    theme_pub(base_size=12, legend.position="top", aspect.ratio=.5, legend.key.size = unit(0.5, "cm")) +
-    facet_wrap(~plasmid_name, scales="free", nrow=2)
-p2_vectors_fill_supp
-
-p2_posmix_fill <- ggplot(filter(nycomps_posmix_hist, sumcounts > 12)) +
-    geom_bar(aes(x = mids, y = counts, fill = id, color=id), stat="identity", position = "fill") +
-#    geom_hline(yintercept = sum(nycomps_posmix$gene_outcome == "≥1 pos") / nrow(nycomps_posmix), linetype = "dashed", color = "black") +
-    coord_cartesian(xlim=nycomps_xscale) +
-    scale_x_continuous(expand=c(0,0), breaks=nycomps_breaks) +
-    scale_y_continuous(expand=c(0,0), labels=function(x){x*100}) +
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
-    ylab("Percentage") +
-    scale_fill_manual(values = c("#A10F1C","#A4A5A5")) + 
-    scale_color_manual(values = c("#A10F1C","#A4A5A5")) +
-    theme_pub(legend.position = "None", plot.margin=unit(c(1/16, 0, 0, 0), "in"))
-
-p2_raw_fill <- ggplot(filter(nycomps_vectors_hist, sumcounts > 12)) +
-    geom_bar(aes(x = mids, y = counts, fill = id, color=id), stat="identity", position = "fill") +
-#    geom_hline(yintercept = sum(nycomps_vectors$plasmid_outcome == 1) / nrow(nycomps_vectors), linetype = "dashed", color = "black") +
-    coord_cartesian(xlim=nycomps_xscale) +
-    scale_x_continuous(expand=c(0,0), breaks=nycomps_breaks) +
-    scale_y_continuous(expand=c(0,0), labels=function(x){x*100}) +
-    xlab(expression( paste( "SVM"^"rank", " score"))) + 
-    ylab("Percentage") +
-    scale_fill_manual(values = c("#A4A5A5","#A10F1C")) + 
-    scale_color_manual(values = c("#A4A5A5","#A10F1C")) +
-    theme_pub(legend.position = "None", plot.margin=unit(c(1/16, 1/16, 0, 0), "in"))
-
-p2_fill_bincounts_supp <- ggplot(rbind(mutate(nycomps_posmix_hist, group = "posmix") %>% filter(sumcounts > 0),
-                                       mutate(nycomps_vectors_hist, group = "vectors") %>% filter(sumcounts > 0)),
-                                   aes(x=sumcounts)) + 
-    geom_rect(aes(xmin = 0.5, xmax = 80.5, ymin = 0, ymax = Inf), alpha=0.2, fill = "lightblue") +
-    geom_histogram(binwidth = 1, origin = -0.5) +
-    expand_limits(x=0.5) +
-    scale_x_continuous(expand=c(0,0), breaks=c(1, seq(100,800,100))) +
-    scale_y_continuous(expand=c(0,0)) +
-    xlab("Bin Occupancy") + ylab("Count") +
-    theme_pub(base_size=12) +
-    facet_wrap(~group, nrow=1, scales = "free")
-
-p2_fill_bincounts_supp_posmix <- ggplot(filter(nycomps_posmix_hist, sumcounts > 0), aes(x=sumcounts)) + 
-    geom_rect(aes(xmin = 0.5, xmax = 80.5, ymin = 0, ymax = Inf), alpha=0.2, fill = "lightblue") +
-    geom_vline(xintercept=12.5, color='red', linetype='dashed') +
-    geom_histogram(binwidth = 1, origin = -0.5) +
-    coord_cartesian(xlim=c(0.5, 80.5)) +
-    scale_x_continuous(expand=c(0,0), breaks=c(1, seq(10,100,10))) +
-    scale_y_continuous(expand=c(0,0)) +
-    xlab("Bin Occupancy") + ylab("Count") +
-    theme_pub(base_size=12)
-
-p2_fill_bincounts_supp_raw <- ggplot(filter(nycomps_vectors_hist, sumcounts > 0), aes(x=sumcounts)) + 
-    geom_rect(aes(xmin = 0.5, xmax = 80.5, ymin = 0, ymax = Inf), alpha=0.2, fill = "lightblue") +
-    geom_vline(xintercept=12.5, color='red', linetype='dashed') +
-    geom_histogram(binwidth = 1, origin = -0.5) +
-    coord_cartesian(xlim=c(0.5, 80.5)) +
-    scale_x_continuous(expand=c(0,0), breaks=c(1, seq(10,100,10))) +
-    scale_y_continuous(expand=c(0,0)) +
-    xlab("Bin Occupancy") + ylab("Count") +
-    theme_pub(base_size=12)
-
+p2_posmix_roc_label <- filter(nycomps_auc, group == "posmix", cterm == "all") %>% 
+    mutate(auc = specify_decimal(auc*100, k = 1),
+           lower95 = specify_decimal(lower95*100, k = 1),
+           upper95 = specify_decimal(upper95*100, k = 1),
+           ci = paste0("(", lower95, "-", upper95, ")")
+           )
+p2_posmix_roc_label <- paste0(p2_posmix_roc_label$count, "\n", p2_posmix_roc_label$auc, " ", p2_posmix_roc_label$ci)
 p2_posmix_roc <- ggplot(filter(nycomps_roc, group == "posmix")) +
     geom_path(aes(x=100-specificities*100, y = sensitivities*100)) +
     geom_ribbon(aes(x=100-specificities*100, ymin=100-specificities*100, ymax=sensitivities*100, fill=sensitivities>1-specificities)) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
+    annotate(geom = "text", x = 75, y = 15, label = p2_posmix_roc_label, size = 5*5/14) +
     scale_y_continuous(expand = c(0, 0)) +
     scale_x_continuous(expand = c(0, 0)) +
     xlab("False Positive Rate") + 
@@ -823,10 +763,19 @@ p2_posmix_roc <- ggplot(filter(nycomps_roc, group == "posmix")) +
     scale_fill_manual(values = c("#A4A5A5","#A10F1C")) + 
     theme_pub(aspect.ratio = 1, legend.position = "None", plot.margin=unit(c(0, 0, 0, 0), "in"))
 
+
+p2_raw_roc_label <- filter(nycomps_auc, group == "vectors", cterm == "all") %>% 
+    mutate(auc = specify_decimal(auc*100, k = 1),
+           lower95 = specify_decimal(lower95*100, k = 1),
+           upper95 = specify_decimal(upper95*100, k = 1),
+           ci = paste0("(", lower95, "-", upper95, ")")
+           )
+p2_raw_roc_label <- paste0(p2_raw_roc_label$count, "\n", p2_raw_roc_label$auc, " ", p2_raw_roc_label$ci)
 p2_raw_roc <- ggplot(filter(nycomps_roc, group == "vectors")) +
     geom_path(aes(x=100-specificities*100, y = sensitivities*100)) +
     geom_ribbon(aes(x=100-specificities*100, ymin=100-specificities*100, ymax=sensitivities*100, fill=sensitivities>1-specificities)) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
+    annotate(geom = "text", x = 75, y = 15, label = p2_raw_roc_label, size = 5*5/14) +
     scale_y_continuous(expand = c(0, 0)) +
     scale_x_continuous(expand = c(0, 0)) +
     xlab("False Positive Rate") + 
@@ -834,72 +783,63 @@ p2_raw_roc <- ggplot(filter(nycomps_roc, group == "vectors")) +
     scale_fill_manual(values = c("#A4A5A5","#A10F1C")) + 
     theme_pub(aspect.ratio = 1, legend.position = "None", plot.margin=unit(c(0, 0, 0, 0), "in"))
 
-p2_vectors_roc_supp <- ggplot(filter(nycomps_roc, type == "plasmid")) +
-    geom_path(aes(x=100-specificities*100, y = sensitivities*100)) +
-    geom_ribbon(aes(x=100-specificities*100, ymin=100-specificities*100, ymax=sensitivities*100, fill=sensitivities>1-specificities)) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-    scale_y_continuous(expand = c(0, 0)) +
-    scale_x_continuous(expand = c(0, 0)) +
-    xlab("False Positive Rate") + 
-    ylab("True Positive Rate") + 
-    scale_fill_manual(values = c("#A4A5A5","#A10F1C")) + 
-    facet_wrap(~group, scales="free", nrow=2) +
-    theme_pub(aspect.ratio = 1, legend.position="None")
-
-p2_posmix_ppv <- ggplot(filter(nycomps_roc, group == "posmix")) + 
-    geom_path(aes(x=threshold_percentiles*100, y=ppv*100)) +
-    geom_segment(aes(x=threshold_percentiles*100, xend=threshold_percentiles*100, yend=ppv*100, y=min_ppv*100, color=ppv>min_ppv), size=.5, lineend="round") +
-    geom_hline(aes(yintercept=min_ppv*100), linetype="dashed", color="darkgrey") +
-    scale_x_continuous(expand=c(0,0), limits=c(0,100)) +
-    scale_y_continuous(expand=c(0,0), limits=c(0,60), breaks=seq(0, 100, 20)) +
-    xlab(expression( paste( "Percentile SVM"^"rank", " score"))) + 
-    ylab("Precision") +  # ylab("Positive Predictive Value") +
-    scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
-    theme_pub(legend.position="None", plot.margin=unit(c(1/16, 1/16, 1/16, 0), "in"))
-
-p2_raw_ppv <- ggplot(filter(nycomps_roc, group == "vectors")) + 
-    geom_path(aes(x=threshold_percentiles*100, y=ppv*100))  +
-    geom_segment(aes(x=threshold_percentiles*100, xend=threshold_percentiles*100, yend=ppv*100, y=min_ppv*100, color=ppv>min_ppv), size=.5, lineend="round") +
-    geom_hline(aes(yintercept=min_ppv*100), linetype="dashed", color="darkgrey") +
-    scale_x_continuous(expand=c(0,0), limits=c(0,100)) +
-    scale_y_continuous(expand=c(0,0), limits=c(0,60), breaks=seq(0, 100, 20)) +
-    xlab(expression( paste( "Percentile SVM"^"rank", " score"))) + 
-    ylab("Precision") +  # ylab("Positive Predictive Value") +
-    scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
-    theme_pub(legend.position="None", plot.margin=unit(c(1/16, 1/16, 1/16, 0), "in"))
-
-p2_vectors_ppv_supp <- ggplot(filter(nycomps_roc, type == "plasmid"))  + 
-    geom_path(aes(x=threshold_percentiles*100, y=ppv*100))  +
-    geom_segment(aes(x=threshold_percentiles*100, xend=threshold_percentiles*100, yend=ppv*100, y=min_ppv*100, color=ppv>min_ppv), size=.5, lineend="round") +
-    geom_hline(aes(yintercept=min_ppv*100), linetype="dashed", color="darkgrey") +
-    coord_cartesian(xlim=c(0,100),ylim=c(0,60)) +
-    scale_x_continuous(expand=c(0,0)) +
-    scale_y_continuous(expand=c(0,0), breaks=seq(0, 100, 20)) +
-    xlab("Percentile Score") + 
-    ylab("Positive Predictive Value") +
-    scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
-    theme_pub(legend.position="None", aspect.ratio =1) +
-    facet_wrap(~group, nrow=2, scales="free")
-
-# top of polygon
-nycomps_nvector_ppv <- filter(nycomps_roc, group == "N") %>% select(thresholds, ppv) %>% arrange(desc(thresholds))
-nycomps_nvector_ppv$ppv_greater_min <- nycomps_nvector_ppv$ppv > filter(nycomps_roc, group == "N")$min_ppv[1]
-nycomps_nvector_ppv <- nycomps_nvector_ppv[seq_len(nrow(nycomps_nvector_ppv)) %>% rep(each=2) %>% tail(-1) %>% head(-1),]
-rownames(nycomps_nvector_ppv) <- seq(length=nrow(nycomps_nvector_ppv))
-nycomps_nvector_ppv$id <-  rep(seq(nrow(nycomps_nvector_ppv)/2), each = 2)
-nycomps_nvector_ppv$type <- "ppv"
-
-# bottom of polygon
-nycomps_nvector_ppv <- nycomps_nvector_ppv[rep(seq_len(nrow(nycomps_nvector_ppv)), each=2),]
-nycomps_nvector_ppv[grepl(".1",rownames(nycomps_nvector_ppv), fixed = TRUE),]$type <- "min_ppv"
-nycomps_nvector_ppv[nycomps_nvector_ppv$type == "min_ppv",]$ppv <- filter(nycomps_roc, group == "N")$min_ppv[1]
-
-# order for geom_polygon (needs to be closed)
-nycomps_nvector_ppv <- foreach(thisid=unique(nycomps_nvector_ppv$id), .combine = rbind) %do% {
-    thisdata <- filter(nycomps_nvector_ppv, id == thisid) %>% 
-        arrange(thresholds, ppv)
-    rbind(thisdata[1,], thisdata[2,], thisdata[4,], thisdata[3,])
+prep_for_polygon <- function(df, x = "thresholds", y = "ppv", min_y = "min_ppv") {
+    # prep_for_polygon(data.frame(thresholds = c(1, 2, -3), ppv = c(1, 5, 10)), min_ppv = 1)
+    # order by thresholds
+    df <- df[order(df[,x], decreasing = TRUE),]
+    
+    # min y value
+    min_y <- df[, min_y][1]
+        
+    # top of polygon
+    df$y_greater_min <- df[,y] > min_y
+    df <- df[seq_len(nrow(df)) %>% rep(each=2) %>% tail(-1) %>% head(-1),]
+    rownames(df) <- seq(length = nrow(df))
+    df$id <-  rep(seq(nrow(df)/2), each = 2)
+    df$type <- "ppv"
+    
+    # bottom of polygon
+    df <- df[rep(seq_len(nrow(df)), each=2),]
+    df[grepl(".1", rownames(df), fixed = TRUE),]$type <- "min_y"
+    df[df$type == "min_y", y] <- min_y
+    
+    # order for geom_polygon (needs to be closed)
+    foreach(thisid = unique(df$id), .combine = rbind) %do% {
+        thisdata <- filter(df, id == thisid) 
+        thisdata <- thisdata[order(thisdata[, x], thisdata[,y], decreasing = TRUE),]
+        rbind(thisdata[1,], thisdata[2,], thisdata[4,], thisdata[3,])
+    }
 }
+
+p2_posmix_ppv_prep <- prep_for_polygon(filter(nycomps_roc, group == "posmix"))
+
+p2_posmix_ppv <- ggplot(p2_posmix_ppv_prep) + 
+    geom_polygon(aes(x=threshold_percentiles*100, y=ppv*100, group=id, fill=y_greater_min, color = y_greater_min), size = 0.1) +
+    geom_path(aes(x=threshold_percentiles*100, y=ppv*100), size = 0.25, 
+              data = filter(p2_posmix_ppv_prep, type != "min_y") %>% distinct(thresholds, ppv)) +
+    geom_hline(aes(yintercept = min(min_ppv)*100), linetype="dashed", color="darkgrey", size = 0.5) +
+    annotate("text", x = 15, y = 55, label = "By Gene:", size = 7*5/14, fontface = "bold", family = "Helvetica") + 
+    scale_x_continuous(expand=c(0,0), limits=c(0,100)) +
+    scale_y_continuous(expand=c(0,0), limits=c(0,60), breaks=seq(0, 100, 20)) +
+    xlab(expression( paste( "Percentile SVM"^"rank", " score"))) + 
+    ylab("Precision") +  # ylab("Positive Predictive Value") +
+    scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
+    theme_pub(legend.position="None", plot.margin=unit(c(1/16, 1/16, 1/16, 0), "in"))
+
+p2_raw_ppv_prep <- prep_for_polygon(filter(nycomps_roc, group == "vectors"))
+
+p2_raw_ppv <- ggplot(p2_raw_ppv_prep) + 
+    geom_polygon(aes(x=threshold_percentiles*100, y=ppv*100, group=id, fill=y_greater_min, color = y_greater_min), size = 0.1) +
+    geom_path(aes(x=threshold_percentiles*100, y=ppv*100), size = 0.25, 
+              data = filter(p2_raw_ppv_prep, type != "min_y") %>% distinct(thresholds, ppv)) +
+    geom_hline(aes(yintercept = min(min_ppv)*100), linetype="dashed", color="darkgrey", size = 0.5) +
+    annotate("text", x = 20, y = 55, label = "By Expression Trial:", size = 7*5/14, fontface = "bold", family = "Helvetica") + 
+    scale_x_continuous(expand=c(0,0), limits=c(0,100)) +
+    scale_y_continuous(expand=c(0,0), limits=c(0,60), breaks=seq(0, 100, 20)) +
+    xlab(expression( paste( "Percentile SVM"^"rank", " score"))) + 
+    ylab("Precision") +  # ylab("Positive Predictive Value") +
+    scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
+    theme_pub(legend.position="None", plot.margin=unit(c(1/16, 1/16, 1/16, 0), "in"))
 
 do_rollmean <- function(df, window) {
     df <- filter(df, abs(thresholds) != Inf)
@@ -919,12 +859,14 @@ nycomps_nvector_ppv_smooth <- rbind(nycomps_nvector_ppv_smooth,
                                     )
 nycomps_nvector_ppv_smooth$window <- factor(nycomps_nvector_ppv_smooth$window)
 
-p4_nvector_ppv <- ggplot(nycomps_nvector_ppv) + 
-    geom_polygon(aes(x=thresholds, y=ppv*100, group=id, fill=ppv_greater_min, color = ppv_greater_min)) +
+p4_nvector_ppv_prep <- prep_for_polygon(filter(nycomps_roc, group == "N"))
+
+p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) + 
+    geom_polygon(aes(x=thresholds, y=ppv*100, group=id, fill=y_greater_min, color = y_greater_min), size = 0.1) +
     geom_path(aes(x=thresholds, y=ppv*100), size = 0.5, data = filter(nycomps_nvector_ppv_smooth, window == "1")) +
 #    geom_path(aes(x=thresholds, y=ppv*100), data = filter(nycomps_nvector_ppv_smooth, window == "50")) +
-#    geom_path(aes(x=thresholds, y=ppv*100), data = filter(nycomps_nvector_ppv_smooth, window == "100")) +
-    geom_hline(yintercept = filter(nycomps_roc, group == "N")$min_ppv[1]*100, linetype="dashed", color="darkgrey", size = 0.5) +
+    geom_hline(aes(yintercept = min(min_ppv)*100), linetype="dashed", color="darkgrey", size = 0.5) +
+    annotate("text", x = -1.7, y = 55, label = "Expression in 10xHis-FLAG-TEV-", size = 7*5/14, fontface = "bold", family = "Helvetica") + 
     coord_cartesian(xlim=nycomps_xscale) +
     scale_x_continuous(expand=c(0,0), breaks=nycomps_breaks) +
     scale_y_continuous(expand=c(0,0), limits=c(0,60), breaks=seq(0, 100, 20)) +
@@ -935,7 +877,6 @@ p4_nvector_ppv <- ggplot(nycomps_nvector_ppv) +
     theme_pub(legend.position="None", plot.margin=unit(c(1/16, 1/16, 1/16, 0), "in"))
 
 
-specify_decimal <- function(x, k) format(round(x, k), nsmall=k)
 #cterm split and summary
 nycomps_cterm <- cbind(filter(nycomps_auc, type == "plasmid", cterm == "all") %>% 
                            select(-type, -cterm),
@@ -962,73 +903,84 @@ nycomps_cterm <-  transmute(nycomps_cterm,
                          )
 
 table_theme2 <-  ttheme_default(
-    core = list(fg_params=list(cex = 0.45)),
-    colhead = list(fg_params=list(cex = 0.45)),
-    rowhead = list(fg_params=list(cex = 0.45, parse=TRUE)),
+    core = list(fg_params=list(fontsize = 5, fontfamily = "Helvetica")),
+    colhead = list(fg_params=list(fontsize = 5, fontfamily = "Helvetica")),
+    rowhead = list(fg_params=list(fontsize = 5, parse=TRUE, fontfamily = "Helvetica")),
     padding = unit(c(1, 2), "mm"))
 
-header <- tableGrob(nycomps_cterm[1, 1:3], 
-                    theme = table_theme2,
-                    cols = c("All", "C-terminal Cytoplasmic", "C-terminal Periplasmic"))
+# table_nobg <-  ttheme_minimal(
+#     core = list(fg_params=list(fontsize = 5, fontfamily = "Helvetica")),
+#     colhead = list(fg_params=list(fontsize = 5, fontfamily = "Helvetica")),
+#     rowhead = list(fg_params=list(fontsize = 5, parse=TRUE, fontfamily = "Helvetica")),
+#     padding = unit(c(1, 2), "mm"))
 
-temp <- factor(temp,
+header <- tableGrob(nycomps_cterm[1,], 
+                    theme = table_theme2,
+                    cols = c("All", "Cyto", "Peri", "", "", ""),
+                    rows = "temp",
+                    widths = unit(rep(c(.085, 0.165), 3), "npc"))
+
+# Periplasmic
+ind <- find_cell(header, 1, 4, "colhead-fg")
+header$layout[ind, c("l", "r", "z")] <- c(6, 7, 9)
+ind <- find_cell(header, 1, 4, "colhead-bg")
+header$layout[ind, c("l", "r", "z")] <- c(6, 7, 8)
+
+# Cytoplasmic
+ind <- find_cell(header, 1, 3, "colhead-fg")
+header$layout[ind, c("l", "r", "z")] <- c(4, 5, 9)
+ind <- find_cell(header, 1, 3, "colhead-bg")
+header$layout[ind, c("l", "r", "z")] <- c(4, 5, 8)
+
+# All
+ind <- find_cell(header, 1, 2, "colhead-fg")
+header$layout[ind, c("l", "r", "z")] <- c(2, 3, 9)
+ind <- find_cell(header, 1, 2, "colhead-bg")
+header$layout[ind, c("l", "r", "z")] <- c(2, 3, 8)
+
+temp_names <- factor(temp,
                levels = c("N", "C", "C_LDAO", 
                           "MSGC.24", "MSGC.28", "MSGC.7", "MSGC.9", "MSGC.9_LDAO"),
                labels = c("10xHis-FLAG-TEV-", "-TEV-10xHis", "-TEV-10xHis (LDAO)", 
-                          "His-GST-", "-TEV-10xHis", "10xHis-TEV-", "His-MBP-", "His-MBP- (LDAO)"))
+                          "10xHis-GST-TEV", "-TEV-10xHis", "10xHis-TEV-", "10xHis-MBP-TEV", "10xHis-MBP-TEV (LDAO)"))
 
 p2_auc_table <- tableGrob(nycomps_cterm, theme = table_theme2, 
                  cols = rep(c("Count", "AUC (95% CI)" ), 3),
-                 rows = as.character(temp))
+                 rows = as.character(temp_names),
+                 widths = unit(rep(c(.085, 0.165), 3), "npc"))
 
-p2_auc_table <- gridExtra::join(header[1,], p2_auc_table, along=2) 
+p2_auc_table <- gridExtra::join(header[1,], p2_auc_table, along=2)
 
-# Periplasmic
-ind <- find_cell(p2_auc_table, 1, 4, "colhead-fg")
-p2_auc_table$layout[ind, c("l", "r")] <- c(6, 7)
-ind <- find_cell(p2_auc_table, 1, 4, "colhead-bg")
-p2_auc_table$layout[ind, c("l", "r")] <- c(6, 7)
+p2_auc_table$grobs[[4]][[1]] <- "C-terminal Cytoplasmic"
+p2_auc_table$grobs[[5]][[1]] <- "C-terminal Periplasmic"
 
-# Cytoplasmic
-ind <- find_cell(p2_auc_table, 1, 3, "colhead-fg")
-p2_auc_table$layout[ind, c("l", "r")] <- c(4, 5)
-ind <- find_cell(p2_auc_table, 1, 3, "colhead-bg")
-p2_auc_table$layout[ind, c("l", "r")] <- c(4, 5)
+p2_auc_table <- gtable_add_grob(p2_auc_table,
+        grobs = segmentsGrob(
+            x0 = unit(0,"npc"), y0 = unit(0,"npc"),
+            x1 = unit(1,"npc"), y1 = unit(0,"npc"),
+            gp = gpar(lwd = 2.0)), t = 2, b = 2, l = 2, r = 7)
+p2_auc_table <- gtable_add_grob(p2_auc_table,
+        grobs = segmentsGrob( 
+            x0 = unit(0,"npc"), y0 = unit(0,"npc"),
+            x1 = unit(0,"npc"), y1 = unit(1,"npc"),
+            gp = gpar(lwd = 2.0)), t = 1, b = 10, l = 4, r = 4)
+p2_auc_table <- gtable_add_grob(p2_auc_table,
+            grobs = segmentsGrob(
+            x0 = unit(0,"npc"), y0 = unit(0,"npc"),
+            x1 = unit(0,"npc"), y1 = unit(1,"npc"),
+            gp = gpar(lwd = 2.0)), t = 1, b = 10, l = 6, r = 6)
 
-# All
-ind <- find_cell(p2_auc_table, 1, 2, "colhead-fg")
-p2_auc_table$layout[ind, c("l", "r")] <- c(2, 3)
-ind <- find_cell(p2_auc_table, 1, 2, "colhead-bg")
-p2_auc_table$layout[ind, c("l", "r")] <- c(2, 3)
-
-# Set widths
-
-p2_auc_table$widths[c(1, 2, 3)] <- unit(c(0.17,.095, 0.175), "npc")
-p2_auc_table$widths[c(4, 6)] <- p2_auc_table$widths[2]
-p2_auc_table$widths[c(5, 7)] <- p2_auc_table$widths[3]
 
 p2_main <- plot_grid(
     plot_grid(p2_posmix_ppv, p2_raw_ppv,
               p2_posmix_histogram, p2_raw_histogram,
-              labels = LETTERS[c(1:4)], ncol = 2, align = "v"),
+              labels = letters[c(1:4)], label_size = 8, ncol = 2, align = "v"),
     plot_grid(p2_posmix_roc, p2_raw_roc, p2_auc_table, 
-              labels = LETTERS[c(5:8)], ncol=3, rel_widths = c(1, 1, 2.1)),
+              labels = letters[c(5:8)], label_size = 8, ncol=3, rel_widths = c(1, 1, 2.5)),
     nrow=2, rel_heights = c(2,1)
 )
 
 save_plot(filename = "plots/fig2_w_panels.pdf", plot = p2_main, base_width = uconv(183, "mm", "in", "Length")) #, base_height = 6)
-
-pdf("plots/fig2_supp.pdf", width = uconv(183, "mm", "in"), height = 5)
-grid.arrange(arrangeGrob(p2_posmix_fill_supp, p2_raw_fill_supp, ncol=2),
-             arrangeGrob(p2_fill_bincounts_supp), nrow=2)
-print(p2_fill_bincounts_supp_raw, vp = viewport(width = 0.37, height = 0.35, x = .32, y = .27))
-print(p2_fill_bincounts_supp_posmix, vp = viewport(width = 0.37, height = 0.35, x = .8, y = .27))
-
-p2_vectors_histogram_supp
-p2_vectors_fill_supp
-p2_vectors_roc_supp
-p2_vectors_ppv_supp
-dev.off()
 ```
 
 # p3  tb, archaea, gpcrs, surade, and more!
@@ -1097,36 +1049,22 @@ p3_archaea_sdspage_data2 <- rbind(filter(p3_archaea_sdspage_data2, Protein != "H
     filter(p3_archaea_sdspage_data2, Protein == "Hbor39700", Outcome == 12)[2,] %>% mutate(Outcome = 11.8))
 
 p3_archaea_sdspage <- ggplot(filter(archaea_outcomes, Measurement == 'Scanning Densitometry of SDS-PAGE (%)')) +
-    geom_vline(xintercept = archaea_median, linetype="longdash", color = "darkgrey") +
+    geom_vline(xintercept = archaea_median-.015, linetype="dotted", color = "black", size = 0.5) +
     geom_point(aes(x=ml21, y=as.numeric(Outcome)), color="#A10F1C", size = 3, shape = 95, 
                data = p3_archaea_sdspage_data2) + 
     geom_errorbar(aes(x=ml21, ymin=sds_min, ymax=sds_max), color="#A10F1C", size = 0.27, width = 0.04,
                    data = p3_archaea_sdspage_data) +
+    annotate("text", x = -2.9, y = 38, label = "Archaeal Transporters", size = 7*5/14, fontface = "bold") + 
     scale_y_continuous(expand = c(0,0), limits = c(0, 40)) +
     scale_x_continuous(expand = c(0,0), limits = c(-3.2, -1)) +
     ylab("Percentage of\nMembrane Protein") +
     xlab(expression( paste( "SVM"^"rank", " score"))) +
-    ggtitle("Archaeal Transporters") +
+#    ggtitle("Archaeal Transporters") +
     scale_color_manual(values = brewer.pal(3, "Dark2")) +
-    theme_pub(axis.title.x = element_blank(),
+    theme_pub(axis.title = element_blank(),
               axis.text.x = element_blank(),
-              plot.margin = unit(c(0.5, 0, -1, 0), "lines"),
-              aspect.ratio = 1/6) 
-
-p3_archaea_sdspage_roc <- ggplot(filter(archaea_roc, positive_threshold == "sds_only")) + 
-    geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-#    geom_text(aes(x=.8, y = 0.2+as.numeric(positive_threshold)/20, color = factor(positive_threshold), 
-#                  label=sprintf("AUC=%s (%s-%s)", rnd_pct(auc), rnd_pct(lower95), rnd_pct(upper95))), 
-#              data = archaea_auc) +
-    xlab("False Positive Rate") +
-    ylab("True Positive Rate") +
-    scale_color_manual(values = c("#A10F1C"), na.value="black") +
-    scale_y_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) + 
-    scale_x_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) +
-    theme_pub(legend.position="None", aspect.ratio = 1,
-              axis.title.x = element_blank(), axis.title.y = element_blank(),
-              plot.margin = unit(c(0.5, 0.5, 0, 0), "lines"))
+              plot.margin = unit(c(1, 0, 2, 0), "mm"))
+#              aspect.ratio = 1/6) 
 
 p3_archaea_western_data <- ddply(filter(archaea_outcomes, Measurement != 'Scanning Densitometry of SDS-PAGE (%)'),
                                    .(Protein), summarise,
@@ -1137,7 +1075,7 @@ p3_archaea_western_data <- ddply(filter(archaea_outcomes, Measurement != 'Scanni
                                    ) %>% gather(group, count, no:sdspage) %>% filter(count != 0)
 
 p3_archaea_western <- ggplot(p3_archaea_western_data) + 
-    geom_vline(xintercept = archaea_median, linetype="dashed", color = "darkgrey") +
+    geom_vline(xintercept = archaea_median-.015, linetype="dotted", color = "black", size = 0.5) +
     geom_hline(yintercept = 0, alpha = 0.5, linetype="dashed", color = "darkgrey") +
     geom_bar(aes(x=ml21, y=count), fill="#A4A5A5",
              stat="identity", width=.02, data = filter(p3_archaea_western_data, group=="no")) + 
@@ -1149,24 +1087,31 @@ p3_archaea_western <- ggplot(p3_archaea_western_data) +
     scale_y_continuous(expand = c(0,0), limits = c(-6.1, 6), breaks=seq(-10,10,2)) +
     scale_x_continuous(expand = c(0,0), limits = c(-3.2, -1)) +
     theme_pub(legend.position = "none",
-              axis.title.x = element_blank(),
-              plot.margin = unit(c(0, 0, 0, 0), "lines"),
-              aspect.ratio = 1/8)
+              axis.title = element_blank(),
+              plot.margin = unit(c(0, 0, 0, 0), "lines"))
 
-p3_archaea_western_roc <- ggplot(filter(archaea_roc, positive_threshold == "wb_sds")) + 
+archaea_max_auc <- arrange(archaea_auc, -auc)[1,] %>%
+    mutate(auc = specify_decimal(auc*100, k = 1),
+           lower95 = specify_decimal(lower95*100, k = 1),
+           upper95 = specify_decimal(upper95*100, k = 1),
+           ci = paste0(auc, " (", lower95, "-", upper95, ")"))
+
+p3_archaea_roc <- ggplot(archaea_roc) + 
     geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-#    geom_text(aes(x=.8, y = 0.2+as.numeric(positive_threshold)/20, color = factor(positive_threshold), 
-#                  label=sprintf("AUC=%s (%s-%s)", rnd_pct(auc), rnd_pct(lower95), rnd_pct(upper95))), 
-#              data = archaea_auc) +
+    annotate(geom = "text", x = .65, y = .10, label = archaea_max_auc$ci, size = 5*5/14, color = "#AD665D") +
     xlab("False Positive Rate") +
     ylab("True Positive Rate") +
-    scale_color_manual(values = c("#AD665D"), na.value="black") +
+    ggtitle("Archaeal Transporters") + 
+    scale_color_manual(values = c("#A10F1C", "#AD665D"), na.value="black") +
     scale_y_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) + 
     scale_x_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) +
     theme_pub(legend.position="None", aspect.ratio = 1,
-              axis.title.x = element_blank(), axis.title.y = element_blank(),
-              plot.margin = unit(c(0, 0, 0, 0), "lines"))
+#              axis.title.x = element_blank(), axis.title.y = element_blank(),
+              plot.margin = unit(c(0, 0, 0, 0), "lines"), 
+            axis.title = element_text(size = 6),
+    )
+
 
 ### M. TUBERCULOSIS OUTCOMES AND SCORES (FROM TIM CROSS'S FIRST PAPER)
 tcross_outcomes <- read.csv("small-scale/tcross_mt_outcomes.csv", header = TRUE, row.names = 1, stringsAsFactors = FALSE)
@@ -1228,6 +1173,16 @@ rm(tcross_N)
 tcross_outcomes[tcross_outcomes$cloned == 'N',]$ml21_vector <- tcross_outcomes[tcross_outcomes$cloned == 'N',]$ml21_vector_N
 tcross_outcomes <- select(tcross_outcomes, -ml21_vector_N)
 
+# > select(tcross_outcomes, ORF, cloned, host) %>% distinct %>% group_by(cloned, host) %>% summarize(tot_cloned = length(cloned))
+# Source: local data frame [3 x 3]
+# Groups: cloned [?]
+# 
+#   cloned              host tot_cloned
+#    (chr)             (chr)      (int)
+# 1      C CodonPlus-RP(DE3)         12
+# 2      N          C42(DE3)          4
+# 3      N CodonPlus-RP(DE3)         93
+
 # > table(tcross_outcomes$outcome)
 #  No  WB  CB 
 # 208  66  53 
@@ -1281,39 +1236,45 @@ tcross_median <- ddply(tcross_outcomes, .(score_type, fraction), summarize,
                        median = median(score_value))
 
 p3_mt <- ggplot(filter(tcross_outcomes, score_type == "ml21", fraction == "MEM")) +
-    geom_vline(aes(xintercept = median(score_value)), linetype="longdash", color="darkgrey") + 
+    geom_vline(aes(xintercept = median(score_value)), linetype="dotted", color="black", size = 0.5) + 
     geom_jitter(aes(x=score_value, y=outcome, fill=as.numeric(outcome), color=as.numeric(outcome)) , shape=21, size = .95,
             position = position_quasirandom(varwidth = TRUE), 
             data=filter(tcross_outcomes, score_type == "ml21", host != "C42(DE3)", fraction == "MEM")) +
     geom_jitter(aes(x=score_value, y=outcome, fill=as.numeric(outcome)), color="black", shape=21, size = .95,
                 position = position_quasirandom(varwidth = TRUE), 
                 data=filter(tcross_outcomes, score_type == "ml21", host == "C42(DE3)", fraction == "MEM")) +
-    ggtitle("M. tuberculosis") +
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
+    annotate("text", x = -3.7, y = 3.1, label = "M. tuberculosis", size = 7*5/14, fontface = "bold.italic") + 
+    scale_y_discrete(labels=c("WB" = "Western\nBlot", "CB" = "Coomassie\nBlue", "No" = "No\nExpression")) +
     scale_fill_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
     scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
-    theme_pub(plot.title = element_text(face = "italic", size = 8),
-              axis.title.y=element_blank(),
+    theme_pub( #plot.title = element_text(face = "italic", size = 8),
+              axis.title = element_blank(),
               legend.position="None",
-              plot.margin = unit(c(0, 0, 0, 0), "lines"),
-              aspect.ratio = 1/8) 
+              plot.margin = unit(c(0, 0, 0, 0), "lines"))
+
+tcross_max_auc <- filter(tcross_auc, fraction == "MEM", score_type == "ml21") %>% arrange(-auc) 
+tcross_max_auc <- tcross_max_auc[1,] %>%
+    mutate(auc = specify_decimal(auc*100, k = 1),
+           lower95 = specify_decimal(lower95*100, k = 1),
+           upper95 = specify_decimal(upper95*100, k = 1),
+           ci = paste0(auc, " (", lower95, "-", upper95, ")"))
 
 p3_mt_roc <- ggplot(filter(tcross_roc, fraction == "MEM", score_type == "ml21")) + 
     geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-#    geom_text(aes(x=.8, y = 0.2+as.numeric(positive_threshold)/20, color = factor(positive_threshold), 
-#                  label=sprintf("AUC=%s (%s-%s)", rnd_pct(auc), rnd_pct(lower95), rnd_pct(upper95))), 
-#              data = filter(tcross_auc, fraction == "MEM", score_type == "ml21")) +
+    annotate(geom = "text", x = .65, y = .10, label = tcross_max_auc$ci, size = 5*5/14, color = "#A10F1C") +
     scale_color_manual(values = ggplot_build(p3_mt)$data[[2]] %>% 
                            arrange(desc(-group)) %>% select(colour) %>% unique %>% unlist %>% unname %>% tail(-1), 
                          na.value="black") +
     ylab("True Positive Rate") +
     xlab("False Positive Rate") +
+    ggtitle("M. tuberculosis") +
     scale_y_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) + 
     scale_x_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) +
     theme_pub(legend.position="None", aspect.ratio = 1,
-              axis.title.x = element_blank(), axis.title.y = element_blank(),
-              plot.margin = unit(c(0, 0, 0, 0), "lines"))
+              plot.margin = unit(c(0, 0, 0, 0), "lines"),
+            plot.title = element_text(size = 7, face = "italic"),
+        axis.title = element_text(size = 6))
 
 
 # GPCRs
@@ -1393,45 +1354,46 @@ p3_gpcr_data <- ggplot_build(p3_gpcr_data)$data[[1]]
 p3_gpcr_data$y <- p3_gpcr_data$y - round(p3_gpcr_data$y) - as.numeric(p3_gpcr_data$PANEL) +2
 
 p3_gpcr_1 <- ggplot(p3_gpcr_data) +
-    geom_segment(aes(x=median, xend=median, y=0.5, yend=1.5), data = filter(lundstrom_median, host == "E..coli")) +
-    geom_segment(aes(x=median, xend=median, y=-0.5, yend=0.5), data = filter(lundstrom_median, host == "P..pastoris")) +
+    geom_segment(aes(x=median, xend=median, y=0.5, yend=1.5), size = 0.5, linetype = "dotted", 
+                 data = filter(lundstrom_median, host == "E..coli")) +
+    geom_segment(aes(x=median, xend=median, y=-0.5, yend=0.5), size = 0.5, linetype = "dotted", 
+                 data = filter(lundstrom_median, host == "P..pastoris")) +
     geom_point(aes(x=x, y=y, color=group), shape=21, size=0.95) +
-    ggtitle("Mammalian G Protein-Coupled Receptors") + 
+    annotate("text", x = -8.2, y = 1.38, label = "Mammalian G-Protein-Coupled Receptors", size = 7*5/14, fontface = "bold") + 
     xlab(expression( paste( "SVM"^"rank", " score"))) +
     scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") + 
-    scale_y_continuous(labels=c("0" = "P. pastoris", "1" = "E. coli"), breaks=c(0, 1), limits=c(-0.5, 1.5)) +
+    scale_y_continuous(labels=c("0" = "P. pastoris", "1" = "E. coli"), breaks=c(0, 1), limits=c(-0.5, 1.5), expand=c(0,0)) +
     theme_pub(legend.position="None", 
-              axis.title.x = element_blank(),
               axis.title.y = element_blank(),
-              axis.text.y=element_text(face="italic"),
-              plot.margin = unit(c(0, 0, 0, 0), "lines"),
-              aspect.ratio = 1/8)
+              axis.text.y=element_text(face="italic", color = brewer.pal(3, "Dark2")[c(2,1)]),
+              plot.margin = unit(c(2, 0, 2, 0), "mm"))
 
-p3_gpcr_2 <- ggplot(filter(lundstrom_outcomes, host %in% c("E..coli", "P..pastoris"))) +
-    geom_vline(aes(xintercept = median(ml21))) + # , linetype = "longdash", color = "darkgrey") +
-    geom_jitter(aes(x=ml21, y=outcome, color=as.numeric(outcome)),
-                position = position_quasirandom(varwidth = TRUE), shape=21) +
-    scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
-    ggtitle("GPCR Expression") + 
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
-    facet_wrap(~host, nrow=2) +
-    theme_pub(legend.position = "None",
-              axis.title.y=element_blank(),
-              strip.text = element_text(face="italic"))
+lundstrom_max_auc <- filter(lundstrom_auc, host %in% c("E..coli", "P..pastoris")) %>% arrange(-auc)  %>% group_by(host) %>% 
+    summarise(positive_threshold = positive_threshold[1],
+              auc = specify_decimal(auc[1]*100, k = 1),
+              lower95 = specify_decimal(lower95[1]*100, k = 1),
+              upper95 = specify_decimal(upper95[1]*100, k = 1),
+              ci = paste0(auc, " (", lower95, "-", upper95, ")")) %>% 
+    left_join(distinct(p3_gpcr_data, colour, group) %>% mutate(group = as.numeric(group)), by = c("positive_threshold" = "group"))
 
 p3_gpcr_roc <- ggplot(group_by(lundstrom_auc, host) %>%
                           filter(auc == max(auc), host != "SFV") %>%
                           inner_join(lundstrom_roc)
-                      ) + 
+                      ) +
     geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
+    annotate(geom = "text", x = .65, y = .18, label = filter(lundstrom_max_auc, host == "E..coli")$ci, size = 5*5/14, color = "#1B9E77") +
+    annotate(geom = "text", x = .65, y = .10, label = filter(lundstrom_max_auc, host == "P..pastoris")$ci, size = 5*5/14, color = "#D95F02") +
+    annotate(geom = "point", x = .32, y = .18, size = 1, shape = 15, color = filter(lundstrom_max_auc, host == "E..coli")$colour) +
+    annotate(geom = "point", x = .32, y = .10, size = 1,  shape = 15, color = filter(lundstrom_max_auc, host == "P..pastoris")$colour) +
+    scale_color_manual(values = brewer.pal(3, "Dark2")[c(2,1)]) +
     ylab("True Positive Rate") +
     xlab("False Positive Rate") +
+    ggtitle("Mammalian GPCRs") + 
     scale_y_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) + 
     scale_x_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) +
     theme_pub(legend.position="None", aspect.ratio=1,
-              axis.title.x = element_blank(), axis.title.y = element_blank(),
+        axis.title = element_text(size = 6),
               plot.margin = unit(c(0, 0, 0, 0), "lines"))
 
 # t maritima
@@ -1494,22 +1456,29 @@ p3_tmaritima <- ggplot(tmaritima_outcomes) +
     theme_pub(legend.position = "None",
               axis.title.y=element_blank())
 
+tmaritima_max_auc <- arrange(tmaritima_auc, -auc)[1,] %>%
+    mutate(auc = specify_decimal(auc*100, k = 1),
+           lower95 = specify_decimal(lower95*100, k = 1),
+           upper95 = specify_decimal(upper95*100, k = 1),
+           ci = paste0(auc, " (", lower95, "-", upper95, ")"))
+
 p3_tmaritima_roc <- ggplot(tmaritima_roc) + 
     geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-    geom_text(aes(x=.8, y = 0.2+as.numeric(positive_threshold)/20, color = factor(positive_threshold), 
-                  label=sprintf("AUC=%s (%s-%s)", rnd_pct(auc), rnd_pct(lower95), rnd_pct(upper95))), 
-              data = tmaritima_auc) +
+    annotate(geom = "text", x = .63, y = .10, label = tmaritima_max_auc$ci, size = 5*5/14, color = "#A10F1C") +
     scale_color_manual(values = ggplot_build(p3_tmaritima)$data[[2]] %>% arrange(desc(-group)) %>% 
                            select(colour) %>% unique %>% unlist %>% unname %>% tail(-1), 
                          na.value="black") +
     ylab("True Positive Rate") +
     xlab("False Positive Rate") +
+    ggtitle("Thermotoga maritima") +
     scale_y_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) + 
     scale_x_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) +
     theme_pub(legend.position="None", aspect.ratio = 1,
-              axis.title.x = element_blank(), axis.title.y = element_blank(),
-              plot.margin = unit(c(0, 0, 0, 0), "lines"))
+#              axis.title.x = element_blank(), axis.title.y = element_blank(),
+              plot.margin = unit(c(0, 0, 0, 0), "lines"),
+              plot.title = element_text(size = 7, face = "italic"),
+        axis.title = element_text(size = 6))
 
 # surade
 surade_scores <- read.csv("small-scale/surade.fna.allstats.csv", header = TRUE, row.names = 1, stringsAsFactors = FALSE)
@@ -1611,45 +1580,28 @@ p3_surade <- ggplot(filter(surade_outcomes, vector %in%
     ylab("Dot Density") +
     theme_pub(legend.position = "None")
 
+surade_max_auc <- filter(surade_auc, vector == "pETonly", score_type == "ml21") %>% arrange(-auc)
+surade_max_auc <- mutate(surade_max_auc[1,],
+                          auc = specify_decimal(auc*100, k = 1),
+                          lower95 = specify_decimal(lower95*100, k = 1),
+                          upper95 = specify_decimal(upper95*100, k = 1),
+                          ci = paste0(auc, " (", lower95, "-", upper95, ")"))
+
 p3_surade_roc <- ggplot(filter(surade_roc, vector == "pETonly")) + 
     geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-    geom_text(aes(x=.8, y = 0.2+as.numeric(positive_threshold)/2000, color = factor(positive_threshold), 
-                  label=sprintf("AUC=%s (%s-%s)", rnd_pct(auc), rnd_pct(lower95), rnd_pct(upper95))), 
-              data = filter(surade_auc, vector == "pETonly", score_type == "ml21")) +
+    annotate(geom = "text", x = .68, y = .10, label = surade_max_auc$ci, size = 5*5/14, color = "#AD665D") +
     scale_color_manual(values = unique(filter(ggplot_build(p3_surade)$data[[1]], group %in% c(2,3))$colour), 
                          na.value="black") +
     ylab("True Positive Rate") +
     xlab("False Positive Rate") +
+    ggtitle("Microbial secondary transporters") +
     scale_y_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) + 
     scale_x_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) +
     theme_pub(legend.position="None", aspect.ratio = 1,
-              axis.title.x = element_blank(), axis.title.y = element_blank(),
-              plot.margin = unit(c(0, 0, 0, 0), "lines"))
-
-p3_surade_supp <- ggplot(surade_outcomes, aes(x=ml21, y=outcome, color=as.numeric(outcome))) +
-    geom_jitter(position = position_jitter(height = .1)) + 
-    geom_vline(aes(xintercept=median), linetype = "longdash", color = "darkgrey", data=surade_median) +
-    scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
-    ylab("Dot Density") +
-    facet_wrap(~vector,ncol=2) +
-    theme_pub(legend.position = "None")
-
-p3_surade_supp_roc <- ggplot(filter(surade_roc, vector != "pETonly")) + 
-    geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-    geom_text(aes(x=.8, y = 0.2+as.numeric(positive_threshold)/2000, color = factor(positive_threshold), 
-                  label=sprintf("AUC=%s (%s-%s)", rnd_pct(auc), rnd_pct(lower95), rnd_pct(upper95))), 
-              data = filter(surade_auc, vector != "pETonly", score_type == "ml21")) +
-    scale_color_manual(values = unique(filter(ggplot_build(p3_surade)$data[[1]], group %in% c(2,3))$colour), 
-                         na.value="black") +
-    ylab("True Positive Rate") +
-    xlab("False Positive Rate") +
-    scale_y_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) + 
-    scale_x_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) +
-    theme_pub(legend.position="None", aspect.ratio = 1) +
-    facet_wrap(~vector, ncol=2) 
+#              axis.title.x = element_blank(), axis.title.y = element_blank(),
+              plot.margin = unit(c(0, 0, 0, 0), "lines"),
+        axis.title = element_text(size = 6))
 
 # hpylori
 hpylori_scores <- read.csv("small-scale/hpylori_psakis.ffn.allstats.csv", header = TRUE, 
@@ -1811,118 +1763,54 @@ p3_hpylori <- ggplot(hpylori_outcomes_means) +
     xlab("Reported Outcome") +
     theme_pub(legend.position = "None")
 
+hpylori_max_auc <- filter(hpylori_auc, group == "all", type == "mean") %>% arrange(-auc)
+hpylori_max_auc <- mutate(hpylori_max_auc[1,],
+                          auc = specify_decimal(auc*100, k = 1),
+                          lower95 = specify_decimal(lower95*100, k = 1),
+                          upper95 = specify_decimal(upper95*100, k = 1),
+                          ci = paste0(auc, " (", lower95, "-", upper95, ")"))
+
 p3_hpylori_roc <- ggplot(filter(hpylori_roc, group == "all", type == "mean")) + 
     geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-    geom_text(aes(x=.8, y = 0.2+as.numeric(positive_threshold)/20, color = factor(positive_threshold), 
-                  label=sprintf("AUC=%s (%s-%s)", rnd_pct(auc), rnd_pct(lower95), rnd_pct(upper95))), 
-              data = filter(hpylori_auc, group == "all", type == "mean")) +
+#    geom_text(aes(x=.8, y = 0.2+as.numeric(positive_threshold)/20, color = factor(positive_threshold), 
+#                  label=sprintf("AUC=%s (%s-%s)", rnd_pct(auc), rnd_pct(lower95), rnd_pct(upper95))), 
+#              data = filter(hpylori_auc, group == "all", type == "mean")) +
+    annotate(geom = "text", x = .68, y = .10, label = hpylori_max_auc$ci, size = 5*5/14, color = "#A10F1C") +
     scale_color_manual(values = ggplot_build(p3_hpylori)$data[[2]] %>% 
                            arrange(desc(-group)) %>% select(colour) %>% unique %>% unlist %>% unname %>% tail(-1), 
                          na.value="black") +
     ylab("True Positive Rate") +
     xlab("False Positive Rate") +
+    ggtitle("Helicobacter pylori") + 
     scale_y_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) + 
     scale_x_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) +
     theme_pub(legend.position="None", aspect.ratio = 1,
-              axis.title.x = element_blank(), axis.title.y = element_blank(),
-              plot.margin = unit(c(0, 0, 0, 0), "lines"))
+              plot.margin = unit(c(0, 0, 0, 0), "lines"),
+        plot.title = element_text(size = 7, face = "italic"),
+        axis.title = element_text(size = 6))
 
-p3_hpylori_supp1 <- ggplot(rbind(mutate(hpylori_outcomes_means, vector = "all"), hpylori_outcomes_means) %>% 
-                               mutate(vector = factor(vector, 
-                                                      levels = c("all", "pET", "LAC", "TEV"),
-                                                      labels = c("all", "pET", "LAC", "TEV"))
-                                      )
-                           ) + 
-    geom_vline(aes(xintercept=median), color = "darkgrey", linetype = "longdash", data = filter(hpylori_median, type=="mean")) +
-    geom_jitter(aes(x=ml21, y=outcome, color=as.numeric(outcome)), position = position_jitter(height = .1)) +
-    scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
-    scale_x_continuous(limits=c(-7.89, 1.46), expand=c(0,0)) +
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
-    ylab("Reported Outcome") +
-    facet_wrap(~vector, nrow=2, scales="free") + 
-    theme_pub(legend.position = "None")
+p3_main <- ggdraw() +
+    draw_plot(
+        plot_grid(p3_archaea_sdspage, p3_archaea_western, p3_mt, p3_gpcr_1,
+                  labels = c("a",NULL,"c","e"), label_size = 8, ncol = 1, align = "v"),
+        x = 0, y = .23, width = .8, height = 1-.23) + 
+    draw_label("Percentage of\nMembrane Protein", x = .03, y = .91, angle = 90, size = 7) + 
+    draw_label("Count", x = .03, y = .72, angle = 90, size = 7) + 
+    draw_label("Coomassie Blue", x = .22, y = .76, size = 6, colour = "#A10F1C") + 
+    draw_label("Western Blot", x = .22, y = .74, size = 6, colour = "#AD665D") + 
+    draw_label("No Expression", x = .22, y = .71, size = 6, colour = "#A4A5A5") + 
+    draw_plot(
+        plot_grid(p3_archaea_roc, p3_mt_roc, p3_gpcr_roc,
+                  labels = c("b","d","f"), label_size = 8, ncol = 1, align = "hv"),
+        x = .82, y = .17, width = .17, height = 1-.17) +
+    draw_plot(
+        plot_grid(p3_hpylori_roc, p3_surade_roc, p3_tmaritima_roc, 
+                  labels = c("g", "h", "i"), label_size = 8, nrow = 1, align = "hv"),
+        x = .1, y = 0, width = .7, height = .23)
 
-p3_hpylori_supp2 <- ggplot(rbind(mutate(hpylori_outcomes, group = "all"), hpylori_outcomes) %>%
-                               mutate(group = factor(group, 
-                                                     levels = c("all", "pET28 / pET36", "pQL60Lac / Automatic", "pQTev / Automatic", 
-                                                                "pQL60Lac / Manual", "pQTev / Manual"),
-                                                      labels = c("all", "pET28 / pET36", "pQL60Lac / Automatic", "pQTev / Automatic", 
-                                                                "pQL60Lac / Manual", "pQTev / Manual"))
-                                      )
-                           ) + 
-    geom_vline(aes(xintercept=median), color = "darkgrey", linetype = "longdash", data = filter(hpylori_median, type != "mean")) +
-    geom_jitter(aes(x=ml21, y=outcome, color=as.numeric(outcome)), position = position_jitter(height = .1)) +
-    scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
-    scale_x_continuous(limits=c(-7.89, 1.46), expand=c(0,0)) +
-    ylab("Reported Outcome") +
-    facet_wrap(~group, ncol=2, scales="free") + 
-    theme_pub(legend.position = "None")
+save_plot(filename = "plots/fig3_w_panels.pdf", plot = p3_main, base_width = uconv(183, "mm", "in", "Length"), base_height = 5)
 
-p3_hpylori_supp1_roc <- ggplot(filter(hpylori_roc, type == "mean")) + 
-    geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-    geom_text(aes(x=.8, y = 0.2+as.numeric(positive_threshold)/20, color = factor(positive_threshold), 
-                  label=sprintf("AUC=%s (%s-%s)", rnd_pct(auc), rnd_pct(lower95), rnd_pct(upper95))), 
-              data = filter(hpylori_auc, type == "mean")) +
-    scale_color_manual(values = ggplot_build(p3_hpylori_supp1)$data[[2]] %>% 
-                           arrange(desc(-group)) %>% select(colour) %>% unique %>% unlist %>% unname %>% tail(-1), 
-                         na.value="black") +
-    scale_y_continuous(expand = c(0, 0)) +
-    scale_x_continuous(expand = c(0, 0)) +
-    theme_pub(legend.position="None") +
-    coord_fixed(ratio = 1) +
-    facet_wrap(~group, ncol=2)
-
-# relevel factors so that the plots show up in a logical order:
-hpylori_roc$group <- factor(hpylori_roc$group, 
-                            levels = c("all", "pET", "LAC", "TEV", "pET28 / pET36",
-                                       "pQL60Lac / Automatic", "pQTev / Automatic", "pQL60Lac / Manual", "pQTev / Manual"),
-                            labels = c("all", "pET", "LAC", "TEV", "pET28 / pET36",
-                                       "pQL60Lac / Automatic", "pQTev / Automatic", "pQL60Lac / Manual", "pQTev / Manual"))
-
-p3_hpylori_supp2_roc <- ggplot(filter(hpylori_roc, type != "mean")) + 
-    geom_path(aes(x=1-specificities, y=sensitivities, color = factor(positive_threshold))) +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
-    geom_text(aes(x=.8, y = 0.2+as.numeric(positive_threshold)/20, color = factor(positive_threshold), 
-                  label=sprintf("AUC=%s (%s-%s)", rnd_pct(auc), rnd_pct(lower95), rnd_pct(upper95))), 
-              data = filter(hpylori_auc, type != "mean")) +
-    scale_color_manual(values = ggplot_build(p3_hpylori_supp2)$data[[2]] %>% 
-                           arrange(desc(-group)) %>% select(colour) %>% unique %>% unlist %>% unname %>% tail(-1), 
-                         na.value="black") +
-    scale_y_continuous(expand = c(0, 0)) +
-    scale_x_continuous(expand = c(0, 0)) +
-    theme_pub(legend.position="None") +
-    coord_fixed(ratio = 1) +
-    facet_wrap(~group, ncol=2)
-
-p3_main <- plot_grid(p3_archaea_sdspage, p3_archaea_sdspage_roc, 
-          p3_archaea_western, p3_archaea_western_roc,
-          p3_gpcr_1, p3_gpcr_roc,
-          p3_mt, p3_mt_roc,
-          plot_grid(p3_hpylori_roc, 
-                    p3_surade_roc, 
-                    p3_tmaritima_roc, 
-                    labels = c("I", "J", "K"), nrow=1), NULL,
-          rel_widths = c(3,1), rel_heights = c(1,1,1,1,1),
-          labels = letters[c(1:8)], ncol = 2, align = "h")
-
-save_plot(filename = "plots/fig3_w_panels.pdf", plot = p3_main, base_width = uconv(183, "mm", "in", "Length"), base_height = 6)
-
-pdf("plots/fig3_supp_figs.pdf", width = uconv(183, "mm", "in"))
-# supp figs
-p3_hpylori_supp2_roc
-p3_hpylori_supp1_roc
-p3_hpylori_supp2
-p3_hpylori_supp1
-p3_surade_supp_roc
-p3_surade_supp
-p3_gpcr_roc_supp
-p3_gpcr_supp
-p3_mt_vectors_sup
-p3_mt_roc_supp
-dev.off()
 
 ```
 
@@ -2150,6 +2038,7 @@ forward_preds_order <- c(
 
 p4_all_violin <- ggplot(forward_preds) + 
     geom_point(aes(x=species, y=boxplot_3_median), color = "darkgrey", data = forward_tufte_boxplots) + 
+    geom_text(aes(x=species, y=-6, label = species), vjust = 2, fontface = "italic", size = 7*5/14, data = forward_tufte_boxplots) + 
     geom_linerange(aes(x=species, ymin=boxplot_1, ymax=boxplot_2), color = "darkgrey", data = forward_tufte_boxplots)+ 
     geom_linerange(aes(x=species, ymin=boxplot_4, ymax=boxplot_5), color = "darkgrey", data = forward_tufte_boxplots) +
     geom_violin2(aes(y=ml21, x=species), color = "black", adjust = 0.3, alpha = 0) + 
@@ -2161,38 +2050,22 @@ p4_all_violin <- ggplot(forward_preds) +
     scale_y_continuous(expand=c(0,0), limits=nycomps_xscale, breaks=nycomps_breaks) +
     scale_x_discrete(limits=forward_preds_order) +
     #coord_cartesian(ylim = c(-7,7)) +
-    theme_pub(axis.title.y = element_blank(),
-              axis.text.y = element_text(face="italic"))
-
-selected_preds <- c("Plasmodium falciparum",
-                    "Aquifex aeolicus",
-                    "Thermus thermophilus",
-                    "Haloarcula marismortui",
-                    "Bacillus halodurans",
-                    "Escherichia coli",
-                    "Homo sapiens")
-
-p4_selected_violin <- ggplot(forward_preds) + 
-    geom_point(aes(x=species, y=boxplot_3_median), color = "darkgrey", size = 0.5, data = forward_tufte_boxplots) + 
-    geom_text(aes(x=species, y=-6, label = species), vjust = 2, fontface = "italic", size = 7*5/14, data = forward_tufte_boxplots) + 
-    geom_linerange(aes(x=species, ymin=boxplot_1, ymax=boxplot_2), color = "darkgrey", size = 0.5, data = forward_tufte_boxplots)+ 
-    geom_linerange(aes(x=species, ymin=boxplot_4, ymax=boxplot_5), color = "darkgrey", size = 0.5, data = forward_tufte_boxplots) +
-    geom_violin2(aes(y=ml21, x=species), color = "black", adjust = 0.3, alpha = 0, weight = 0.5) + 
-    # to get the tufte-like boxplots
-#    geom_hline(yintercept=forward_ec_thresholds[[3]], linetype="dashed", color="darkgrey") +
-    geom_hline(yintercept=forward_ec_thresholds[[4]], linetype="dotted", color="darkgrey", size = 0.5) +
-    coord_flip() +
-    ylab(expression( paste( "SVM"^"rank", " score"))) +
-    scale_y_continuous(expand=c(0,0), limits=nycomps_xscale, breaks=nycomps_breaks) +
-    scale_x_discrete(limits=selected_preds) +
-    #coord_cartesian(ylim = c(-7,7)) +
     theme_pub(axis.ticks.y = element_blank(),
               axis.title.y = element_blank(),
               axis.text.y = element_blank(),
               axis.line.y = element_blank())
 
+p4_selected_violin <- p4_all_violin + 
+    scale_x_discrete(
+        limits=c("Plasmodium falciparum",
+                    "Aquifex aeolicus",
+                    "Thermus thermophilus",
+                    "Haloarcula marismortui",
+                    "Bacillus halodurans",
+                    "Escherichia coli",
+                    "Homo sapiens"))
+
 p4_ecoli <- ggplot(daley_outcomes) +
-#    geom_histogram(aes(x=log(gfp)), binwdth = 0.1) +
     geom_violin(aes(x = "E. coli", y=log(gfp)), adjust = 0.25, alpha = 1, weight = 0.5) +
     coord_flip() + 
     ylab(expression(paste("ln"("Whole Cell GFP Fluorescence")))) +
@@ -2211,13 +2084,7 @@ p4_main <- ggdraw() +
 
 save_plot(filename = "plots/fig4_w_panels.pdf", plot = p4_main, base_width = uconv(120, "mm", "in", "Length"))
 
-pdf("plots/fig4_supp.pdf", width = 11, height = 8.5)
-p4_all_violin
-p4_metazoa_polytopic_supp
-
-grid.arrange(p4_tm_hist_supp, nrow=2)
-print(p4_tm_hist_supp_zoom, vp = viewport(x = .65, y = .82, height = .35, width = .67))
-dev.off()
+save_plot(filename = "plots/extfig1.pdf", plot = ggdraw(p4_all_violin) + draw_plot_label("a", size = 8), base_width = uconv(120, "mm", "in", "Length"), base_height = 7)
 ```
 
 ```{r}
