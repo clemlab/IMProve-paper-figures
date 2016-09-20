@@ -1,7 +1,7 @@
 ---
-title: "ml21_fig_prep"
+title: "ml21_fig_prep_v3"
 author: "Shyam Saladi"
-date: "8/31/2015"
+date: "9/11/2015"
 output: html_document
 ---
 ```{r}
@@ -83,7 +83,7 @@ daley_ml21 <- ecoli_outcomes_exp[! ecoli_outcomes_exp$grouping %in%
 ## Gather Daley predictions
 daley_ml21$scores <- read.table("linear_tunegrid/daley_only_raw_exp_ml20.full.4.train.predictions", header = FALSE)$V1
 
-## nly keep those genes that were trained on
+## only keep those genes that were trained on
 temp_data <- daley_outcomes[tolower(daley_outcomes$ID) %in% daley_ml21$ID,]
 temp_data <- temp_data[temp_data$measurement %in% c('ValNorm1','ValNorm2','ValNorm3', 'ValNorm4'),]
 temp_data$ID <- tolower(as.character(temp_data$ID))
@@ -362,7 +362,7 @@ p2_1 <- ggplot(temp_posmix, aes(x=svmrank, fill=outcome)) +
     scale_y_continuous(expand=c(0,0)) +
     ylab("Count") +
     xlab(expression( paste( "SVM"^"rank", " score"))) +
-    scale_fill_manual(values = brewer.pal(3, "Dark2")) + 
+    scale_fill_manual(values = c("#00FFFF", "#E08282")) + 
     theme_pub(legend.position="none")
 
 p2_3 <- ggplot(nycomps_scores_flulin2, aes(x=svmrank, fill=outcome)) + 
@@ -372,29 +372,29 @@ p2_3 <- ggplot(nycomps_scores_flulin2, aes(x=svmrank, fill=outcome)) +
     scale_y_continuous(expand=c(0,0)) +
     ylab("Count") +
     xlab(expression( paste( "SVM"^"rank", " score"))) +
-    scale_fill_manual(values = brewer.pal(3, "Dark2")) + 
+    scale_fill_manual(values = c("#00FFFF", "#E08282")) + 
     theme_pub(legend.position="none")
 
-temp_posmix$outcome <- factor(temp_posmix$outcome, labels = c("≥1 pos", "neg"), levels = c("≥1 pos", "neg"))
-p2_2 <- ggplot(temp_posmix, aes(x=svmrank, fill=outcome)) + 
-    geom_bar(binwidth = fd_bw(temp_posmix$svmrank), alpha=1, position="fill") + 
-#    stat_ecdf(aes(color=outcome)) +
-    scale_x_continuous(expand=c(0,0), limits=c(-7,7)) +
-    scale_y_continuous(expand=c(0,0)) +
-    xlab(expression( paste( "SVM"^"rank", " score"))) + ylab("Percentage") +
-    scale_fill_manual(values = brewer.pal(3, "Dark2")) + 
-    theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
-
-nycomps_scores_flulin2$outcome2 <- factor(nycomps_scores_flulin2$outcome, 
-                                         labels = c("pos", "neg"), levels = c("1", "-1"))
-p2_4 <- ggplot(nycomps_scores_flulin2, aes(x=svmrank, fill=outcome2)) + 
-    geom_bar(binwidth = fd_bw(nycomps_scores_flulin2$svmrank), alpha=1, position="fill") + 
-#    stat_ecdf(aes(color=outcome)) +
-    scale_x_continuous(expand=c(0,0), limits=c(-7,7)) +
-    scale_y_continuous(expand=c(0,0)) +
-    xlab(expression( paste( "SVM"^"rank", " score"))) + ylab("Percentage") +
-    scale_fill_manual(values = brewer.pal(3, "Dark2")) + 
-    theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
+# temp_posmix$outcome <- factor(temp_posmix$outcome, labels = c("≥1 pos", "neg"), levels = c("≥1 pos", "neg"))
+# p2_2 <- ggplot(temp_posmix, aes(x=svmrank, fill=outcome)) + 
+#     geom_bar(binwidth = fd_bw(temp_posmix$svmrank), alpha=1, position="fill") + 
+# #    stat_ecdf(aes(color=outcome)) +
+#     scale_x_continuous(expand=c(0,0), limits=c(-7,7)) +
+#     scale_y_continuous(expand=c(0,0)) +
+#     xlab(expression( paste( "SVM"^"rank", " score"))) + ylab("Percentage") +
+#     scale_fill_manual(values = c("#00FFFF", "#E08282")) + 
+#     theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
+# 
+# nycomps_scores_flulin2$outcome2 <- factor(nycomps_scores_flulin2$outcome, 
+#                                          labels = c("pos", "neg"), levels = c("1", "-1"))
+# p2_4 <- ggplot(nycomps_scores_flulin2, aes(x=svmrank, fill=outcome2)) + 
+#     geom_bar(binwidth = fd_bw(nycomps_scores_flulin2$svmrank), alpha=1, position="fill") + 
+# #    stat_ecdf(aes(color=outcome)) +
+#     scale_x_continuous(expand=c(0,0), limits=c(-7,7)) +
+#     scale_y_continuous(expand=c(0,0)) +
+#     xlab(expression( paste( "SVM"^"rank", " score"))) + ylab("Percentage") +
+#     scale_fill_manual(values = brewer.pal(3, "Dark2")) + 
+#     theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
 
 temp_breaks <- seq(from = max(temp_posmix$svmrank)+1, 
                      to = min(temp_posmix$svmrank)-1,
@@ -432,8 +432,8 @@ p2_2a <- ggplot(subset(temp_hist2, sumcounts > 10)) +
         scale_x_continuous(expand=c(0,0), limits=c(-7,7)) +
         scale_y_continuous(expand=c(0,0)) +
         xlab(expression( paste( "SVM"^"rank", " score"))) + ylab("Percentage") +
-        scale_fill_manual(values = brewer.pal(3, "Dark2")) +
-        scale_color_manual(values = brewer.pal(3, "Dark2")) +
+        scale_fill_manual(values = c("#E08282", "#00FFFF")) + 
+        scale_color_manual(values = c("#E08282", "#00FFFF")) +
         theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
 
 p2_2bi <- ggplot(temp_counts) + 
@@ -441,8 +441,6 @@ p2_2bi <- ggplot(temp_counts) +
     scale_x_continuous(expand=c(0,0), limits=c(1,20)) +
     scale_y_continuous(expand=c(0,0)) +
     xlab("Bin Occupancy") + ylab("Count") +
-    scale_fill_manual(values = brewer.pal(3, "Dark2")) +
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
     theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
 
 p2_2bii <- ggplot(temp_counts, aes(x=sum_counts)) + 
@@ -452,8 +450,6 @@ p2_2bii <- ggplot(temp_counts, aes(x=sum_counts)) +
     scale_x_continuous(expand=c(0,0), limits=c(1, max(temp_counts$sum_counts))) +
     scale_y_continuous(expand=c(0,0)) +
     xlab("Bin Occupancy") + ylab("Count") +
-    scale_fill_manual(values = brewer.pal(3, "Dark2")) +
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
     theme_pub(axis.title.x = element_blank(),
               axis.title.y = element_blank())
 
@@ -492,8 +488,8 @@ p2_4a <- ggplot(subset(temp_hist2, sumcounts > 10)) +
         scale_x_continuous(expand=c(0,0), limits=c(-7,7)) +
         scale_y_continuous(expand=c(0,0)) +
         xlab(expression( paste( "SVM"^"rank", " score"))) + ylab("Percentage") +
-        scale_fill_manual(values = brewer.pal(3, "Dark2")) +
-        scale_color_manual(values = brewer.pal(3, "Dark2")) +
+        scale_fill_manual(values = c("#E08282", "#00FFFF")) + 
+        scale_color_manual(values = c("#E08282", "#00FFFF")) + 
         theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
 
 # ggplot(subset(temp_hist2, id == "neg" & counts >= 10)) + 
@@ -508,7 +504,6 @@ p2_1inset <- ggplot(temp_rocs[temp_rocs$group == "posmix",]) +
     scale_y_continuous(expand = c(0, 0)) +
     scale_x_continuous(expand = c(0, 0)) +
     xlab("False Positive Rate (1-Specificity)") + ylab("True Positive Rate (Sensitivity)") + 
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
     theme_pub(legend.position = c(.96, .10))
 
 p2_2inset <- ggplot(temp_rocs[temp_rocs$group == "all",]) +
@@ -517,7 +512,6 @@ p2_2inset <- ggplot(temp_rocs[temp_rocs$group == "all",]) +
     scale_y_continuous(expand = c(0, 0)) +
     scale_x_continuous(expand = c(0, 0)) +
     xlab("False Positive Rate (1-Specificity)") + ylab("True Positive Rate (Sensitivity)") + 
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
     theme_pub(legend.position = c(.96, .10))
 
 
@@ -546,15 +540,7 @@ p2_5a <- ggplot(unique(temp_rocs[ , c("auc", "group", "count")]), aes(x=group, y
 #        scale_color_manual(values = brewer.pal(3, "Dark2")) +
         theme_pub(axis.title.x=element_blank())
 
-grid.arrange(arrangeGrob(p2_1, p2_2a, p2_2, ncol = 1, heights=c(2, 1, 1)), 
-             arrangeGrob(p2_3, p2_4a, p2_4, ncol = 1, heights=c(2, 1, 1)), ncol = 2)
-print(p2_1inset, vp = viewport(width = 0.2, height = 0.3, x = .39, y = .8))
-print(p2_2inset, vp = viewport(width = 0.2, height = 0.3, x = .89, y = .8))
 
-p2_2bi
-print(p2_2bii, vp = viewport(width = 0.5, height = 0.5, x = .7, y = .7))
-
-grid.arrange(p2_5, p2_5a, ncol=1, nrow=2)
 
 enrichment_factor <- function (scores, posneg, quantile) {
     posneg <- verify_d(posneg)
@@ -610,8 +596,8 @@ temp_ppv <- rbind(temp_ppv,
                   )
 temp_ppv$window <- factor(temp_ppv$window)
 
-p1 <- ggplot(temp_ppv) + 
-        geom_path(aes(x=c, y=accuracy, color = window)) +
+p1 <- ggplot(subset(temp_ppv, window == 50)) + 
+        geom_path(aes(x=c, y=accuracy)) + #, color = window)) +
         geom_hline(aes(yintercept=min(accuracy, na.rm=TRUE)), linetype="dashed", color="darkgrey") +
 #        geom_hline(aes(yintercept=max(accuracy, na.rm=TRUE)), linetype="dashed", color="darkgrey") +
         scale_x_continuous(expand=c(0,0), limits=c(-7,7)) +
@@ -621,16 +607,16 @@ p1 <- ggplot(temp_ppv) +
         scale_color_manual(values = brewer.pal(3, "Dark2")) +
         theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
 
-p2 <- ggplot(temp_ppv, aes(x=perc_rank, y=accuracy, color = window)) + 
-        geom_path() +
-        geom_hline(aes(yintercept=min(accuracy, na.rm=TRUE)), linetype="dashed", color="darkgrey") +
-#        geom_hline(aes(yintercept=max(accuracy, na.rm=TRUE)), linetype="dashed", color="darkgrey") +
-        scale_x_continuous(expand=c(0,0), limits=c(0,1), breaks=seq(0, 1, .2)) +
-        scale_y_continuous(expand=c(0,0), limits=c(0,.5), breaks=seq(0, 1, .1)) +
-        xlab(expression( paste( "Percentile SVM"^"rank", " score"))) + ylab("Positive Predictive Value") +
-        scale_fill_manual(values = brewer.pal(3, "Dark2")) +
-        scale_color_manual(values = brewer.pal(3, "Dark2")) +
-        theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
+# p2 <- ggplot(temp_ppv, aes(x=perc_rank, y=accuracy, color = window)) + 
+#         geom_path() +
+#         geom_hline(aes(yintercept=min(accuracy, na.rm=TRUE)), linetype="dashed", color="darkgrey") +
+# #        geom_hline(aes(yintercept=max(accuracy, na.rm=TRUE)), linetype="dashed", color="darkgrey") +
+#         scale_x_continuous(expand=c(0,0), limits=c(0,1), breaks=seq(0, 1, .2)) +
+#         scale_y_continuous(expand=c(0,0), limits=c(0,.5), breaks=seq(0, 1, .1)) +
+#         xlab(expression( paste( "Percentile SVM"^"rank", " score"))) + ylab("Positive Predictive Value") +
+#         scale_fill_manual(values = brewer.pal(3, "Dark2")) +
+#         scale_color_manual(values = brewer.pal(3, "Dark2")) +
+#         theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
 
 temp_ppv <- calc_ppv(temp_posmix$outcome != "neg", temp_posmix$svmrank)
 temp_ppv$perc_rank <- perc.rank(temp_ppv$c)
@@ -647,8 +633,8 @@ temp_ppv <- rbind(temp_ppv,
                   )
 temp_ppv$window <- factor(temp_ppv$window)
 
-p3 <- ggplot(temp_ppv) + 
-        geom_path(aes(x=c, y=accuracy, color = window)) +
+p3 <- ggplot(subset(temp_ppv, window == 50)) + 
+        geom_path(aes(x=c, y=accuracy)) + #, color = window)) +
         geom_hline(yintercept=min(temp_ppv[temp_ppv$window == 50,]$accuracy, na.rm=TRUE), 
                    linetype="dashed", color="darkgrey") +
 #        geom_hline(aes(yintercept=max(accuracy, na.rm=TRUE)), linetype="dashed", color="darkgrey") +
@@ -659,19 +645,27 @@ p3 <- ggplot(temp_ppv) +
         scale_color_manual(values = brewer.pal(3, "Dark2")) +
         theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
 
-p4 <- ggplot(temp_ppv, aes(x=perc_rank, y=accuracy, color = window)) + 
-        geom_path() +
-        geom_hline(yintercept=min(temp_ppv[temp_ppv$window == 50,]$accuracy, na.rm=TRUE), 
-                   linetype="dashed", color="darkgrey") +
-#        geom_hline(aes(yintercept=max(accuracy, na.rm=TRUE)), linetype="dashed", color="darkgrey") +
-        scale_x_continuous(expand=c(0,0), limits=c(0,1), breaks=seq(0, 1, .2)) +
-        scale_y_continuous(expand=c(0,0), limits=c(0,.5), breaks=seq(0, 1, .1)) +
-        xlab(expression( paste( "Percentile SVM"^"rank", " score"))) + ylab("Positive Predictive Value") +
-        scale_fill_manual(values = brewer.pal(3, "Dark2")) +
-        scale_color_manual(values = brewer.pal(3, "Dark2")) +
-        theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
+# p4 <- ggplot(temp_ppv, aes(x=perc_rank, y=accuracy, color = window)) + 
+#         geom_path() +
+#         geom_hline(yintercept=min(temp_ppv[temp_ppv$window == 50,]$accuracy, na.rm=TRUE), 
+#                    linetype="dashed", color="darkgrey") +
+# #        geom_hline(aes(yintercept=max(accuracy, na.rm=TRUE)), linetype="dashed", color="darkgrey") +
+#         scale_x_continuous(expand=c(0,0), limits=c(0,1), breaks=seq(0, 1, .2)) +
+#         scale_y_continuous(expand=c(0,0), limits=c(0,.5), breaks=seq(0, 1, .1)) +
+#         xlab(expression( paste( "Percentile SVM"^"rank", " score"))) + ylab("Positive Predictive Value") +
+#         scale_fill_manual(values = brewer.pal(3, "Dark2")) +
+#         scale_color_manual(values = brewer.pal(3, "Dark2")) +
+#         theme_pub(legend.position = c(0.1, 0.9), legend.margin = unit(0.6, "cm"))
 
-grid.arrange(p1, p2, p3, p4, nrow=2, ncol=2)
+grid.arrange(arrangeGrob(p2_1, p2_2a, p1, ncol = 1, heights=c(2, 1, 1)), 
+             arrangeGrob(p2_3, p2_4a, p3, ncol = 1, heights=c(2, 1, 1)), ncol = 2)
+print(p2_1inset, vp = viewport(width = 0.2, height = 0.3, x = .39, y = .8))
+print(p2_2inset, vp = viewport(width = 0.2, height = 0.3, x = .89, y = .8))
+
+p2_2bi
+print(p2_2bii, vp = viewport(width = 0.5, height = 0.5, x = .7, y = .7))
+
+grid.arrange(p2_5, p2_5a, ncol=1, nrow=2)
 
 dev.off()
 ```
@@ -683,7 +677,7 @@ dev.off()
 ```{r}
 ### M. TUBERCULOSIS OUTCOMES AND SCORES (FROM TIM CROSS'S FIRST PAPER)
 # mt data munging
-pdf("ml21_p3_view_v2.pdf", width = 22, height=15)
+pdf("ml21_p3_view_v3.pdf", width = 11, height=8.5)
 
 tcross_outcomes <- read.csv("tcross_mt_outcomes.csv", header = TRUE, row.names = 1)
 tcross_outcomes <- tcross_outcomes %>% gather(assay, outcome, IB_CB:MEM_WB)
@@ -754,38 +748,46 @@ temp_data$assay <- factor(temp_data$assay,
 
 p3_1a <- ggplot(temp_data, aes(x=svmrank, y=assay, color = outcome)) +
     geom_jitter(alpha = 0.9, #pch =21
-                position = position_jitter(width = .1)) +
-    geom_vline(x = q50, alpha = 0.5, linetype="dashed", color="darkgrey") + 
+                position = position_jitter(height=0.2)) +
+    geom_vline(x = q50, alpha = 0.5, linetype="dashed", color="black") + 
 #    annotate("text", x = 2.5, y = 1.2, label = paste(mdply(auc_vals, function(group, AUC) sprintf("%s %.3f", group, AUC))$V1, collapse = "\n")) +
     ggtitle("M. tuberculosis - CodonPlus-RP(DE3) & N")  +
     xlab(expression( paste( "SVM"^"rank", " score"))) +
 #    scale_y_continuous(expand = c(0,0), limits = c(0, 40)) +
     scale_x_continuous(limits=c(-4.5,4), breaks=seq(-4,4,2)) +
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
+    scale_color_manual(values = c("#00FFFF", "#E08282")) + # values = brewer.pal(3, "Dark2")) +
     theme_pub(axis.title.y = element_blank(),
               legend.position = c(.96, .96))
 
 p3_1b <- ggplot(subset(temp_data, assay %in% c("MEM_CB", "MEM_WB")), 
                 aes(x=svmrank, y=assay, color = outcome)) +
-    geom_jitter(alpha = 0.9, #pch =21
-                position = position_jitter(width = .1)) +
+    geom_jitter(alpha = 0.7, size = 3, #pch =21
+                position = position_jitter(height = .2)) +
     geom_vline(x = q50, alpha = 0.5, linetype="dashed", color="darkgrey") + 
 #    annotate("text", x = 2.5, y = 1.2, label = paste(mdply(auc_vals, function(group, AUC) sprintf("%s %.3f", group, AUC))$V1, collapse = "\n")) +
     ggtitle("M. tuberculosis - CodonPlus-RP(DE3) & N")  +
     xlab(expression( paste( "SVM"^"rank", " score"))) +
 #    scale_y_continuous(expand = c(0,0), limits = c(0, 40)) +
     scale_x_continuous(limits=c(-4.5,4), breaks=seq(-4,4,2)) +
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
+    scale_color_manual(values = c("#00FFFF", "#E08282")) + #values = brewer.pal(3, "Dark2")) +
     theme_pub(axis.title.y = element_blank(),
               legend.position = c(.96, .96))
+p3_1a
+grid.arrange(p3_1b, nrow=2)
+p1
 
-grid.arrange(p3_1a, p3_1b, p1, ncol=2, nrow=2)
+#grid.arrange(p3_1a, p3_1b, p1, ncol=2, nrow=2)
 
 # archaea - ml21
 temp_data <- subset(archaea_outcomes, Measurement == 'WB/Gel' & Outcome != "n.c." & Outcome != "n.t.")
+
 temp_data$Outcome <- factor(as.numeric(as.character(temp_data$Outcome)), 
                             labels = c("None", "WB-only", "1-10% of MP", ">10% of MP"), 
                             levels = c("0","1","5","10"))
+
+temp_data$OutcomeBinary <- NA
+temp_data[temp_data$Outcome == "None",]$OutcomeBinary <- "None"
+temp_data[temp_data$Outcome != "None",]$OutcomeBinary <- "WB"
 
 q50 <- quantile(temp_data$daley_only_raw_exp_ml21,
                 probs = 0.50, names = FALSE)
@@ -793,50 +795,50 @@ q50 <- quantile(temp_data$daley_only_raw_exp_ml21,
 temp_data$morethannone <- as.numeric(temp_data$Outcome) > 1
 temp_data$morethanWB <- as.numeric(temp_data$Outcome) > 2
 
-p3_2 <- ggplot(temp_data) +
-    geom_vline(x = q50, alpha = 0.5, linetype="dashed", color = "darkgrey") +
-    geom_jitter(aes(x=daley_only_raw_exp_ml21, y=Outcome, color=E..coli.strain),
-                position = position_jitter(height = .2)) + 
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
-#    scale_y_continuous(expand = c(0,0), limits = c(0, 40)) +
-    scale_x_continuous(expand = c(0,0), limits = c(-3.2, -1)) +
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
-    theme_pub(axis.title.y = element_blank(),
-              legend.position = "none")
+# p3_2 <- ggplot(temp_data) +
+#     geom_vline(x = q50, alpha = 0.5, linetype="dashed", color = "darkgrey") +
+#     geom_jitter(aes(x=daley_only_raw_exp_ml21, y=Outcome, color=E..coli.strain),
+#                 position = position_jitter(height = .2)) + 
+#     xlab(expression( paste( "SVM"^"rank", " score"))) +
+# #    scale_y_continuous(expand = c(0,0), limits = c(0, 40)) +
+#     scale_x_continuous(expand = c(0,0), limits = c(-3.2, -1)) +
+#     scale_color_manual(values = brewer.pal(3, "Dark2")) +
+#     theme_pub(axis.title.y = element_blank(),
+#               legend.position = "none")
 
-p3_2ai <- ggplot(subset(temp_data, Outcome %in% c("None", "WB-only"))) +
-    geom_vline(x = q50, alpha = 0.5, linetype="dashed", color = "darkgrey") +
-    geom_jitter(aes(x=daley_only_raw_exp_ml21, y=Outcome, color=E..coli.strain),
-                position = position_jitter(height = .2)) + 
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
-#    scale_y_continuous(expand = c(0,0), limits = c(0, 40)) +
-    scale_x_continuous(expand = c(0,0), limits = c(-3.2, -1)) +
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
-    theme_pub(axis.title.y = element_blank(),
-              legend.position = "none")
+# p3_2ai <- ggplot(subset(temp_data, Outcome %in% c("None", "WB-only"))) +
+#     geom_vline(x = q50, alpha = 0.5, linetype="dashed", color = "darkgrey") +
+#     geom_jitter(aes(x=daley_only_raw_exp_ml21, y=Outcome, color=E..coli.strain),
+#                 position = position_jitter(height = .2)) + 
+#     xlab(expression( paste( "SVM"^"rank", " score"))) +
+# #    scale_y_continuous(expand = c(0,0), limits = c(0, 40)) +
+#     scale_x_continuous(expand = c(0,0), limits = c(-3.2, -1)) +
+#     scale_color_manual(values = brewer.pal(3, "Dark2")) +
+#     theme_pub(axis.title.y = element_blank(),
+#               legend.position = "none")
 
-temp_data2 <- ddply(temp_data, c("Outcome", "E..coli.strain", "daley_only_raw_exp_ml21"), 
-                    summarise, count=length(Outcome))
+temp_data2 <- ddply(temp_data, c("OutcomeBinary", "E..coli.strain", "daley_only_raw_exp_ml21"), 
+                    summarise, count=length(OutcomeBinary))
 p3_2aii <- ggplot() + 
-    geom_vline(x = q50, alpha = 0.5, linetype="dashed", color = "darkgrey") +
+    geom_vline(x = q50, alpha = 0.5, linetype="dashed", color = "black") +
     geom_hline(yintercept = 0, alpha = 0.5, linetype="dashed", color = "darkgrey") +
-    geom_bar(aes(x=daley_only_raw_exp_ml21, y=-count, color=E..coli.strain, fill=E..coli.strain),
-             stat="identity", width=.02, data=subset(temp_data2, Outcome %in% c("None"))) + 
-    geom_bar(aes(x=daley_only_raw_exp_ml21, y=count, color=E..coli.strain, fill=E..coli.strain),
-             stat="identity", width=.02, data=subset(temp_data2, Outcome %in% c("WB-only"))) + 
+    geom_bar(aes(x=daley_only_raw_exp_ml21, y=-count), color="#00FFFF", fill="#00FFFF",
+             stat="identity", width=.02, data=subset(temp_data2, OutcomeBinary %in% c("None"))) + 
+    geom_bar(aes(x=daley_only_raw_exp_ml21, y=count), color="#E08282", fill="#E08282",
+             stat="identity", width=.02, data=subset(temp_data2, OutcomeBinary %in% c("WB"))) + 
     xlab(expression( paste( "SVM"^"rank", " score"))) +
+    ylab("Count") +
     scale_y_continuous(expand = c(0,0), limits = c(-6.1, 6), breaks=seq(-10,10,2)) +
     scale_x_continuous(expand = c(0,0), limits = c(-3.2, -1)) +
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
-    scale_fill_manual(values = brewer.pal(3, "Dark2")) +
-    theme_pub(axis.title.y = element_blank(),
-              legend.position = "none")
+#     scale_color_manual(values = brewer.pal(3, "Dark2")) +
+#     scale_fill_manual(values = brewer.pal(3, "Dark2")) +
+    theme_pub(legend.position = "none")
 
 p3_2b <- ggplot(subset(archaea_outcomes, Measurement == 'Scanning Densitometry of SDS-PAGE (%)' & 
                         Outcome != "n.c." & Outcome != "n.t.")) +
-    geom_vline(x = q50, alpha = 0.5, linetype="dashed", color = "darkgrey") +
-    geom_point(aes(x=daley_only_raw_exp_ml21, y=as.numeric(as.character(Outcome)), 
-                   color=E..coli.strain, shape = Vector), alpha = 0.9) + 
+    geom_vline(x = q50, alpha = 0.5, linetype="dashed", color = "black") +
+    geom_point(aes(x=daley_only_raw_exp_ml21, y=as.numeric(as.character(Outcome))),
+                   color="#E08282", fill="#E08282", alpha = 0.7, size = 3) + 
     scale_y_continuous(expand = c(0,0), limits = c(0, 40)) +
     scale_x_continuous(expand = c(0,0), limits = c(-3.2, -1)) +
     ylab("Scanning Densitometry of SDS-PAGE (%)") +
@@ -845,9 +847,7 @@ p3_2b <- ggplot(subset(archaea_outcomes, Measurement == 'Scanning Densitometry o
     theme_pub(axis.title.x = element_blank(),
               legend.position = c(.2, .8))
 
-grid.arrange(p3_2, arrangeGrob(p3_2b, p3_2ai), 
-             arrangeGrob(p3_2b, p3_2aii), nrow=2, ncol=2,
-             top = textGrob("Archaea - All Vectors"))
+grid.arrange(p3_2b, p3_2aii, ncol=1)
 
 temp_roc <- rbind(temp_roc,
                   data.frame(calculate_roc(temp_data$daley_only_raw_exp_ml21, temp_data$morethannone), 
@@ -880,8 +880,8 @@ temp_roc <- rbind(temp_roc,
                              group = rep("GPCRs", nrow(temp_data))))
 
 p3_3 <- ggplot(temp_data, aes(x=daley_only_raw_exp_ml21, y=outcome, color=outcome)) +
-    geom_vline(x = q50, alpha = 0.5, linetype = "dashed", color = "darkgrey") +
-    geom_jitter(position = position_jitter(height = .05), alpha = .7) +
+    geom_vline(x = q50, alpha = 0.5, linetype = "dashed", color = "black") +
+    geom_jitter(position = position_jitter(height = .05), alpha = 0.7, size = 3) +
 #    scale_y_continuous(expand = c(0, 0), breaks = c(1), limits = c(0, 2)) +
 #    scale_x_continuous(expand = c(0, 2), breaks = seq(0, 100, 20)) +
     scale_color_manual(values = c("#AAAAAA", "#AA7272", "#AA3A3A", "#AB0000")) +
@@ -890,28 +890,31 @@ p3_3 <- ggplot(temp_data, aes(x=daley_only_raw_exp_ml21, y=outcome, color=outcom
     theme_pub(legend.position = c(.2, .8),
               axis.title.y=element_blank())
 
-p3_3a <- ggplot(temp_data, aes(x=daley_only_raw_exp_ml21, y = "test", color=outcome)) +
-    geom_vline(x = q50, alpha = 0.5, linetype = "dashed", color = "darkgrey") +
-    geom_jitter(position = position_jitter(height = .05), alpha = .7) +
-#    scale_y_continuous(expand = c(0, 0), breaks = c(1), limits = c(0, 2)) +
-#    scale_x_continuous(expand = c(0, 2), breaks = seq(0, 100, 20)) +
-    scale_color_manual(values = c("#AAAAAA", "#AA7272", "#AA3A3A", "#AB0000")) +
-    ggtitle("GPCRs - E. coli") + 
-    xlab(expression( paste( "SVM"^"rank", " score"))) +
-    theme_pub(legend.position = c(.2, .8),
-              axis.title.y=element_blank(),
-              axis.ticks.y=element_blank(),
-              axis.text.y=element_blank(),
-              axis.line.y=element_blank())
+grid.arrange(p3_3, nrow=2)
 
-grid.arrange(p3_3, p3_3a, nrow=2, ncol=2, top = textGrob("GPCRs - E. coli"))
+# p3_3a <- ggplot(temp_data, aes(x=daley_only_raw_exp_ml21, y = "test", color=outcome)) +
+#     geom_vline(x = q50, alpha = 0.5, linetype = "dashed", color = "darkgrey") +
+#     geom_jitter(position = position_jitter(height = .05), alpha = .7) +
+# #    scale_y_continuous(expand = c(0, 0), breaks = c(1), limits = c(0, 2)) +
+# #    scale_x_continuous(expand = c(0, 2), breaks = seq(0, 100, 20)) +
+#     scale_color_manual(values = c("#AAAAAA", "#AA7272", "#AA3A3A", "#AB0000")) +
+#     ggtitle("GPCRs - E. coli") + 
+#     xlab(expression( paste( "SVM"^"rank", " score"))) +
+#     theme_pub(legend.position = c(.2, .8),
+#               axis.title.y=element_blank(),
+#               axis.ticks.y=element_blank(),
+#               axis.text.y=element_blank(),
+#               axis.line.y=element_blank())
+
+#grid.arrange(p3_3, p3_3a, nrow=2, ncol=2, top = textGrob("GPCRs - E. coli"))
+
 
 #compiled ROC curves
-p3_4 <- ggplot(temp_roc) + geom_path(aes(x=FPF*100, y = TPF*100, color = group)) +
+p3_4 <- ggplot(temp_roc) + geom_path(aes(x=FPF*100, y = TPF*100)) + #, color = group)) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
     ggtitle("Small Scale - ROC curves") +
     xlab("False Positive Rate (1-Specificity)") + ylab("True Positive Rate (Sensitivity)") + 
-    facet_wrap(~group) +
+    facet_wrap(~group, scales="free") +
     scale_y_continuous(expand = c(0, 0), breaks = seq(0, 100, 20)) +
     scale_x_continuous(expand = c(0, 2), breaks = seq(0, 100, 20)) +
     theme_pub(legend.position = c(.90, .30))
@@ -919,3 +922,5 @@ p3_4 <- ggplot(temp_roc) + geom_path(aes(x=FPF*100, y = TPF*100, color = group))
 p3_4
 dev.off()
 ```
+
+
