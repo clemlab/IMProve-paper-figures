@@ -617,7 +617,8 @@ p1_ecoli_xy <- ggplot(filter(ecoli_training, cterm != "out"), aes(x = ml21, y = 
               strip.text = element_blank(),
               plot.margin = unit(c(0, 0, 0, 0), "mm")) +
     facet_wrap(~cterm, ncol=1, scales = "free")
-
+p1_ecoli_xy <- ggplotGrob(p1_ecoli_xy)
+p1_ecoli_xy$grobs$axis_l1$children$axis$grobs[[1]]$children[[1]]$label <- c("0", "", "2", "", "4", "6", "8")
 
 ecoli_daley_fluman_cor_label <- specify_decimal(c(ecoli_daley_fluman_cor, 
                                                   ecoli_daley_fluman_boot_ci$bca[4], 
@@ -906,7 +907,7 @@ p2_posmix_roc <- ggplot(filter(nycomps_roc, group == "posmix")) +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "darkgrey") +
     annotate(geom = "text", x = 70, y = 19, label = p2_posmix_roc_label$count, size = 6*5/14, parse=TRUE) +
     annotate(geom = "text", x = 70, y = 10, label = p2_posmix_roc_label$ci, size = 6*5/14, parse=TRUE) +
-    annotate("text", x = 25, y = 95, label = "By Gene:", size = 7*5/14, fontface = "bold") + 
+#    annotate("text", x = 25, y = 95, label = "By Gene:", size = 7*5/14, fontface = "bold") + 
     scale_y_continuous(expand = c(0, 0)) +
     scale_x_continuous(expand = c(0, 0)) +
     xlab("False Positive Rate") + 
@@ -969,7 +970,7 @@ p2_posmix_ppv <- ggplot(p2_posmix_ppv_prep) +
     geom_path(aes(x=threshold_percentiles*100, y=ppv*100), size = 0.25, 
               data = filter(p2_posmix_ppv_prep, type != "min_ppv") %>% distinct(thresholds, ppv)) +
     geom_hline(aes(yintercept = min(min_ppv)*100), linetype="dashed", color="darkgrey", size = 0.5) +
-    annotate("text", x = 15, y = 55, label = "By Gene:", size = 7*5/14, fontface = "bold", family = "Helvetica") + 
+#    annotate("text", x = 15, y = 55, label = "By Gene:", size = 7*5/14, fontface = "bold", family = "Helvetica") + 
     scale_x_continuous(expand=c(0,0), limits=c(0,100)) +
     scale_y_continuous(expand=c(0,0), limits=c(0,60), breaks=seq(0, 100, 20)) +
     xlab(expression("Percentile SVM"^"rank"*~"score")) + 
@@ -1005,6 +1006,17 @@ p2_raw_npv <- ggplot(p2_raw_npv_prep) +
     scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
     theme_pub(legend.position="None", plot.margin=unit(c(1/16, 1/16, 1/16, 0), "in"))
 
+p3_trial_counts <- ggplot(group_by(nycomps_vectors, id) %>% 
+                              summarize(count = length(id), 
+                                        pos_neg = factor(pos_neg[1], levels = c("neg", "mix", "pos")))) +
+    geom_bar(aes(x = factor(count, levels = 1:8), fill = pos_neg), position = "stack", width = 0.5) +
+    xlab("Number of Trials") +
+    ylab("Number of Different Genes") + #AD665D
+    scale_fill_manual(values = c("#A4A5A5", "#AD665D", "#A10F1C")) +
+  #  scale_fill_manual(values = colorRampPalette(c("#A4A5A5", "#A10F1C"))(3)) +
+    scale_y_continuous(expand=c(0,0)) +
+    scale_x_discrete(expand=c(0,0), drop=FALSE) +
+    theme_pub(legend.position="none")
 
 do_rollmean <- function(df, window) {
     df <- filter(df, abs(thresholds) != Inf)
@@ -1043,21 +1055,22 @@ p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) +
 
 
 #cterm split and summary
-nycomps_cterm <- cbind(filter(nycomps_auc, type == "plasmid", cterm == "all") %>% 
+nycomps_cterm <- cbind(filter(nycomps_auc, type == "plasmid" | (type == "all" & group == "vectors"), cterm == "all") %>% 
                            select(-type, -cterm, -pos_count),
-                       filter(nycomps_auc, type == "plasmid", cterm == "CYTOPLASMIC.") %>%
+                       filter(nycomps_auc, type == "plasmid" | (type == "all" & group == "vectors"), cterm == "CYTOPLASMIC.") %>%
                            select(-group, -type, -cterm, -pos_count),
-                       filter(nycomps_auc, type == "plasmid", cterm == "NON-CYTOPLASMIC.") %>%
+                       filter(nycomps_auc, type == "plasmid" | (type == "all" & group == "vectors"), cterm == "NON-CYTOPLASMIC.") %>%
                            select(-group, -type, -cterm, -pos_count)
                        )
-temp <- nycomps_cterm$group
+
 colnames(nycomps_cterm) <- c("group", "all_count", "all_auc", "all_lower95", "all_upper95", 
                              "cyto_count", "cyto_auc", "cyto_lower95", "cyto_upper95",
                              "non_count", "non_auc", "non_lower95", "non_upper95")
-nycomps_cterm <- select(nycomps_cterm, -group)
-nycomps_cterm <- nycomps_cterm[order(-nycomps_cterm$all_count),]
+nycomps_cterm <- arrange(nycomps_cterm, desc(all_count))
 
-nycomps_cterm <- specify_decimal(nycomps_cterm*100, 1)
+temp_names <- nycomps_cterm$group
+
+nycomps_cterm <- specify_decimal(select(nycomps_cterm, -group)*100, 1)
 nycomps_cterm <-  transmute(nycomps_cterm,
                          all_count = as.numeric(all_count)/100,
                          all = paste0("'", all_auc, "'~('", all_lower95, "'-'", all_upper95, "')"),
@@ -1097,10 +1110,10 @@ header$layout[ind, c("l", "r", "z")] <- c(2, 3, 9)
 ind <- find_cell(header, 1, 2, "colhead-bg")
 header$layout[ind, c("l", "r", "z")] <- c(2, 3, 8)
 
-temp_names <- factor(temp,
-               levels = c("N", "C", "C_LDAO", 
+temp_names <- factor(as.character(temp_names),
+               levels = c("vectors", "N", "C", "C_LDAO", 
                           "MSGC.24", "MSGC.28", "MSGC.7", "MSGC.9", "MSGC.9_LDAO"),
-               labels = c("(N) His-FLAG-TEV-", "(C) -TEV-His", "(C) -TEV-His (LDAO)", 
+               labels = c("All Conditions", "(N) His-FLAG-TEV-", "(C) -TEV-His", "(C) -TEV-His (LDAO)", 
                           "(24) His-GST-TEV-", "(28) -TEV-His", "(7) His-TEV-", "(9) His-MBP-TEV-", "(9) His-MBP-TEV- (LDAO)"))
 
 p2_auc_table <- tableGrob(nycomps_cterm, theme = table_theme2, 
@@ -1108,7 +1121,7 @@ p2_auc_table <- tableGrob(nycomps_cterm, theme = table_theme2,
 #                 cols = rep(c("Count", "AUC~(95*'%'*~CI)" ), 3), # bold doesnt work if parsed though plotmath
                  rows = as.character(temp_names),
                  widths = unit(rep(c(.085, 0.165), 3), "npc"),
-                 heights = unit(rep(.0001, 8), "npc"))
+                 heights = unit(rep(.0001, length(temp_names)), "npc"))
 
 p2_auc_table <- gridExtra::join(header[1,], p2_auc_table, along=2)
 
@@ -1124,24 +1137,29 @@ p2_auc_table <- gtable_add_grob(p2_auc_table,
         grobs = segmentsGrob( 
             x0 = unit(0,"npc"), y0 = unit(0,"npc"),
             x1 = unit(0,"npc"), y1 = unit(1,"npc"),
-            gp = gpar(lwd = 2.0)), t = 1, b = 10, l = 4, r = 4)
+            gp = gpar(lwd = 2.0)), t = 1, b = 11, l = 4, r = 4)
 p2_auc_table <- gtable_add_grob(p2_auc_table,
             grobs = segmentsGrob(
             x0 = unit(0,"npc"), y0 = unit(0,"npc"),
             x1 = unit(0,"npc"), y1 = unit(1,"npc"),
-            gp = gpar(lwd = 2.0)), t = 1, b = 10, l = 6, r = 6)
+            gp = gpar(lwd = 2.0)), t = 1, b = 11, l = 6, r = 6)
 
 
-p2_main <- plot_grid(
-    plot_grid(p2_posmix_ppv, p2_raw_ppv,
-              p2_posmix_histogram, p2_raw_histogram,
-              labels = letters[c(1:4)], label_size = 8, ncol = 2, align = "v"),
-    plot_grid(p2_posmix_roc, p2_raw_roc, p2_auc_table, 
-              labels = letters[c(5:8)], label_size = 8, ncol=3, rel_widths = c(1, 1, 2.5)),
-    nrow=2, rel_heights = c(2,1)
-)
+p2_main <- ggdraw() +
+    draw_plot(
+        plot_grid(p2_posmix_ppv, p2_posmix_histogram, 
+                  labels = c("b", "c"), label_size = 8, ncol = 1, align = "v"), 
+        x = 1/3, y = .355, width = 2/3, height = 1-.355) + 
+#    annotate(geom="text", x = 0.55, y = 0.98, label = "933 complete successes (~11%)", size = 6*5/14, color = "#A10F1C") +
+#    annotate(geom="text", x = 0.55, y = 0.95, label = "1189 mixed outcomes (~14%)", size = 6*5/14, color = "#A10F1C") +
+#    annotate(geom="text", x = 0.55, y = 0.92, label = "6325 complete failures (~75%)", size = 6*5/14, color = "#A4A5A5") +
+    draw_plot(p3_trial_counts, x = 0, y = .5, width = .33, height = .35) + 
+    draw_plot(p2_posmix_roc, x = -.1, y = 0, width = .5, height = .35) + 
+    draw_plot(p2_auc_table, x = .32, y = 0, width = 2/3, height = .35) + 
+    draw_plot_label(label = c("a", "d", "e"), x = c(0, 0, 1/3), y = c(1, .35, .35), size = 8)
+    
+save_plot(filename = "plots/fig2_w_panels.pdf", plot = p2_main, base_width = uconv(136, "mm", "in", "Length")) #, base_height = 6)
 
-save_plot(filename = "plots/fig2_w_panels.pdf", plot = p2_main, base_width = uconv(183, "mm", "in", "Length")) #, base_height = 6)
 ```
 
 # p3  tb, archaea, gpcrs, surade, and more!
@@ -1219,14 +1237,12 @@ p3_archaea_sdspage <- ggplot(filter(archaea_outcomes, Measurement == 'Scanning D
                data = p3_archaea_sdspage_data2) + 
     geom_errorbar(aes(x=ml21, ymin=sds_min, ymax=sds_max), color="#A10F1C", size = 0.27, width = 0.04,
                    data = p3_archaea_sdspage_data) +
-    annotate("text", x = -2.9, y = 38, label = "Archaeal Transporters", size = 7*5/14, fontface = "bold") + 
     scale_y_continuous(expand = c(0,0), limits = c(0, 40)) +
     scale_x_continuous(expand = c(0,0), limits = c(-3.2, -1)) +
     ylab("Percentage of\nMembrane Protein") +
     xlab(expression("SVM"^"rank"*~"score")) + 
     scale_color_manual(values = brewer.pal(3, "Dark2")) +
     theme_pub(axis.title = element_blank(),
-              axis.text.x = element_blank(),
               plot.margin = unit(c(1, 0, 2, 0), "mm"))
 
 p3_archaea_western_data <- ddply(filter(archaea_outcomes, Measurement != 'Scanning Densitometry of SDS-PAGE (%)'),
@@ -1250,6 +1266,7 @@ p3_archaea_western <- ggplot(p3_archaea_western_data) +
              stat="identity", width=.02, data = filter(p3_archaea_western_data, group=="no", Protein != "MJ1319")) + 
     geom_bar(aes(x=ml21, y=count, fill=group), position = "stack",
              stat="identity", width=.02, data = filter(p3_archaea_western_data, group!="no")) +
+    annotate("text", x = -2.9, y = 5.6, label = "Archaeal Transporters", size = 7*5/14, fontface = "bold") + 
     xlab(expression("SVM"^"rank"*~"score")) + 
     ylab("Count") +
     scale_fill_manual(values=c("#A10F1C", "#AD665D"), na.value="black") +
@@ -1417,7 +1434,7 @@ p3_mt <- ggplot(filter(tcross_outcomes, score_type == "ml21", fraction == "MEM")
 #                position = position_quasirandom(varwidth = TRUE), 
 #                data=filter(tcross_outcomes, score_type == "ml21", host == "C42(DE3)", fraction == "MEM")) +
     annotate("text", x = -3.7, y = 3.1, label = "M. tuberculosis", size = 7*5/14, fontface = "bold.italic") + 
-    scale_y_discrete(labels=c("WB" = "Western\nBlot", "CB" = "Coomassie\nBlue", "No" = "No\nExpression")) +
+    scale_y_discrete(labels=c("WB" = "Western\nBlot", "CB" = "Coomassie\nBlue", "Neither" = "No\nExpression")) +
     scale_x_continuous(expand = c(.01,0), breaks = c(-5:5)) +
     scale_fill_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
     scale_color_gradient(low="#A4A5A5", high="#A10F1C", na.value="black") +
@@ -2308,6 +2325,212 @@ p4_ecoli <- ggplot(daley_outcomes) +
         axis.text.y = element_blank(),
         axis.line.y = element_blank()
         )
+```
+
+## deal with feature distributions
+```{r}
+library(overlap)
+
+forward_features <- read.csv("forward-preds/microbial_query.fna.allstats.csv", stringsAsFactors = FALSE, header = TRUE)
+microbial_query <- read.delim("forward-preds/microbial_query.dat", header = TRUE)
+forward_features$species <- microbial_query$species
+rm(microbial_query)
+
+ecoli_features <- read.csv("training/Daley_gfp.fna.allstats.csv", stringsAsFactors = FALSE, header = TRUE)
+ecoli_features$species <- "Ec-Daley Training"
+ecoli_features <- ecoli_features[, colnames(forward_features)]
+
+nycomps_features <- rbind(read.csv("large-scale/nycomps_only_pos.fna.allstats.csv",
+                                   stringsAsFactors = FALSE, header = TRUE),
+                          read.csv("large-scale/nycomps_mixed.fna.allstats.csv",
+                                   stringsAsFactors = FALSE, header = TRUE),
+                          read.csv("large-scale/nycomps_only_neg.fna.allstats.csv",
+                                   stringsAsFactors = FALSE, header = TRUE))
+nycomps_features$species <- "nycomps all"
+nycomps_features <- nycomps_features[, colnames(forward_features)]
+
+nycomps_features$set <- "nycomps"
+forward_features$set <- "forward"
+ecoli_features$set <- "ecoli"
+
+all_features <- rbind(nycomps_features, ecoli_features, forward_features)
+
+# get rid of one of the E. coli strains
+unique(all_features$species)
+
+all_features <- filter(all_features, numTMs > 0, species != "Escherichia coli (strain ATCC 33849 / DSM 4235 / NCIB 12045 / K12 / DH1)")
+all_features$species <- regmatches(all_features$species, 
+                                    regexpr('\\w+\\W{1,2}\\w+', all_features$species, perl=TRUE))
+
+# to recapitulate scaling and centering
+load("~/ml-ecoli-paper/predict.RData")
+prediction_features <- names(daley_allstats_exp_xtrans_params$mean)
+
+# add missing features, remove unused features
+for(x in setdiff(prediction_features, colnames(all_features))){
+    all_features[[x]] <- NA
+}
+rm(x)
+all_features <- all_features[, c(prediction_features, "set", "title", "species")]
+
+# Scale and center
+#all_features <- predict(daley_allstats_exp_xtrans_params, all_features)
+
+# prepare and plot
+all_features <- gather(all_features, featuretype, featurevalue, CAI:GC10max)
+all_features$thermophile <- all_features$species %in% c("Aquifex aeolicus", "Spirochaeta thermophila", "Thermus thermophilus")
+
+px_training_forward <- ggplot(filter(all_features, set != "nycomps")) +
+    geom_histogram(aes(x=featurevalue, y=..density.., fill=set), alpha=0.5, position = "identity") +
+    facet_wrap(~featuretype, ncol=9, scales="free") +
+    theme_pub(legend.position="bottom",
+          axis.title = element_blank())
+
+px_training_thermophile <- ggplot(filter(all_features, set == "ecoli" | thermophile)) +
+    geom_histogram(aes(x=featurevalue, y=..density.., fill=thermophile), alpha=0.5, position = "identity") +
+    facet_wrap(~featuretype, ncol=9, scales="free") +
+    theme_pub(legend.position="bottom",
+          axis.title = element_blank())
+
+px_training_nycomps <- ggplot(filter(all_features, set %in% c("ecoli", "nycomps"))) +
+    geom_histogram(aes(x=featurevalue, y=..density.., fill=set), alpha=0.5, position = "identity") +
+    facet_wrap(~featuretype, ncol=9, scales="free") +
+    theme_pub(legend.position="bottom",
+          axis.title = element_blank())
+
+px_nycomps_thermophile <- ggplot(filter(all_features, set == "nycomps" | thermophile)) +
+    geom_histogram(aes(x=featurevalue, y=..density.., fill=thermophile), alpha=0.5, position = "identity") +
+    facet_wrap(~featuretype, ncol=9, scales="free") +
+    theme_pub(legend.position="bottom",
+          axis.title = element_blank())
+
+px_training_plasmodium <- ggplot(filter(all_features, set == "ecoli" | species == "Plasmodium falciparum")) +
+    geom_histogram(aes(x=featurevalue, y=..density.., fill= set == "ecoli"), alpha=0.5, position = "identity") +
+    facet_wrap(~featuretype, ncol=9, scales="free") +
+    theme_pub(legend.position="bottom",
+          axis.title = element_blank())
+
+px_training_ecoli <- ggplot(filter(all_features, set == "ecoli" | species == "Escherichia coli")) +
+    geom_histogram(aes(x=featurevalue, y=..density.., fill= set == "ecoli"), alpha=0.5, position = "identity") +
+    facet_wrap(~featuretype, ncol=9, scales="free") +
+    theme_pub(legend.position="bottom",
+          axis.title = element_blank())
+
+ggsave("plots/training_all_forward.pdf", px_training_forward, width = 22, height = 17)
+ggsave("plots/training_thermophile.pdf", px_training_thermophile, width = 22, height = 17)
+ggsave("plots/training_nycomps.pdf", px_training_nycomps, width = 22, height = 17)
+ggsave("plots/nycomps_thermophile.pdf", px_nycomps_thermophile, width = 22, height = 17)
+ggsave("plots/training_plasmodium.pdf", px_training_plasmodium, width = 22, height = 17)
+ggsave("plots/training_ecoli.pdf", px_training_ecoli, width = 22, height = 17)
+
+getoverlap <- function(set1, set2) {
+    if(length(set1) != 0 & length(set2) != 0) {
+        overlapEst(set1, set2, kmax = 10, adjust = c(0.8, NA, NA))[[1]]
+    } else {
+        NA
+    }
+}
+
+getoverlap_thermo <- function(name) {
+    set1 <- filter(all_features, thermophile, featuretype == name, !is.na(featurevalue))$featurevalue
+    set2 <- filter(all_features, set == "ecoli", featuretype == name, !is.na(featurevalue))$featurevalue
+    getoverlap(set1, set2)
+}
+
+getoverlap_set <- function(name, settype) {
+    set1 <- filter(all_features, set == settype, featuretype == name, !is.na(featurevalue))$featurevalue
+    set2 <- filter(all_features, set == "ecoli", featuretype == name, !is.na(featurevalue))$featurevalue
+    getoverlap(set1, set2)
+}
+
+getoverlap_species <- function(name, speciesname) {
+    set1 <- filter(all_features, species == speciesname, featuretype == name, !is.na(featurevalue))$featurevalue
+    set2 <- filter(all_features, set == "ecoli", featuretype == name, !is.na(featurevalue))$featurevalue
+    getoverlap(set1, set2)
+}
+
+
+overlap <- data.frame(
+    feature = unique(all_features$featuretype),
+    thermo = mclapply(unique(all_features$featuretype), getoverlap_thermo, mc.cores = 12) %>% simplify2array,
+    nycomps = mclapply(unique(all_features$featuretype), getoverlap_set, settype = "nycomps", mc.cores = 12) %>% simplify2array,
+    forward = mclapply(unique(all_features$featuretype), getoverlap_set, settype = "forward", mc.cores = 12) %>% simplify2array,
+    pf = mclapply(unique(all_features$featuretype), getoverlap_species, speciesname = "Plasmodium falciparum", mc.cores = 12) %>% simplify2array
+    )
+
+selected_features <- data.frame(
+    names = c("seqLen", "GC", "tAI", "CPS", "relareaSD", "zeroto38avgRNAss",
+              "pI", "membrCont", "numPosNormCyt", "delGallTMs", "len1_2loop", "avgRONN"),
+    x = c(1300, 0.7, 0.4, 100, 0.29, 0.8, 12, 450, .9, 3.5, 480, 0.7),
+    y = c(0.0025, 14, 16, 0.018, 28, 5, 0.48, 0.016, 6, 0.5, 0.03, 12))
+
+selected_features <- gdata:::interleave(selected_features[1:6,], selected_features[7:12,]) %>%
+    inner_join(overlap, by = c("names", "feature"))
+
+px_selected <- ggplot(filter(all_features, set == "ecoli" | thermophile, featuretype %in% selected_features) %>%
+                          mutate(featuretype = factor(as.character(featuretype), levels = selected_features),
+                                 thermophile = factor(thermophile, levels = c(FALSE, TRUE)))) +
+    geom_histogram(aes(x=featurevalue, y=..density.., fill=thermophile), alpha=0.5, position = "identity") +
+    geom_text(aes(x = 1, y = 1, label = specify_decimal(thermo, k=2)), size = 5*5/14) + 
+    scale_fill_manual(values = brewer.pal(3, "Dark2"), labels=c("FALSE" = "E. coli", "TRUE" = "Thermophiles")) + 
+    scale_y_continuous(expand=c(0,0)) + 
+    scale_x_continuous(expand=c(0,0)) +
+    xlab("Value") + ylab("Density") + 
+    facet_wrap(~featuretype, ncol=2, scales="free") +
+    theme_pub(legend.position="bottom",
+          axis.title = element_blank(),
+          legend.title = element_blank(),
+          legend.margin = unit(c(-.0115,0,0,0), "npc"))
+
+p_selected_features_labels <- ggplot(filter(overlap, feature %in% selected_features) %>%
+                                         mutate(feature = factor(as.character(feature), levels = selected_features))) +
+    geom_text(aes(x = 1, y = 1, label = specify_decimal(thermo, k=2)), size = 5*5/14) + 
+    facet_wrap(~feature, ncol = 2) + 
+    theme_pub(strip.text = element_blank(),
+              axis.line = element_blank(),
+           #   axis.title = element_blank(),
+              axis.text = element_blank(),
+              axis.ticks = element_blank())
+
+
+pext2_thermo <- ggplot(select(overlap, -pf) %>% gather(name, value, nycomps:forward), 
+                       aes(x=thermo, y=value, label=feature, color=factor(name))) +
+    geom_point() + 
+    #geom_text(size = 5*5/14, nudge_y = .005) +
+    geom_segment(aes(x = thermo, xend = thermo, y = nycomps, yend = forward), color = "black", size = 0.25,
+                 arrow = arrow(length = unit(3, "pt"), type = "closed"), data = overlap) +
+    xlab("Thermophiles vs. E. coli") +
+    ylab("NYCOMPS vs. E. coli − Forward vs. E. coli") +
+    scale_x_continuous(limits = c(0,1), expand = c(0,0)) +
+    scale_y_continuous(limits = c(0,1), expand = c(0,0)) +
+    theme_pub(legend.position=c(.9, .1), aspect.ratio = 1)
+
+
+pext2_pf <- ggplot(select(overlap, -thermo) %>% gather(name, value, nycomps:forward), 
+                       aes(x=pf, y=value, label=feature, color=factor(name))) +
+    geom_point() + 
+    #geom_text(size = 5*5/14, nudge_y = .005) +
+    geom_segment(aes(x = pf, xend = pf, y = nycomps, yend = forward), color = "black", size = 0.25,
+                 arrow = arrow(length = unit(3, "pt"), type = "closed"), data = overlap) +
+    xlab("P. falciparum vs. E. coli") +
+    ylab("NYCOMPS vs. E. coli − Forward vs. E. coli") +
+    scale_x_continuous(limits = c(0,1), expand = c(0,0)) +
+    scale_y_continuous(limits = c(0,1), expand = c(0,0)) +
+    theme_pub(legend.position=c(.9, .1), aspect.ratio = 1)
+
+pext2_nycomps_forward <- ggplot(overlap, aes(x=nycomps, y=forward, label=feature)) +
+    geom_abline(color="grey", linetype="dashed") +
+ #   geom_segment(x=.75, xend=.75, y = 0, yend = .75) + 
+    geom_point(size = 0.25) + geom_text(size = 8*5/14, nudge_y = .005) +
+    xlab("NYCOMPS vs. E. coli") +
+    ylab("Forward vs. E. coli") +
+    scale_x_continuous(limits = c(0,1), expand = c(0,0)) +
+    scale_y_continuous(limits = c(0,1), expand = c(0,0)) +
+    theme(legend.position="bottom", aspect.ratio = 1)
+
+p_feature <- 
+    plot_grid(pext2_nycomps_forward, pext2_thermo, pext2_pf, labels = letters[1:3], label_size = 8, ncol = 1, align = "h")
+
 
 p4_main <- ggdraw() + 
     draw_plot(plot_grid(p4_ecoli, p4_nvector_ppv, nrow = 1, align = "hv"), x = 0, y = 0, width = 1, height = .33) +
@@ -2318,10 +2541,10 @@ save_plot(filename = "plots/fig4_w_panels.pdf", plot = p4_main, base_width = uco
 
 # RGB by default
 save_plot(filename = "plots/extfig2.pdf", 
-          plot = ggdraw(p4_all_violin) + 
-              draw_plot_label("a", size = 8), 
-          base_width = uconv(120, "mm", "in", "Length"), base_height = 7,
+          plot = plot_grid(px_selected, p4_all_violin, rel_widths = c(1,2), labels = letters[1:2], label_size = 8, ncol = 2), 
+          base_width = uconv(183, "mm", "in", "Length"), base_height = 7,
           dpi = 300)
+
 ```
 
 ```{r}
