@@ -1,0 +1,347 @@
+---
+title: "Data munging and figure preparation"
+author: "Shyam Saladi (saladi@caltech.edu)"
+date: "09/20/2016"
+output: html_document
+---
+
+## Load libraries
+Load all libraries necessary for subsequent data munging and plotting.
+Some defaults are set here to make things easier throughout.
+```{r libraries}
+library(datamart)
+
+library(ggplot2)
+library(ggbeeswarm)
+library(ggthemes)
+library(cowplot)
+library(corrplot)
+library(viridis)
+theme_set(theme_cowplot(font_size = 7))
+
+library(gtable)
+library(grid)
+library(gridExtra)
+library(gridGraphics)
+library(scales)
+library(RColorBrewer)
+library(reshape2)
+library(plyr)
+library(dplyr)
+library(dplyrExtras)
+
+library(tidyr)
+
+library(boot)
+library(caret)
+
+library(pROC)
+library(locfit)
+
+library(foreach)
+library(doMC)
+registerDoMC(cores = 10)
+
+# if TRUE, then data will be written to file
+write_out = FALSE
+```
+
+## Convenience functions
+Load another file with a number of helper functions to mechanize some tedious
+or repetitive tasks.
+```{r}
+source("preparation-convenience.R")
+```
+
+# plot scores of features along with correlations within
+# ecoli training, nycomps, and forward genomes datasets
+```{r feature_plot}
+# load preprocessing script
+# features we use for the ML
+load("predict.RData")
+preprocess_vars <- function(test_data, xtrans) {
+    prediction_features <- names(xtrans$mean)
+    
+    # features in the test dataset
+    test_data_features <- colnames(test_data)
+    
+    # features requested for the ML but not in the input dataset
+    # keep in mind setdiff gives the asymmetric difference
+    # (http://stat.ethz.ch/R-manual/R-patched/library/base/html/sets.html)
+    missing_features <- setdiff(prediction_features, colnames(test_data))
+    
+    for(x in missing_features) {
+        test_data[[x]] <- NA
+    }
+    rm(x)
+    
+    # keep only the columns we want for the ML (get rid of the extras)
+    test_data <- test_data[, prediction_features]
+    
+    # do the preprocessing (scaling and centering)
+    transformed <- predict(xtrans, test_data)
+    
+    transformed[, !(colnames(transformed) %in% missing_features)]
+}
+
+svmweights <- read.table("daley_only_raw_exp_ml21.full.4.svmweights", header = FALSE)
+colnames(svmweights) <- c("feature", "weight")
+svmweights$rel <- svmweights$weight / mean(svmweights$weight)
+svmweights <- arrange(svmweights, desc(weight))
+
+forward_cor <- preprocess_vars(forward_features,
+                               daley_allstats_exp_xtrans_params) %>% 
+    cor(use = "pairwise.complete.obs")
+
+cor.mtest <- function(mat, conf.level = 0.95){
+  mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat <- lowCI.mat <- uppCI.mat <- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    diag(lowCI.mat) <- diag(uppCI.mat) <- 1
+    for(i in 1:(n-1)){
+        for(j in (i+1):n){
+            tmp <- cor.test(mat[,i], mat[,j], conf.level = conf.level)
+            p.mat[i,j] <- p.mat[j,i] <- tmp$p.value
+            lowCI.mat[i,j] <- lowCI.mat[j,i] <- tmp$conf.int[1]
+            uppCI.mat[i,j] <- uppCI.mat[j,i] <- tmp$conf.int[2]
+        }
+    }
+    return(list(p.mat, lowCI.mat, uppCI.mat))
+}
+res1 <- cor.mtest(preprocess_vars(forward_features,
+                                  daley_allstats_exp_xtrans_params))
+pdf("plots/forward_corr.pdf")
+corrplot(forward_cor, col=viridis(300),
+         method="square", plotCI="n", order ="hclust",
+         hclust.method="complete", addrect=11,
+         p.mat = res1[[1]], sig.level=0.05, 
+         insig = "blank", tl.cex=.5, tl.col="black", tl.srt=45, 
+         lowCI.mat = res1[[2]], uppCI.mat = res1[[3]])
+dev.off()
+
+feat_order <- hclust(as.dist(1 - forward_cor), method = "complete")
+feat_order <- feat_order$labels[feat_order$order]
+
+svmweights_plot <- svmweights %>%
+    filter(feature %in% feat_order) %>%
+    mutate(feature = factor(feature, labels = feat_order))
+
+p_weights <-
+    ggplot(svmweights_plot) +
+    geom_bar(aes(x = feature, y = weight), stat = "identity") +
+    ylab(expression("SVM" ^ "rank"*~"score")) + 
+    coord_flip() +
+    theme(axis.title.y = element_blank())
+```
+
+## plot nycomps AUC with less features
+```{r nycomps_feat_weight_calc}
+# load prediction function and prediction data
+source("predict.R")
+load("predict.RData")
+
+svmweights <- svmweights %>% arrange(desc(abs(weight)))
+nycomps_auc_feat_subsets_posmix <-
+    foreach(maxidx = seq.int(1, nrow(svmweights)),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    # specify those features to use
+    use_feats <- as.character(svmweights[seq(1, maxidx),]$feature)
+    
+    # run prediction
+    preds <- prediction_fn(
+        test_data = nycomps_posmix[, use_feats, drop = FALSE],
+        xtrans = daley_allstats_exp_xtrans_params,
+        model_dat_fn = "daley_only_raw_exp_ml21.full.4.model",
+        classify_cmd = "/ul/saladi/apps/svm_rank/svm_rank_classify")
+    
+    # calculate auc
+    data.frame(ml21 = ci.auc(response = nycomps_posmix$gene_outcome != "neg",
+                             predictor = preds,
+                             direction = "<"),
+               ci_labels = c("lower95", "auc", "upper95"),
+               thisidx = maxidx,
+               svmweights[maxidx,])
+}
+nycomps_auc_feat_subsets_posmix <- dcast(nycomps_auc_feat_subsets_posmix,
+                                  thisidx + weight + rel ~ ci_labels,
+                                  value.var = "ml21")
+
+nycomps_auc_feat_subsets <- dcast(nycomps_auc_feat_subsets,
+                                  thisidx + weight + rel ~ ci_labels,
+                                  value.var = "ml21")
+```
+
+# plotting
+```{r nycomps_feat_weight_plotting}
+p4_base <- ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
+    geom_hline(yintercept = 0.5, linetype = "longdash", color = "gray") + 
+    geom_ribbon(aes(ymin = lower95, ymax = upper95), fill = "#A4A5A5") +
+    geom_line() +
+    xlab("Number of Features (decreasing in weight)") +
+    ylab("AUC") +
+    scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(0, 81, 15), 89))  +
+    scale_y_continuous(expand = c(0, 0), labels = function(x) x*100) +
+    theme(plot.margin = unit(c(0, 0, 0, 0), "in"))
+
+p4_weights <- ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
+    geom_line() +
+    xlab("Feature Magnitude") +
+    scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(0, 81, 15), 89),
+                       labels = function(x)
+                           nycomps_auc_feat_subsets_posmix[x, "weight"] %>%
+                           abs %>% specify_decimal(k = 2))
+
+## Add secondary y-axis
+## http://stackoverflow.com/a/36761846/2320823
+p4_feat_imp <- secondary_y_axis(p4_base, p4_weights)
+rm(p4_base, p4_weights)
+```
+
+```{r forward_preds_pca}
+source("https://bioconductor.org/biocLite.R")
+library(pcaMethods)
+
+# replace NaN with NA
+forward_trans <- preprocess_vars(forward_features,
+                                 daley_allstats_exp_xtrans_params) %>%
+    as.matrix(forward_trans)
+forward_trans[is.nan(forward_trans)] <- NA
+forward_trans <- data.frame(forward_trans)
+
+forward_nipals <- pca(forward_trans, center = TRUE, scale = "uv",
+                      method = "nlpca", nPcs = 20, completeObs = FALSE)
+```
+
+# Calculate Pfam overlap between E. coli and NYCOMPS
+```{r pfam_nycomps_overlap}
+ecoli_pfam <- bind_rows(
+    read.table("../ml-datasets/ecoli-daley-fluman/precalc/Daley_gfp.fna.faa.pfamA",
+               comment.char = '#', as.is = TRUE),
+    read.table("../ml-datasets/ecoli-daley-fluman/precalc/Daley_phoa.fna.faa.pfamA",
+               comment.char = '#', as.is = TRUE))
+
+colnames(ecoli_pfam) <- c('seq_id', 'alignment_start', 'alignment_end',
+                          'envelope_start', 'envelope_end', 'hmm_acc',
+                          'hmm_name', 'type', 'hmm_start', 'hmm_end',
+                          'hmm_length', 'bit_score', 'E-value',
+                          'significance', 'clan')
+
+nycomps_pfam <- bind_rows(
+    read.table("../ml-datasets/nycomps/nycomps_only_pos.fna.faa.pfamA",
+               comment.char = '#', as.is = TRUE),
+    read.table("../ml-datasets/nycomps/nycomps_only_neg.fna.faa.pfamA",
+               comment.char = '#', as.is = TRUE),
+    read.table("../ml-datasets/nycomps/nycomps_mixed.fna.faa.pfamA",
+               comment.char = '#', as.is = TRUE))
+nycomps_pfam$id <- getname(nycomps_pfam$seq_id, token = 3) %>% as.numeric
+colnames(nycomps_pfam) <- colnames(ecoli_pfam)
+
+nycomps_pfam$hmm_training <- nycomps_pfam$hmm_acc %in% ecoli_pfam$hmm_acc
+nycomps_pfam$clan_training <- nycomps_pfam$clan %in% ecoli_pfam$clan
+
+nycomps_vectors$hmm_training <- 
+    nycomps_vectors$id %in% nycomps_pfam[nycomps_pfam$hmm_training,]$id
+nycomps_vectors$clan_training <- 
+    nycomps_vectors$id %in% nycomps_pfam[nycomps_pfam$clan_training,]$id
+
+nycomps_auc_hmm_training <-
+    foreach(thisplasmid = unique(nycomps_vectors$plasmid_name),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    thisdata <- filter(nycomps_vectors,
+                       plasmid_name == thisplasmid, hmm_training)
+    thisdata <- transmute(thisdata,
+                          thisresponse = plasmid_outcome == 1,
+                          ml21 = ml21)
+    df1 <- data.frame(
+        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                      direction = "<", method = "delong"),
+        group = thisplasmid,
+        type = "plasmid",
+        cterm = "all",
+        ci_labels = c("lower95", "auc", "upper95"),
+        count = nrow(thisdata),
+        pos_count = sum(thisdata$thisresponse)
+        )
+    
+    df2 <- foreach(thiscterm = unique(nycomps_vectors$cterm),
+                   .combine = bind_rows, .multicombine = TRUE) %dopar% {
+        thisdata <- nycomps_vectors %>%
+            filter(plasmid_name == thisplasmid,cterm == thiscterm) %>%
+            transmute(thisresponse = plasmid_outcome == 1,
+                      ml21 = ml21)
+        data.frame(
+            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                          direction = "<", method = "delong"),
+            group = thisplasmid,
+            type = "plasmid",
+            cterm = thiscterm,
+            ci_labels = c("lower95", "auc", "upper95"),
+            count = nrow(thisdata),
+            pos_count = sum(thisdata$thisresponse)
+            )
+    }
+    
+    bind_rows(df1, df2)
+} %>% mutate(hmm = TRUE)
+
+nycomps_auc_hmm_training <-
+    foreach(thisplasmid = unique(nycomps_vectors$plasmid_name),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    thisdata <- filter(nycomps_vectors, plasmid_name == thisplasmid, !hmm_training)
+    thisdata <- transmute(thisdata, 
+                          thisresponse = plasmid_outcome == 1, ml21 = ml21)
+    df1 <- data.frame(
+        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
+        group = thisplasmid,
+        type = "plasmid",
+        cterm = "all",
+        ci_labels = c("lower95", "auc", "upper95"),
+        count = nrow(thisdata),
+        pos_count = sum(thisdata$thisresponse)
+        )
+    
+    df2 <- foreach(thiscterm = unique(nycomps_vectors$cterm),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+        thisdata <- filter(nycomps_vectors,
+                           plasmid_name == thisplasmid, cterm == thiscterm)
+        thisdata <- transmute(thisdata, 
+                              thisresponse = plasmid_outcome == 1,
+                              ml21 = ml21)
+        data.frame(
+            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                          direction = "<", method = "delong"),
+            group = thisplasmid,
+            type = "plasmid",
+            cterm = thiscterm,
+            ci_labels = c("lower95", "auc", "upper95"),
+            count = nrow(thisdata),
+            pos_count = sum(thisdata$thisresponse)
+            )
+    }
+    
+    bind_rows(df1, df2)
+} %>% mutate(hmm = FALSE) %>% bind_rows(nycomps_auc_hmm_training)
+
+nycomps_auc_hmm_training <- 
+    dcast(nycomps_auc_hmm_training,
+          group + type + cterm + count + pos_count + hmm ~ ci_labels,
+          value.var = "ml21")
+
+ggplot(nycomps_auc_hmm_training %>% filter(cterm == "all")) +
+    geom_errorbar(aes(x = group,
+                   ymin = upper95,
+                   ymax = lower95),
+              width = 0.25) + 
+    geom_point(aes(x = group, y = auc, color = hmm))
+    # geom_segment(aes(x = parent_score,
+    #                xend = mutant_score,
+    #                y = parent_expression,
+    #                yend = mutant_expression,
+    #                color = parent), 
+    #            arrow = arrow(length = unit(0.02, "npc"), type = "closed"))
+```
+
+```{r}
+sessionInfo()
+```

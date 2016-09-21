@@ -1,0 +1,970 @@
+---
+title: "Data munging and Figure 4 preparation"
+author: "Shyam Saladi (saladi@caltech.edu)"
+date: "09/20/2016"
+output: html_document
+---
+
+## Load libraries
+Load all libraries necessary for subsequent data munging and plotting.
+Some defaults are set here to make things easier throughout.
+```{r libraries}
+library(datamart)
+
+library(ggplot2)
+library(ggbeeswarm)
+library(ggthemes)
+library(cowplot)
+library(corrplot)
+library(viridis)
+theme_set(theme_cowplot(font_size = 7))
+
+library(gtable)
+library(grid)
+library(gridExtra)
+library(gridGraphics)
+library(scales)
+library(RColorBrewer)
+library(reshape2)
+library(plyr)
+library(dplyr)
+library(dplyrExtras)
+
+library(tidyr)
+
+library(boot)
+library(caret)
+
+library(pROC)
+library(locfit)
+
+library(foreach)
+library(doMC)
+registerDoMC(cores = 10)
+
+# if TRUE, then data will be written to file
+write_out = FALSE
+```
+
+## Convenience functions
+Load another file with a number of helper functions to mechanize some tedious
+or repetitive tasks.
+```{r}
+source("preparation-convenience.R")
+```
+
+# p4 - forward predictions
+```{r forward_data_prep, cache=TRUE}
+# load allstats and scores
+celegans <- read.csv("forward-preds/celegans_mp_wormbase.fna.allstats.csv", header = TRUE, as.is = TRUE) %>%
+    mutate(group = "Metazoa",
+           species = "Caenorhabditis elegans",
+           ml21 = read.table("forward-preds/celegans_mp_wormbase.fna.allstats.daley_only_raw_exp_ml21")$V1)
+
+hs <- read.csv("forward-preds/hs_rnd1.fna.allstats.csv", header = TRUE, as.is = TRUE) %>%
+    mutate(group = "Metazoa",
+           species = "Homo sapiens",
+           ml21 = read.table("forward-preds/hs_rnd1.fna.allstats.daley_only_raw_exp_ml21")$V1)
+
+mm <- read.csv("forward-preds/mm_rnd1.fna.allstats.csv", header = TRUE, as.is = TRUE) %>%
+    mutate(group = "Metazoa",
+           species = "Mus musculus",
+           ml21 = read.table("forward-preds/mm_rnd1.fna.allstats.daley_only_raw_exp_ml21")$V1)
+
+sgd <- read.csv("forward-preds/sgd_orf_coding.mps.fna.allstats.csv", header = TRUE, as.is = TRUE) %>%
+    mutate(group = "Eukaryota",
+           species = "Saccharomyces cerevisiae",
+           ml21 = read.table("forward-preds/sgd_orf_coding.mps.fna.allstats.ml21")$V1)
+
+pipca <- read.csv("forward-preds/Picpa1_GeneCatalog_CDS_20130227.mps.fna.allstats.csv", header = TRUE, as.is = TRUE) %>%
+    mutate(group = "Eukaryota",
+           species = "Pichia pastoris",
+           ml21 = read.table("forward-preds/Picpa1_GeneCatalog_CDS_20130227.mps.fna.allstats.ml21")$V1)
+
+microbial_preds <- read.csv("forward-preds/microbial_query.fna.allstats.csv", header = TRUE, as.is = TRUE) %>%
+    mutate(ml21 = read.table("forward-preds/microbial_query.fna.allstats.daley_only_raw_exp_ml21")$V1) %>%
+    cbind(read.table("forward-preds/microbial_query.dat", header = TRUE, sep = "\t")) %>%
+    select(-CONVERT..pfamseq.sequence.USING.UTF8., -sequence) %>%
+    mutate(species = gsub("/", "|", species),
+           species = getname(gsub(" ", "_", species)),
+           species = gsub("_", " ", species)) %>%
+    rename(group = grouping, uniprotid = pfamseq_acc) %>%
+    filter(species != "Escherichia coli (strain ATCC 33849 ")
+
+forward_preds <- bind_rows(celegans, mm, hs, sgd, pipca, microbial_preds[, colnames(pipca)]) %>%
+    filter(numTMs > 0) %>%
+    mutate(species = regmatches(species, regexpr('\\w+\\W{1,2}\\w+', species, perl = TRUE)))
+
+# Two E. coli datasets here for plotting comparison
+daley_outcomes <- read.csv("training/AllPlates_161104_with_raw.csv", header = TRUE) %>%
+    filter(Cterm_new == "in", Keep. == 1) %>%
+    transmute(gfp = Normalised.GFP..I.e..x.3924.,
+              ID = tolower(ID)) %>%
+    left_join(ecoli_training, by = c("ID" = "ID")) %>%
+    dplyr::select(gfp, ID, ml21) %>%
+    filter(gfp > 0)
+daley_outcomes <- daley_outcomes[!duplicated(daley_outcomes),]
+rownames(daley_outcomes) <- daley_outcomes$ID
+
+
+fluman_outcomes <- read.csv("training/fluman_data_all.csv", header = TRUE)
+rownames(fluman_outcomes) <- fluman_outcomes$name
+fluman_outcomes <- select(fluman_outcomes, folded.exp, folded.exp.1, folded.exp.2)
+fluman_outcomes <- fluman_outcomes/c(fluman_outcomes['emrD',])
+fluman_outcomes$avg_folded <- 
+    rowMeans(data.frame(fluman_outcomes$folded.exp, 
+                        fluman_outcomes$folded.exp.1, 
+                        fluman_outcomes$folded.exp.2), na.rm = TRUE)
+fluman_outcomes$ID <- tolower(rownames(fluman_outcomes))
+fluman_outcomes <- left_join(fluman_outcomes, ecoli_training, by = c("ID" = "ID")) %>%
+    select(ID, avg_folded, ml21)
+fluman_outcomes <- fluman_outcomes[!duplicated(fluman_outcomes),]
+rownames(fluman_outcomes) <- fluman_outcomes$ID
+
+# give a table with counts in each category, counts above score 0, counts above score 2
+forward_tufte_boxplots <- filter(forward_preds, numTMs >= 1) %>% 
+    group_by(group, species) %>%
+    summarise(
+      count = length(ml21),
+      # for tufte like boxplots, if the min is < xrange min, then the whole linepart doesnt show:
+      boxplot_1 = boxplot.stats(ml21, coef = 1.5, do.conf = TRUE, do.out = TRUE)$stats[[1]],
+      boxplot_1 = ifelse(boxplot_1 < nycomps_xscale[[1]], nycomps_xscale[[1]], boxplot_1),
+      boxplot_2 = boxplot.stats(ml21, coef = 1.5, do.conf = TRUE, do.out = TRUE)$stats[[2]],
+      boxplot_3_median = boxplot.stats(ml21, coef = 1.5, do.conf = TRUE, do.out = TRUE)$stats[[3]],
+      boxplot_4 = boxplot.stats(ml21, coef = 1.5, do.conf = TRUE, do.out = TRUE)$stats[[4]],
+      boxplot_5 = boxplot.stats(ml21, coef = 1.5, do.conf = TRUE, do.out = TRUE)$stats[[5]],
+      boxplot_5 = ifelse(boxplot_5 > nycomps_xscale[[2]], nycomps_xscale[[2]], boxplot_5)) %>%
+    mutate(species_count = paste0(species, " (", count, ")") ) %>%
+    arrange(species == "Escherichia coli", group == "Metazoa", boxplot_3_median) %>% ungroup
+
+forward_ec_thresholds <- filter(forward_tufte_boxplots, species == "Escherichia coli") %>% 
+    select(-group, -species, -count, -species_count) %>% matrix %>% unlist
+
+forward_targets_table <- group_by(forward_preds, group, species) %>%
+    summarise( 
+        totalMPs = length(ml21),
+        MPs_ge_ECmed = sum(ml21 >= forward_ec_thresholds[[3]]),
+        MPs_ge_ECq3 = sum(ml21 > forward_ec_thresholds[[4]]),
+        polyMPs_ge_ECmed = sum(ml21 > forward_ec_thresholds[[3]] & numTMs > 1),
+        polyMPs_ge_ECq3 = sum(ml21 > forward_ec_thresholds[[4]] & numTMs > 1)
+      ) %>% ungroup
+```
+
+## forward plotting
+```{r forward_plotting}
+forward_preds_order <- c(
+    "Vibrio cholerae",
+    "Helicobacter pylori",
+    "Campylobacter jejuni",
+    "Mycobacterium tuberculosis",
+    "Staphylococcus aureus",
+    "Plasmodium falciparum",
+    
+    "Aquifex aeolicus",
+    "Thermus thermophilus",
+    "Spirochaeta thermophila",
+    
+    "Gloeobacter violaceus",
+    "Rhizobium loti",
+    "Methanococcus maripaludis",
+    "Haloarcula marismortui",
+    "Bacillus halodurans",
+    
+    "Lactobacillus casei",
+    "Bacillus cereus",
+    "Bacillus subtilis",
+    "Escherichia coli",
+    
+    "Pichia pastoris",
+    "Saccharomyces cerevisiae",
+    
+    "Caenorhabditis elegans",
+    "Mus musculus",           
+    "Homo sapiens")
+
+p4_all_violin <- ggplot(forward_preds) + 
+    geom_hline(yintercept = forward_ec_thresholds[[3]],
+               linetype = "dashed", color = "darkgrey") +
+    geom_point(aes(x = species, y = boxplot_3_median),
+               color = "darkgrey", data = forward_tufte_boxplots) + 
+    geom_text(aes(x = species, y = -6, label = species_count),
+              vjust = 2, fontface = "italic", size = 7*5/14,
+              data = forward_tufte_boxplots) + 
+    geom_linerange(aes(x = species, ymin = boxplot_1, ymax = boxplot_2),
+                   color = "darkgrey", data = forward_tufte_boxplots) + 
+    geom_linerange(aes(x = species, ymin = boxplot_4, ymax = boxplot_5),
+                   color = "darkgrey", data = forward_tufte_boxplots) +
+    geom_violin2(aes(y = ml21, x = species),
+                 color = "black", adjust = 0.3, alpha = 0) +
+    # to get the tufte-like boxplots
+    #geom_hline(yintercept=forward_ec_thresholds[[4]], linetype="dashed", color="darkgrey") +
+    coord_flip() +
+    ylab(expression("SVM" ^ "rank"*~"score")) + 
+    scale_y_continuous(expand = c(0,0),
+                       limits = nycomps_xscale, breaks = nycomps_breaks) +
+    scale_x_discrete(limits = forward_preds_order) +
+    theme(axis.ticks.y = element_blank(),
+              axis.title.y = element_blank(),
+              axis.text.y = element_blank(),
+              axis.line.y = element_blank())
+
+selected_violin_genomes <- c("Plasmodium falciparum",
+                    "Aquifex aeolicus",
+                    "Thermus thermophilus",
+                    "Spirochaeta thermophila",
+                    "Bacillus subtilis",
+                    "Escherichia coli",
+                    "Saccharomyces cerevisiae",
+                    "Homo sapiens")
+
+p4_selected_violin <- ggplot(forward_preds %>% filter(species %in% selected_violin_genomes)) + 
+    geom_hline(yintercept = forward_ec_thresholds[[3]], linetype = "dashed", color = "darkgrey") +
+    geom_point(aes(x = species, y = boxplot_3_median), color = "darkgrey",
+               data = forward_tufte_boxplots %>% filter(species %in% selected_violin_genomes)) + 
+    geom_text(aes(x = species, y = -6, label = species_count), vjust = 2, fontface = "italic", size = 7*5/14,
+              data = forward_tufte_boxplots %>% filter(species %in% selected_violin_genomes)) + 
+    geom_linerange(aes(x = species, ymin = boxplot_1, ymax = boxplot_2), color = "darkgrey",
+                   data = forward_tufte_boxplots %>% filter(species %in% selected_violin_genomes)) + 
+    geom_linerange(aes(x = species, ymin = boxplot_4, ymax = boxplot_5), color = "darkgrey",
+                   data = forward_tufte_boxplots %>% filter(species %in% selected_violin_genomes)) +
+    geom_violin2(aes(y = ml21, x = species), color = "black", adjust = 0.3, alpha = 0) + 
+    coord_flip() +
+    ylab(expression("SVM" ^ "rank"*~"score")) + 
+    scale_x_discrete(limits = selected_violin_genomes, breaks = selected_violin_genomes) +
+    scale_y_continuous(expand = c(0,0), limits = nycomps_xscale, breaks = nycomps_breaks) +
+    theme(axis.ticks.y = element_blank(),
+              axis.title.y = element_blank(),
+              axis.text.y = element_blank(),
+              axis.line.y = element_blank())
+
+if (write_out)
+    p4_selected_violin
+```
+
+## Load Fluman, et al., aSD mutant data (Figure 6 in their paper)
+```{r fluman_data_prep, cache=TRUE}
+rel_diff <- function(mut, wt, func = range) {
+    2*(mut - wt)/abs((wt + mut))
+}
+
+fluman_asd <- read.csv("forward-preds/fig6-analysis.csv", header = TRUE, as.is = TRUE) %>%
+    filter(Band == "FOLDED") %>%
+    rename(outcome = Area.from.Image,
+           ml21 = ml21.scores) %>%
+    select(Type, Construct, outcome, ml21)
+
+fluman_asd <- fluman_asd %>%
+    filter(Construct == "WT") %>%
+    inner_join(fluman_asd %>% filter(Construct == "MUT"), by = c("Type" = "Type")) %>%
+    transmute(gene = toupper(Type),
+              wt_outcome = outcome.x,
+              wt_ml21 = ml21.x,
+              mut_outcome = outcome.y,
+              mut_ml21 = ml21.y,
+              rel_outcome = rel_diff(mut_outcome, wt_outcome),
+              rel_ml21 = rel_diff(mut_ml21, wt_ml21))
+
+fluman_asd_features <- "forward-preds/fluman_asd_mutant.fna.allstats.csv" %>%
+    read.csv(header = TRUE, as.is = TRUE) %>%
+    separate(title, c("gene", "junk")) %>%
+    mutate(gene = toupper(gene)) %>%
+    select(-junk)
+
+ecoli_features <- "training/Daley_gfp.fna.allstats.csv" %>%
+    read.csv(as.is = TRUE, header = TRUE) %>%
+    mutate(title = getname(title) %>% toupper)
+
+fluman_asd <- fluman_asd %>%
+    inner_join(ecoli_features, by = c("gene" = "title")) %>%
+    inner_join(fluman_asd_features, by = c("gene" = "gene")) %>%
+    mutate(rel_relareaSD = rel_diff(relareaSD.y, relareaSD.x),
+           rel_totalSDsites = rel_diff(totalSDsites.y, totalSDsites.x))
+```
+
+# fluman asd plotting
+```{r fluman_asd_plotting}
+p4_fluman_asd_prep <- fluman_asd %>%
+    select(gene, rel_outcome, rel_ml21, rel_totalSDsites) %>% # ,
+    gather(metric, value, -gene) %>%
+    mutate(gene = factor(gene,
+                         levels = c("YGDD", "BRNQ", "YBJJ"),
+                         labels = c("YgdD", "BrnQ", "YbjJ")),
+           metric = factor(metric,
+                           levels = c("rel_totalSDsites", "rel_ml21", "rel_outcome"), #"rel_totalSDsites"), 
+                           labels = c("SD-like Sites", "SVMrank Score", "Folded Protein"))) # "SD-like Elements", 
+
+p4_fluman_asd <- ggplot(p4_fluman_asd_prep, aes(x = gene, y = value, fill = metric)) +
+    geom_bar(stat = "identity", position = "dodge") + 
+    ylab("Relative Difference") +
+    scale_fill_manual(values = brewer.pal(3, "Dark2")) +
+    scale_y_continuous(labels = c(-1, -.5, 0, .25)) + 
+    theme(axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.key = element_blank(),
+        legend.key.size = unit(0.25, "cm"),
+        legend.position = c(.60, .20),
+        aspect.ratio = 1)
+
+if (write_out)
+    p4_fluman_asd
+```
+
+## deal with feature distributions
+```{r feature_distributions, cache=TRUE}
+forward_features <- forward_preds %>%
+    select(-ml21, -group) %>%
+    mutate(set = "forward")
+
+ecoli_features <- read.csv("training/Daley_gfp.fna.allstats.csv", as.is = TRUE, header = TRUE) %>%
+    mutate(species = "Ec-Daley Training",
+           set = "ecoli")
+ecoli_features <- ecoli_features[, colnames(forward_features)]
+
+nycomps_features <- bind_rows(read.csv("large-scale/nycomps_only_pos.fna.allstats.csv", as.is = TRUE, header = TRUE),
+                          read.csv("large-scale/nycomps_mixed.fna.allstats.csv", as.is = TRUE, header = TRUE),
+                          read.csv("large-scale/nycomps_only_neg.fna.allstats.csv", as.is = TRUE, header = TRUE)) %>%
+    mutate(species = "nycomps all",
+           set = "nycomps")
+nycomps_features <- nycomps_features[, colnames(forward_features)]
+
+# Don't need to recapitulate scaling and centering
+
+all_features <- bind_rows(nycomps_features, ecoli_features, forward_features) %>%
+    select(-title) %>%
+    gather(featuretype, featurevalue, -set, -species) %>%
+    mutate(thermophile = species %in% c("Aquifex aeolicus", "Spirochaeta thermophila", "Thermus thermophilus"))
+
+estimate_overlap <- function(A, B, method = 'locfit', n.grid = 2 ^ 13) {
+    # if the length of the sets are non-zero, the calculate a KDE
+    if (length(A) == 0 | length(B) == 0) {
+        return(NA)
+    }
+    
+    # Calculate Extent
+    range_all <- c(min(A, B), max(A, B))
+    # Set up mesh
+    mesh <- seq(range_all[[1]], range_all[[2]], length = n.grid)
+    
+    if (method == 'gss') {
+        # fit each density independently, set extent with `domain`
+        fitA <- gss::ssden(~A, domain = data.frame(A = range_all))
+        fitB <- gss::ssden(~B, domain = data.frame(B = range_all))
+        
+        # calculate density at each grid point
+        densityA <- gss::dssden(fitA, mesh)
+        densityB <- gss::dssden(fitB, mesh)
+    
+        # normalize density to 1
+        densityA <- densityA / sum(densityA)
+        densityB <- densityB / sum(densityB)
+
+    } else if (method == 'locfit') {
+        # calculate density at each grid point
+        densityA <- locfit::density.lf(A, ev = mesh, maxit = 10000)$y
+        densityB <- locfit::density.lf(B, ev = mesh, maxit = 10000)$y
+        
+        # normalize density to 1
+        densityA <- densityA / sum(densityA)
+        densityB <- densityB / sum(densityB)
+    } else if (method == 'ed') {
+        densityA <- ed(A, xgrid = n.grid, bounds = c(min(A, B), max(A, B)))
+        densityB <- ed(B, xgrid = n.grid, bounds = c(min(A, B), max(A, B)))
+    } else {
+        stop("Unrecognized method")
+    }
+
+    # calculate overall overlap
+    sum(pmin(densityA, densityB))
+}
+
+getoverlap_thermo <- function(name) {
+    set1 <- filter(all_features, thermophile, featuretype == name, !is.na(featurevalue))$featurevalue
+    set2 <- filter(all_features, set == "ecoli", featuretype == name, !is.na(featurevalue))$featurevalue
+    estimate_overlap(set1, set2) %>% as.numeric
+}
+
+getoverlap_set_set <- function(name, settype1, settype2 = "ecoli") {
+    set1 <- filter(all_features, set == settype1, featuretype == name, !is.na(featurevalue))$featurevalue
+    set2 <- filter(all_features, set == settype2, featuretype == name, !is.na(featurevalue))$featurevalue
+    estimate_overlap(set1, set2) %>% as.numeric
+}
+
+getoverlap_species_set <- function(name, speciesname, settype = "ecoli") {
+    set1 <- filter(all_features, species == speciesname, featuretype == name, !is.na(featurevalue))$featurevalue
+    set2 <- filter(all_features, set == settype, featuretype == name, !is.na(featurevalue))$featurevalue
+    estimate_overlap(set1, set2) %>% as.numeric
+}
+
+getoverlap_species_species <- function(name, speciesname1, speciesname2) {
+    set1 <- filter(all_features, species == speciesname1, featuretype == name, !is.na(featurevalue))$featurevalue
+    set2 <- filter(all_features, species == speciesname2, featuretype == name, !is.na(featurevalue))$featurevalue
+    estimate_overlap(set1, set2) %>% as.numeric
+}
+
+name <- 'freqens'
+getoverlap_thermo('freqens')
+
+overlap <- data.frame(
+    feature = unique(all_features$featuretype),
+    thermo = mclapply(unique(all_features$featuretype), getoverlap_thermo, 
+                      mc.cores = 20, mc.preschedule = FALSE) %>% simplify2array %>% as.numeric,
+    nycomps = mclapply(unique(all_features$featuretype), getoverlap_set_set, settype1 = "nycomps", settype2 = "ecoli",
+                       mc.cores = 20, mc.preschedule = FALSE) %>% simplify2array %>% as.numeric,
+    forward = mclapply(unique(all_features$featuretype), getoverlap_set_set, settype1 = "forward", settype2 = "ecoli",
+                       mc.cores = 20, mc.preschedule = FALSE) %>% simplify2array %>% as.numeric,
+    pf = mclapply(unique(all_features$featuretype), getoverlap_species_set, speciesname = "Plasmodium falciparum", settype = "ecoli",
+                  mc.cores = 20, mc.preschedule = FALSE) %>% simplify2array %>% as.numeric,
+    ecoli = mclapply(unique(all_features$featuretype), getoverlap_species_set, speciesname = "Escherichia coli", settype = "ecoli",
+                  mc.cores = 20, mc.preschedule = FALSE) %>% simplify2array %>% as.numeric,
+    human_training = mclapply(unique(all_features$featuretype), getoverlap_species_set, speciesname = "Homo sapiens", settype = "ecoli",
+                  mc.cores = 20, mc.preschedule = FALSE) %>% simplify2array %>% as.numeric,
+    human_ec = mclapply(unique(all_features$featuretype), getoverlap_species_species, speciesname1 = "Homo sapiens", speciesname2 = "Escherichia coli",
+                  mc.cores = 20, mc.preschedule = FALSE) %>% simplify2array %>% as.numeric,
+    human_sc = mclapply(unique(all_features$featuretype), getoverlap_species_species, speciesname1 = "Homo sapiens", speciesname2 = "Saccharomyces cerevisiae",
+                  mc.cores = 20, mc.preschedule = FALSE) %>% simplify2array %>% as.numeric,
+    human_pp = mclapply(unique(all_features$featuretype), getoverlap_species_species, speciesname1 = "Homo sapiens", speciesname2 = "Pichia pastoris",
+                  mc.cores = 20, mc.preschedule = FALSE) %>% simplify2array %>% as.numeric,
+    stringsAsFactors = FALSE)
+
+# Mean absolute deviations:
+mad_nycomps_forward <- mean(abs(overlap$nycomps - overlap$forward), na.rm = TRUE) * 100
+mad_pf_nycomps <- mean(abs(overlap$pf - overlap$nycomps), na.rm = TRUE) * 100
+mad_thermo_nycomps <- mean(abs(overlap$thermo - overlap$nycomps), na.rm = TRUE) * 100
+
+p4_ecoli_dist <- ggplot(overlap) + 
+    geom_vline(xintercept = 0.75,
+               size = 0.7, linetype = "dotted", color = "#00b1b9") +
+    geom_point(aes(x = ecoli, y = 1), shape = 17, alpha = 0.5, size = 0.4) +
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 1),
+                       labels = function(x) x*100) +
+    xlab("E. coli vs E. coli (Training Set)") +
+    theme(axis.title.y = element_blank(),
+              axis.text.y = element_blank(),
+              axis.line.y = element_blank(),
+              axis.ticks.y = element_blank())
+
+selected_features <- data.frame(
+    feature = c("seqLen", "GC", "tAI", "CPS", "relareaSD", "zeroto38avgRNAss",
+              "pI", "membrCont", "numPosNormCyt", "delGallTMs", "len1_2loop", "avgRONN"),
+    x = c(2700, 0.7, 0.36, 100, 0.29, 0.8, 12, 450, 0.9, 4.5, 400, 0.7),
+    y = c( 125, 110,   75, 125,  150,  60, 75, 275, 125,  90, 375,  75), stringsAsFactors = FALSE)
+
+selected_features <- gdata:::interleave(selected_features[1:6,], selected_features[7:12,]) %>% 
+    inner_join(overlap) %>%
+    mutate(featuretype = factor(feature, levels = selected_features$feature),
+           plotlabel = paste0(specify_decimal(thermo, k = 2), "\n", specify_decimal(pf, k = 2)))
+
+p2ext_feature_dist_prep <- filter(all_features, set == "ecoli" | thermophile | species == "Plasmodium falciparum", 
+                                  featuretype %in% selected_features$feature) %>%
+    mutate(group = "E. coli (Training Data)", 
+           featuretype = factor(as.character(featuretype), levels = selected_features$feature)) %>%
+    # cull some of the features so plots are more meaningful
+    filter(featuretype != 'len1_2loop' | featuretype == 'len1_2loop' & featurevalue < 500) %>%
+    filter(featuretype != 'seqLen' | featuretype == 'seqLen' & featurevalue < 3000)
+
+p2ext_feature_dist_prep[p2ext_feature_dist_prep$thermophile,]$group <- "Thermophiles"
+p2ext_feature_dist_prep[p2ext_feature_dist_prep$species == "Plasmodium falciparum",]$group <- "P. falciparum"
+p2ext_feature_dist_prep$group <- factor(p2ext_feature_dist_prep$group, 
+                                        levels = c("E. coli (Training Data)", "Thermophiles", "P. falciparum"))
+
+
+p2ext_feature_dist_prep <- foreach(thisgrp = unique(p2ext_feature_dist_prep$group),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    foreach(thistype = unique(p2ext_feature_dist_prep$featuretype),
+            .combine = bind_rows, .multicombine = TRUE) %do% {
+                thisdata <- filter(p2ext_feature_dist_prep,
+                                   featuretype == thistype, group == thisgrp)
+                thisrange <- range(thisdata$featurevalue)
+                nbins <- 50
+                grid <- seq(thisrange[[1]], thisrange[[2]],
+                            by = (thisrange[[2]] - thisrange[[1]])/nbins)
+                freqs <- cut(thisdata$featurevalue, breaks = grid,
+                             ordered_result = TRUE) %>% table %>% data.frame
+                data.frame(
+                    group = thisgrp,
+                    featuretype = thistype,
+                    x_left = grid[1:length(grid) - 1],
+                    count = freqs$Freq,
+                    density = freqs$Freq / sum(freqs$Freq),
+                    labels = freqs$.)
+    }
+}
+
+p2ext_feature_dist_prep <- p2ext_feature_dist_prep %>%
+    mutate(featuretype = factor(featuretype,
+                                levels = c("seqLen", "pI", "GC",
+                                           "membrCont", "tAI", "numPosNormCyt",
+                                           "CPS", "delGallTMs", "relareaSD",
+                                           "len1_2loop", "zeroto38avgRNAss", "avgRONN"),
+                                labels = c("Sequence Length", "Isoelectric Point", "GC Content", "Membrane Residue Count",
+                                           "tRNA Adapation Index", "Positive Cytoplasmic Residues\n(normalized)", "Codon Pair Score",
+                                           "ΔG of Insertion (Hessa, et al.)", "Shine-Dalgarno Sites (normalized)", "Length of TM1-TM2 Loop",
+                                           "RNA Secondary Structure\n(1st 40 codons)", "Mean Disorder Prediction (RONN)")))
+
+selected_features <- selected_features %>% 
+    mutate(featuretype = factor(featuretype,
+                                levels = c("seqLen", "pI", "GC",
+                                           "membrCont", "tAI", "numPosNormCyt",
+                                           "CPS", "delGallTMs", "relareaSD",
+                                           "len1_2loop", "zeroto38avgRNAss", "avgRONN"),
+                                labels = c("Sequence Length", "Isoelectric Point", "GC Content", "Membrane Residue Count",
+                                           "tRNA Adapation Index", "Positive Cytoplasmic Residues\n(normalized)", "Codon Pair Score",
+                                           "ΔG of Insertion (Hessa, et al.)", "Shine-Dalgarno Sites (normalized)", "Length of TM1-TM2 Loop",
+                                           "RNA Secondary Structure\n(1st 40 codons)", "Mean Disorder Prediction (RONN)")))
+```
+
+## feature distribution plotting
+```{r feat_dist_plotting}
+pext2_feature_dist <- ggplot(p2ext_feature_dist_prep) +
+    geom_step_hist(aes(x = featurevalue, color = group),
+                   alpha = 0.7, position = "identity", bins = 50) +
+    geom_text(aes(x = x, y = y, label = specify_decimal(thermo, k = 2)),
+              size = 5*5/14, color = brewer.pal(3, "Dark2")[[2]],
+              data = selected_features) + 
+    geom_text(aes(x = x, y = y*.9, label = specify_decimal(pf, k = 2)),
+              size = 5*5/14, color = brewer.pal(3, "Dark2")[[3]],
+              data = selected_features) + 
+    scale_fill_manual(values = brewer.pal(3, "Dark2")) + 
+    scale_color_manual(values = brewer.pal(3, "Dark2")) + 
+    scale_y_continuous(expand = c(0, 0)) + 
+    scale_x_continuous(expand = c(0, 0)) +
+    xlab("Value") + ylab("Density") + 
+    facet_wrap(~featuretype, ncol = 2, scales = "free") +
+    theme(axis.title = element_blank(),
+          strip.background = element_blank(),
+          legend.position = "top",
+          legend.key.size = unit(0.25, "cm"),
+          legend.background = element_blank(),
+          legend.key = element_blank(),
+          legend.title = element_blank(),
+          legend.margin = unit(c(0, 0, -.0115, 0), "npc"))
+
+pext2_thermo <-
+    ggplot(overlap, aes(x = nycomps, y = thermo, label = feature)) +
+    geom_hline(yintercept = 0.75,
+               linetype = "dotted", size = 0.7, color = "#00b1b9") + 
+    geom_vline(xintercept = 0.75,
+               linetype = "dotted", size = 0.7, color = "#00b1b9") +
+    geom_abline(color = "grey", linetype = "dashed") +
+    geom_point(size = 0.25) +
+    annotate(geom = "text", label = specify_decimal(mad_thermo_nycomps, k = 1),
+             x = 0.1, y = 0.9, size = 6*5/14) + 
+    #geom_text(size = 5*5/14, nudge_y = .005) +
+#    geom_segment(aes(x = thermo, xend = thermo, y = nycomps, yend = forward), color = "black", size = 0.25,
+#                 arrow = arrow(angle = 30, length = unit(1.25, "pt"), type = "closed"), data = overlap) +
+    xlab("NYCOMPS vs. Training") +
+    ylab("Thermophiles vs. Training") +
+    scale_x_continuous(limits = c(0,1), expand = c(0,0),
+                       labels = function(x) x*100) +
+    scale_y_continuous(limits = c(0,1), expand = c(0,0),
+                       labels = function(x) x*100) +
+    theme(legend.position = "none",
+          legend.title = element_blank(),
+          aspect.ratio = 1)
+
+pext2_pf <- ggplot(overlap, aes(x = nycomps, y = pf, label = feature)) +
+    geom_hline(yintercept = 0.75,
+               linetype = "dotted", size = 0.7, color = "#00b1b9") + 
+    geom_vline(xintercept = 0.75,
+               linetype = "dotted", size = 0.7, color = "#00b1b9") +
+    geom_abline(color = "grey", linetype = "dashed") +
+    geom_point(size = 0.25) +
+    annotate(geom = "text",label = specify_decimal(mad_pf_nycomps, k = 1),
+             x = 0.1, y = 0.9, size = 6*5/14) + 
+    #geom_text(size = 5*5/14, nudge_y = .005) +
+    xlab("NYCOMPS vs. Training") +
+    ylab("P. falciparum vs. Training") +
+    scale_color_manual(values = brewer.pal(3, "Dark2")[2:1]) + 
+  #  scale_linetype_manual(values = 1) +
+    scale_x_continuous(limits = c(0,1), expand = c(0,0), labels = function(x) x*100) +
+    scale_y_continuous(limits = c(0,1), expand = c(0,0), labels = function(x) x*100) +
+    theme(legend.position = "none",
+          legend.title = element_blank(),
+          aspect.ratio = 1)
+
+pext2_nycomps_forward <-
+    ggplot(overlap, aes(x = nycomps, y = forward, label = feature)) +
+    geom_hline(yintercept = 0.75,
+               linetype = "dotted", size = 0.7, color = "#00b1b9") +
+    geom_vline(xintercept = 0.75,
+               linetype = "dotted", size = 0.7, color = "#00b1b9") +
+    geom_abline(color = "grey", linetype = "dashed") +
+ #   geom_segment(x=.75, xend=.75, y = 0, yend = .75) + 
+    geom_point(size = 0.25) + 
+    annotate(geom = "text",
+             label = specify_decimal(mad_nycomps_forward, k = 1),
+             x = 0.1, y = 0.9, size = 6*5/14) + 
+#    geom_text(size = 5*5/14, nudge_y = .005) +
+    xlab("NYCOMPS vs. Training") +
+    ylab("Forward vs. Training") +
+    scale_x_continuous(limits = c(0,1), expand = c(0,0),
+                       labels = function(x) x*100) +
+    scale_y_continuous(limits = c(0,1), expand = c(0,0),
+                       labels = function(x) x*100) +
+    theme(aspect.ratio = 1)
+
+pext2_hs_ec_sc <-
+    ggplot(overlap, aes(x = human_ec, y = human_sc, label = feature)) +
+    geom_hline(yintercept = 0.75,
+               linetype = "dotted", size = 0.7, color = "#00b1b9") + 
+    geom_vline(xintercept = 0.75,
+               linetype = "dotted", size = 0.7, color = "#00b1b9") +
+    geom_abline(color = "grey", linetype = "dashed") +
+ #   geom_segment(x=.75, xend=.75, y = 0, yend = .75) + 
+    geom_point(size = 0.25) + 
+#    geom_text(size = 5*5/14, nudge_y = .005) +
+    xlab("Human vs. E. coli") +
+    ylab("Human vs. S. c") +
+    scale_x_continuous(limits = c(0,1), expand = c(0,0),
+                       labels = function(x) x*100) +
+    scale_y_continuous(limits = c(0,1), expand = c(0,0),
+                       labels = function(x) x*100) +
+    theme(aspect.ratio = 1)
+
+pext2_hs_ec_pp <- ggplot(overlap, aes(x = human_ec, y = human_pp, label = feature)) +
+    geom_hline(yintercept = 0.75, linetype = "dotted", size = 0.7, color = "#00b1b9") + 
+    geom_vline(xintercept = 0.75, linetype = "dotted", size = 0.7, color = "#00b1b9") +
+    geom_abline(color = "grey", linetype = "dashed") +
+ #   geom_segment(x=.75, xend=.75, y = 0, yend = .75) + 
+    geom_point(size = 0.25) + 
+#    geom_text(size = 5*5/14, nudge_y = .005) +
+    xlab("Human vs. E. coli") +
+    ylab("Human vs. P. pastoris") +
+    scale_x_continuous(limits = c(0,1), expand = c(0,0),
+                       labels = function(x) x*100) +
+    scale_y_continuous(limits = c(0,1), expand = c(0,0),
+                       labels = function(x) x*100) +
+    theme(aspect.ratio = 1)
+```
+
+## Figure 4 Compilation
+```{r}
+p4_main <- ggdraw() + 
+    draw_plot(plot_grid(p4_selected_violin, p4_nvector_ppv,
+                        nrow = 2, align = "hv", rel_heights = c(3, 1),
+                        labels = letters[1:2], label_size = 8), 
+              x = -.01, y = 0, width = .72, height = 1) +
+    draw_plot(plot_grid(p4_ecoli_dist, pext2_nycomps_forward, 
+                        pext2_thermo, pext2_pf, p4_fluman_asd,
+                        labels = letters[3:7], label_size = 8,
+                        ncol = 1, align = "hv",
+                        rel_heights = c(1, 3, 3, 3, 3)),
+              x = .72, y = 0, width = .27, height = 1) 
+#    draw_label("NYCOMPS vs. E. coli (Training) -> Forward vs. E. coli (Training)", angle = 90, size = 7,
+#               x = .73, y = .33) +
+#    draw_plot(p4_selected_violin, x = 0, y = .25, width = .72, height = .79) +
+#    draw_plot_label(letters[1:3], c(0, 0, 0.33), c(1, .28, .28), size = 8)
+
+#pext2_thermo
+
+pext2 <- plot_grid(p4_all_violin, pext2_feature_dist, rel_widths = c(2, 1), labels = letters[1:2], label_size = 8, ncol = 2)
+
+# RGB by default
+if (write_out) {
+    save_plot(filename = "plots/fig4_fluman_thermo.pdf", plot = p4_main,
+          base_width = uconv(136, "mm", "in", "Length"),
+          base_height = 5.5)
+    
+    save_plot(filename = "plots/extfig2_names.pdf", 
+              plot = pext2, 
+              base_width = uconv(183, "mm", "in", "Length"), base_height = 7,
+              dpi = 300)
+} else {
+    p4_main
+    pext2
+}
+
+```
+
+# plot scores of features along with correlations within
+# ecoli training, nycomps, and forward genomes datasets
+```{r feature_plot}
+# load preprocessing script
+# features we use for the ML
+load("predict.RData")
+preprocess_vars <- function(test_data, xtrans) {
+    prediction_features <- names(xtrans$mean)
+    
+    # features in the test dataset
+    test_data_features <- colnames(test_data)
+    
+    # features requested for the ML but not in the input dataset
+    # keep in mind setdiff gives the asymmetric difference
+    # (http://stat.ethz.ch/R-manual/R-patched/library/base/html/sets.html)
+    missing_features <- setdiff(prediction_features, colnames(test_data))
+    
+    for(x in missing_features) {
+        test_data[[x]] <- NA
+    }
+    rm(x)
+    
+    # keep only the columns we want for the ML (get rid of the extras)
+    test_data <- test_data[, prediction_features]
+    
+    # do the preprocessing (scaling and centering)
+    transformed <- predict(xtrans, test_data)
+    
+    transformed[, !(colnames(transformed) %in% missing_features)]
+}
+
+svmweights <- read.table("daley_only_raw_exp_ml21.full.4.svmweights", header = FALSE)
+colnames(svmweights) <- c("feature", "weight")
+svmweights$rel <- svmweights$weight / mean(svmweights$weight)
+svmweights <- arrange(svmweights, desc(weight))
+
+forward_cor <- preprocess_vars(forward_features,
+                               daley_allstats_exp_xtrans_params) %>% 
+    cor(use = "pairwise.complete.obs")
+
+cor.mtest <- function(mat, conf.level = 0.95){
+  mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat <- lowCI.mat <- uppCI.mat <- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    diag(lowCI.mat) <- diag(uppCI.mat) <- 1
+    for(i in 1:(n-1)){
+        for(j in (i+1):n){
+            tmp <- cor.test(mat[,i], mat[,j], conf.level = conf.level)
+            p.mat[i,j] <- p.mat[j,i] <- tmp$p.value
+            lowCI.mat[i,j] <- lowCI.mat[j,i] <- tmp$conf.int[1]
+            uppCI.mat[i,j] <- uppCI.mat[j,i] <- tmp$conf.int[2]
+        }
+    }
+    return(list(p.mat, lowCI.mat, uppCI.mat))
+}
+res1 <- cor.mtest(preprocess_vars(forward_features,
+                                  daley_allstats_exp_xtrans_params))
+pdf("plots/forward_corr.pdf")
+corrplot(forward_cor, col=viridis(300),
+         method="square", plotCI="n", order ="hclust",
+         hclust.method="complete", addrect=11,
+         p.mat = res1[[1]], sig.level=0.05, 
+         insig = "blank", tl.cex=.5, tl.col="black", tl.srt=45, 
+         lowCI.mat = res1[[2]], uppCI.mat = res1[[3]])
+dev.off()
+
+feat_order <- hclust(as.dist(1 - forward_cor), method = "complete")
+feat_order <- feat_order$labels[feat_order$order]
+
+svmweights_plot <- svmweights %>%
+    filter(feature %in% feat_order) %>%
+    mutate(feature = factor(feature, labels = feat_order))
+
+p_weights <-
+    ggplot(svmweights_plot) +
+    geom_bar(aes(x = feature, y = weight), stat = "identity") +
+    ylab(expression("SVM" ^ "rank"*~"score")) + 
+    coord_flip() +
+    theme(axis.title.y = element_blank())
+```
+
+## plot nycomps AUC with less features
+```{r nycomps_feat_weight_calc}
+# load prediction function and prediction data
+source("predict.R")
+load("predict.RData")
+
+svmweights <- svmweights %>% arrange(desc(abs(weight)))
+nycomps_auc_feat_subsets_posmix <-
+    foreach(maxidx = seq.int(1, nrow(svmweights)),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    # specify those features to use
+    use_feats <- as.character(svmweights[seq(1, maxidx),]$feature)
+    
+    # run prediction
+    preds <- prediction_fn(
+        test_data = nycomps_posmix[, use_feats, drop = FALSE],
+        xtrans = daley_allstats_exp_xtrans_params,
+        model_dat_fn = "daley_only_raw_exp_ml21.full.4.model",
+        classify_cmd = "/ul/saladi/apps/svm_rank/svm_rank_classify")
+    
+    # calculate auc
+    data.frame(ml21 = ci.auc(response = nycomps_posmix$gene_outcome != "neg",
+                             predictor = preds,
+                             direction = "<"),
+               ci_labels = c("lower95", "auc", "upper95"),
+               thisidx = maxidx,
+               svmweights[maxidx,])
+}
+nycomps_auc_feat_subsets_posmix <- dcast(nycomps_auc_feat_subsets_posmix,
+                                  thisidx + weight + rel ~ ci_labels,
+                                  value.var = "ml21")
+
+nycomps_auc_feat_subsets <- dcast(nycomps_auc_feat_subsets,
+                                  thisidx + weight + rel ~ ci_labels,
+                                  value.var = "ml21")
+```
+
+# plotting
+```{r nycomps_feat_weight_plotting}
+p4_base <- ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
+    geom_hline(yintercept = 0.5, linetype = "longdash", color = "gray") + 
+    geom_ribbon(aes(ymin = lower95, ymax = upper95), fill = "#A4A5A5") +
+    geom_line() +
+    xlab("Number of Features (decreasing in weight)") +
+    ylab("AUC") +
+    scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(0, 81, 15), 89))  +
+    scale_y_continuous(expand = c(0, 0), labels = function(x) x*100) +
+    theme(plot.margin = unit(c(0, 0, 0, 0), "in"))
+
+p4_weights <- ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
+    geom_line() +
+    xlab("Feature Magnitude") +
+    scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(0, 81, 15), 89),
+                       labels = function(x)
+                           nycomps_auc_feat_subsets_posmix[x, "weight"] %>%
+                           abs %>% specify_decimal(k = 2))
+
+## Add secondary y-axis
+## http://stackoverflow.com/a/36761846/2320823
+p4_feat_imp <- secondary_y_axis(p4_base, p4_weights)
+rm(p4_base, p4_weights)
+```
+
+```{r forward_preds_pca}
+source("https://bioconductor.org/biocLite.R")
+library(pcaMethods)
+
+# replace NaN with NA
+forward_trans <- preprocess_vars(forward_features,
+                                 daley_allstats_exp_xtrans_params) %>%
+    as.matrix(forward_trans)
+forward_trans[is.nan(forward_trans)] <- NA
+forward_trans <- data.frame(forward_trans)
+
+forward_nipals <- pca(forward_trans, center = TRUE, scale = "uv",
+                      method = "nlpca", nPcs = 20, completeObs = FALSE)
+```
+
+# Calculate Pfam overlap between E. coli and NYCOMPS
+```{r pfam_nycomps_overlap}
+ecoli_pfam <- bind_rows(
+    read.table("../ml-datasets/ecoli-daley-fluman/precalc/Daley_gfp.fna.faa.pfamA",
+               comment.char = '#', as.is = TRUE),
+    read.table("../ml-datasets/ecoli-daley-fluman/precalc/Daley_phoa.fna.faa.pfamA",
+               comment.char = '#', as.is = TRUE))
+
+colnames(ecoli_pfam) <- c('seq_id', 'alignment_start', 'alignment_end',
+                          'envelope_start', 'envelope_end', 'hmm_acc',
+                          'hmm_name', 'type', 'hmm_start', 'hmm_end',
+                          'hmm_length', 'bit_score', 'E-value',
+                          'significance', 'clan')
+
+nycomps_pfam <- bind_rows(
+    read.table("../ml-datasets/nycomps/nycomps_only_pos.fna.faa.pfamA",
+               comment.char = '#', as.is = TRUE),
+    read.table("../ml-datasets/nycomps/nycomps_only_neg.fna.faa.pfamA",
+               comment.char = '#', as.is = TRUE),
+    read.table("../ml-datasets/nycomps/nycomps_mixed.fna.faa.pfamA",
+               comment.char = '#', as.is = TRUE))
+nycomps_pfam$id <- getname(nycomps_pfam$seq_id, token = 3) %>% as.numeric
+colnames(nycomps_pfam) <- colnames(ecoli_pfam)
+
+nycomps_pfam$hmm_training <- nycomps_pfam$hmm_acc %in% ecoli_pfam$hmm_acc
+nycomps_pfam$clan_training <- nycomps_pfam$clan %in% ecoli_pfam$clan
+
+nycomps_vectors$hmm_training <- 
+    nycomps_vectors$id %in% nycomps_pfam[nycomps_pfam$hmm_training,]$id
+nycomps_vectors$clan_training <- 
+    nycomps_vectors$id %in% nycomps_pfam[nycomps_pfam$clan_training,]$id
+
+nycomps_auc_hmm_training <-
+    foreach(thisplasmid = unique(nycomps_vectors$plasmid_name),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    thisdata <- filter(nycomps_vectors,
+                       plasmid_name == thisplasmid, hmm_training)
+    thisdata <- transmute(thisdata,
+                          thisresponse = plasmid_outcome == 1,
+                          ml21 = ml21)
+    df1 <- data.frame(
+        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                      direction = "<", method = "delong"),
+        group = thisplasmid,
+        type = "plasmid",
+        cterm = "all",
+        ci_labels = c("lower95", "auc", "upper95"),
+        count = nrow(thisdata),
+        pos_count = sum(thisdata$thisresponse)
+        )
+    
+    df2 <- foreach(thiscterm = unique(nycomps_vectors$cterm),
+                   .combine = bind_rows, .multicombine = TRUE) %dopar% {
+        thisdata <- nycomps_vectors %>%
+            filter(plasmid_name == thisplasmid,cterm == thiscterm) %>%
+            transmute(thisresponse = plasmid_outcome == 1,
+                      ml21 = ml21)
+        data.frame(
+            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                          direction = "<", method = "delong"),
+            group = thisplasmid,
+            type = "plasmid",
+            cterm = thiscterm,
+            ci_labels = c("lower95", "auc", "upper95"),
+            count = nrow(thisdata),
+            pos_count = sum(thisdata$thisresponse)
+            )
+    }
+    
+    bind_rows(df1, df2)
+} %>% mutate(hmm = TRUE)
+
+nycomps_auc_hmm_training <-
+    foreach(thisplasmid = unique(nycomps_vectors$plasmid_name),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    thisdata <- filter(nycomps_vectors, plasmid_name == thisplasmid, !hmm_training)
+    thisdata <- transmute(thisdata, 
+                          thisresponse = plasmid_outcome == 1, ml21 = ml21)
+    df1 <- data.frame(
+        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
+        group = thisplasmid,
+        type = "plasmid",
+        cterm = "all",
+        ci_labels = c("lower95", "auc", "upper95"),
+        count = nrow(thisdata),
+        pos_count = sum(thisdata$thisresponse)
+        )
+    
+    df2 <- foreach(thiscterm = unique(nycomps_vectors$cterm),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+        thisdata <- filter(nycomps_vectors,
+                           plasmid_name == thisplasmid, cterm == thiscterm)
+        thisdata <- transmute(thisdata, 
+                              thisresponse = plasmid_outcome == 1,
+                              ml21 = ml21)
+        data.frame(
+            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                          direction = "<", method = "delong"),
+            group = thisplasmid,
+            type = "plasmid",
+            cterm = thiscterm,
+            ci_labels = c("lower95", "auc", "upper95"),
+            count = nrow(thisdata),
+            pos_count = sum(thisdata$thisresponse)
+            )
+    }
+    
+    bind_rows(df1, df2)
+} %>% mutate(hmm = FALSE) %>% bind_rows(nycomps_auc_hmm_training)
+
+nycomps_auc_hmm_training <- 
+    dcast(nycomps_auc_hmm_training,
+          group + type + cterm + count + pos_count + hmm ~ ci_labels,
+          value.var = "ml21")
+
+ggplot(nycomps_auc_hmm_training %>% filter(cterm == "all")) +
+    geom_errorbar(aes(x = group,
+                   ymin = upper95,
+                   ymax = lower95),
+              width = 0.25) + 
+    geom_point(aes(x = group, y = auc, color = hmm))
+    # geom_segment(aes(x = parent_score,
+    #                xend = mutant_score,
+    #                y = parent_expression,
+    #                yend = mutant_expression,
+    #                color = parent), 
+    #            arrow = arrow(length = unit(0.02, "npc"), type = "closed"))
+```
+
+```{r}
+sessionInfo()
+```
