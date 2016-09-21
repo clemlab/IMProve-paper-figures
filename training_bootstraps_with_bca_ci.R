@@ -2,7 +2,7 @@
 # cp ~/homedir/ml-ecoli-paper/training_bootstraps_with_bca_ci_envinput.RData ~/compute_temp/
 # cp ~/homedir/ml-ecoli-paper/training_bootstraps_with_bca_ci.R ~/compute_temp/
 
-bs_count <- 10^6
+bs_count <- 10 ^ 6
 cores <- 48
 
 library(magrittr)
@@ -14,7 +14,7 @@ setwd("~/compute_temp")
 
 load("training_bootstraps_with_bca_ci_envinput.RData")
 summary_fn <- function(...) {
-    cor(... , method="spearman", use = "pairwise.complete.obs")
+    cor(... , method = "spearman", use = "pairwise.complete.obs")
 }
 
 # bootstrap for confidence intervals
@@ -23,11 +23,12 @@ cor_boot <- function(data, indices,  ...) {
 }
 
 # multi
-cor_boot_wrap <- function(data, file_name, FUN = cor_boot, count = bs_count, mc.cores = cores, ...) {
-    boot_data <- boot(data=data %>% select(ml21, outcome), statistic=FUN,
-                      R=bs_count, parallel="multicore", ncpus=cores)
-    save(boot_data, file=paste0(file_name, ".RData"))
-    boot.ci(boot_data, type="bca")
+cor_boot_wrap <- function(data, file_name, FUN = cor_boot,
+                          count = bs_count, mc.cores = cores, ...) {
+    boot_data <- boot(data = data %>% select(ml21, outcome), statistic = FUN,
+                      R = bs_count, parallel = "multicore", ncpus = cores)
+    save(boot_data, file = paste0(file_name, ".RData"))
+    boot.ci(boot_data, type = "bca")
 }
 
 ecoli_xy_boot_in_ci <-
@@ -40,7 +41,7 @@ ecoli_xy_boot_fluman_ci <-
     cor_boot_wrap(filter(ecoli_training, cterm == "fluman"), "ecoli_xy_boot_fluman")
 gc()
 ecoli_daley_fluman_boot_ci <-
-    cor_boot_wrap(rename(ecoli_daley_fluman, ml21=fluman_avg, outcome=daley_avg),
+    cor_boot_wrap(rename(ecoli_daley_fluman, ml21 = fluman_avg, outcome = daley_avg),
                   "ecoli_daley_fluman_boot")
 gc()
 
@@ -62,9 +63,12 @@ calc_pval <- function(orig_df, shuf, x_col="ml21", y_col="outcome", ...) {
 }
 
 # multi
-shuff_cor_pval_wrap <- function(data, file_name, FUN = shuff_cor_pval, count = bs_count, mc.cores = cores, ...) {
-    shuf_data <- mclapply(seq(bs_count), FUN, data = data %>% select(ml21, outcome), ..., mc.cores = cores) %>% unlist
-    save(shuf_data, file=paste0(file_name, ".RData"))
+shuff_cor_pval_wrap <- function(data, file_name, FUN = shuff_cor_pval,
+                                count = bs_count, mc.cores = cores, ...) {
+    shuf_data <- mclapply(seq(bs_count), FUN,
+                          data = data %>% select(ml21, outcome),...,
+                          mc.cores = cores) %>% unlist
+    save(shuf_data, file = paste0(file_name, ".RData"))
     calc_pval(data, shuf_data)
 }
 
@@ -80,11 +84,14 @@ ecoli_xy_shuf_fluman_pval <- filter(ecoli_training, cterm == "fluman") %>%
     shuff_cor_pval_wrap(file_name = "ecoli_xy_shuf_fluman")
 gc()
 
-ecoli_daley_fluman_shuf_pval <- rename(ecoli_daley_fluman, ml21=fluman_avg, outcome=daley_avg) %>%
+ecoli_daley_fluman_shuf_pval <- rename(ecoli_daley_fluman,ml21 = fluman_avg,
+                                       outcome = daley_avg) %>%
     shuff_cor_pval_wrap(file_name = "ecoli_daley_fluman_shuf")
 gc()
 
-save(ecoli_xy_boot_in_ci, ecoli_xy_boot_out_ci, ecoli_xy_boot_fluman_ci, ecoli_daley_fluman_boot_ci,
-     ecoli_xy_shuf_in_pval, ecoli_xy_shuf_out_pval, ecoli_xy_shuf_fluman_pval, ecoli_daley_fluman_shuf_pval,
+save(ecoli_xy_boot_in_ci, ecoli_xy_boot_out_ci, ecoli_xy_boot_fluman_ci,
+     ecoli_daley_fluman_boot_ci,
+     ecoli_xy_shuf_in_pval, ecoli_xy_shuf_out_pval, ecoli_xy_shuf_fluman_pval,
+     ecoli_daley_fluman_shuf_pval,
      file = "training_bootstraps_with_bca_ci_summary.RData")
 

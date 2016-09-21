@@ -26,12 +26,12 @@ main <- function(args) {
     test_data <- read.csv(file = args[4], header = TRUE, as.is = TRUE) #, row.names = 1)
 
     # if we want to capture a specific set of features defined by args[5]
-    if (length(args)> 4) {
+    if (length(args) > 4) {
         feature_type <- read.csv("/ul/saladi/nycomps_fluman_raw/feature_type.csv", header = TRUE)
         featureselection <- feature_type[feature_type$type == args[5],]$feature
         columns <- data.frame(names = colnames(trans_data))
         columns <- columns[columns$names %in% as.character(featureselection),]
-        trans_data <- subset(trans_data, select=as.character(columns))
+        trans_data <- subset(trans_data, select = as.character(columns))
     }
 
     scores <- prediction_fn(test_data, xtrans = get(args[3]), model_dat_fn = args[1])
@@ -69,7 +69,7 @@ prediction_fn <- function(test_data, xtrans, model_dat_fn,
     # (http://stat.ethz.ch/R-manual/R-patched/library/base/html/sets.html)
     missing_features <- setdiff(prediction_features, colnames(test_data))
 
-    for(x in missing_features){
+    for (x in missing_features) {
         test_data[[x]] <- NA
     }
     rm(x)
@@ -111,18 +111,18 @@ prediction_fn <- function(test_data, xtrans, model_dat_fn,
 # http://www.inside-r.org/packages/cran/klaR/docs/svmlight
 svmlight.file <- function(x, train = FALSE, ...)
 {
-    if(is.vector(x)) x <- t(x)
+    if (is.vector(x)) x <- t(x)
     erg <- x
     sn <- 1:nrow(x)
-    if(!train) erg[sn, 1] <- paste("1:", x[sn, 1], sep = "")
-    if(ncol(x) > 1){
+    if (!train) erg[sn, 1] <- paste("1:", x[sn, 1], sep = "")
+    if (ncol(x) > 1) {
         j <- 2:ncol(x)
-        erg[ , -1] <- matrix(paste(j - train, t(x[,j]), sep = ":"), ncol = ncol(x)-1, byrow = TRUE)
+        erg[ , -1] <- matrix(paste(j - train, t(x[,j]), sep = ":"), ncol = ncol(x) - 1, byrow = TRUE)
     }
     return(erg)
 }
 
-if(!interactive()) {
+if (!interactive()) {
     args <- commandArgs(TRUE)
     main(args)
 }
