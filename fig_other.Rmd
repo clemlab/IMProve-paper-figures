@@ -9,41 +9,25 @@ output: html_document
 Load all libraries necessary for subsequent data munging and plotting.
 Some defaults are set here to make things easier throughout.
 ```{r libraries}
-library(datamart)
+# if TRUE, then data will be written to file
+write_out = FALSE
+
+library(tibble)
+library(dplyr)
+library(dplyrExtras)
+library(tidyr)
+
+library(caret)
 
 library(ggplot2)
-library(ggbeeswarm)
-library(ggthemes)
 library(cowplot)
 library(corrplot)
 library(viridis)
 theme_set(theme_cowplot(font_size = 7))
 
-library(gtable)
-library(grid)
-library(gridExtra)
-library(gridGraphics)
-library(scales)
-library(RColorBrewer)
-library(reshape2)
-library(plyr)
-library(dplyr)
-library(dplyrExtras)
-
-library(tidyr)
-
-library(boot)
-library(caret)
-
-library(pROC)
-library(locfit)
-
 library(foreach)
 library(doMC)
 registerDoMC(cores = 10)
-
-# if TRUE, then data will be written to file
-write_out = FALSE
 ```
 
 ## Convenience functions
@@ -51,6 +35,7 @@ Load another file with a number of helper functions to mechanize some tedious
 or repetitive tasks.
 ```{r}
 source("preparation-convenience.R")
+source("predict.R")
 ```
 
 # plot scores of features along with correlations within
@@ -59,94 +44,120 @@ source("preparation-convenience.R")
 # load preprocessing script
 # features we use for the ML
 load("predict.RData")
-preprocess_vars <- function(test_data, xtrans) {
-    prediction_features <- names(xtrans$mean)
-    
-    # features in the test dataset
-    test_data_features <- colnames(test_data)
-    
-    # features requested for the ML but not in the input dataset
-    # keep in mind setdiff gives the asymmetric difference
-    # (http://stat.ethz.ch/R-manual/R-patched/library/base/html/sets.html)
-    missing_features <- setdiff(prediction_features, colnames(test_data))
-    
-    for(x in missing_features) {
-        test_data[[x]] <- NA
-    }
-    rm(x)
-    
-    # keep only the columns we want for the ML (get rid of the extras)
-    test_data <- test_data[, prediction_features]
-    
-    # do the preprocessing (scaling and centering)
-    transformed <- predict(xtrans, test_data)
-    
-    transformed[, !(colnames(transformed) %in% missing_features)]
+
+# name corrections (see smsaladi/ml-expression#16)
+rename_feats <- function(df) {
+    rename(df,
+           avgCU_first5 = minCU_win5,
+           avgCU_first10 = minCU_win10,
+           nterm_hydOCT = nterm_hydGES,
+           avgRONNTM1_2 = RONNlongestloop,
+           RONNlongestloop = avgRONNTM1_2)
 }
 
-svmweights <- read.table("daley_only_raw_exp_ml21.full.4.svmweights", header = FALSE)
-colnames(svmweights) <- c("feature", "weight")
-svmweights$rel <- svmweights$weight / mean(svmweights$weight)
-svmweights <- arrange(svmweights, desc(weight))
+# load weights 
+svmweights <- read.csv("daley_only_raw_exp_ml21.full.4.svmweights.csv",
+                         header = TRUE) %>%
+    mutate(rel = weight / mean(weight),
+           old_feat = feature) %>%
+    # rename features
+    mutate_rows(feature == "minCU_win5", feature = "avgCU_first5") %>%
+    mutate_rows(feature == "minCU_win10", feature = "avgCU_first10") %>%
+    mutate_rows(feature == "nterm_hydGES", feature = "nterm_hydOCT") %>%
+    mutate_rows(feature == "RONNlongestloop", feature = "avgRONNTM1_2X") %>%
+    mutate_rows(feature == "avgRONNTM1_2", feature = "RONNlongestloop") %>%
+    mutate_rows(feature == "avgRONNTM1_2X", feature = "avgRONNTM1_2")
 
-forward_cor <- preprocess_vars(forward_features,
-                               daley_allstats_exp_xtrans_params) %>% 
+# correlation matrix for forward predicted genomes
+forward_cor <- forward_features %>%
+    preprocess_vars(daley_allstats_exp_xtrans_params) %>%
+    rename_feats %>%
     cor(use = "pairwise.complete.obs")
 
-cor.mtest <- function(mat, conf.level = 0.95){
-  mat <- as.matrix(mat)
-    n <- ncol(mat)
-    p.mat <- lowCI.mat <- uppCI.mat <- matrix(NA, n, n)
-    diag(p.mat) <- 0
-    diag(lowCI.mat) <- diag(uppCI.mat) <- 1
-    for(i in 1:(n-1)){
-        for(j in (i+1):n){
-            tmp <- cor.test(mat[,i], mat[,j], conf.level = conf.level)
-            p.mat[i,j] <- p.mat[j,i] <- tmp$p.value
-            lowCI.mat[i,j] <- lowCI.mat[j,i] <- tmp$conf.int[1]
-            uppCI.mat[i,j] <- uppCI.mat[j,i] <- tmp$conf.int[2]
-        }
-    }
-    return(list(p.mat, lowCI.mat, uppCI.mat))
-}
-res1 <- cor.mtest(preprocess_vars(forward_features,
-                                  daley_allstats_exp_xtrans_params))
-pdf("plots/forward_corr.pdf")
-corrplot(forward_cor, col=viridis(300),
-         method="square", plotCI="n", order ="hclust",
-         hclust.method="complete", addrect=11,
-         p.mat = res1[[1]], sig.level=0.05, 
-         insig = "blank", tl.cex=.5, tl.col="black", tl.srt=45, 
-         lowCI.mat = res1[[2]], uppCI.mat = res1[[3]])
-dev.off()
+# significance test for correlation matrix
+forward_cor_mtest <- forward_features %>%
+    preprocess_vars(daley_allstats_exp_xtrans_params) %>%
+    rename_feats %>%
+    cor.mtest
 
-feat_order <- hclust(as.dist(1 - forward_cor), method = "complete")
-feat_order <- feat_order$labels[feat_order$order]
+# box/grouping memberships
+# from corrplot::corrRect.hclust
+svmweights <- hclust(as.dist(1 - forward_cor), method = "complete") %>%
+    cutree(k = 11) %>%
+    data.frame %>% 
+    rownames_to_column %>%
+    right_join(svmweights, by = c("rowname" = "feature")) %>%
+    rename_(cluster = as.name("."),
+            feature = "rowname")
 
-svmweights_plot <- svmweights %>%
-    filter(feature %in% feat_order) %>%
-    mutate(feature = factor(feature, labels = feat_order))
+svmweights <- svmweights %>%
+    group_by(category) %>%
+    summarize(man_weight = sum(abs(weight)),
+              man_count = n()) %>%
+    right_join(svmweights, by = c("category"))
 
-p_weights <-
-    ggplot(svmweights_plot) +
-    geom_bar(aes(x = feature, y = weight), stat = "identity") +
-    ylab(expression("SVM" ^ "rank"*~"score")) + 
-    coord_flip() +
-    theme(axis.title.y = element_blank())
+svmweights <- svmweights %>%
+    group_by(cluster) %>%
+    summarize(hclust_weight = sum(abs(weight)),
+              hclust_count = n()) %>%
+    right_join(svmweights, by = c("cluster"))
 ```
 
-## plot nycomps AUC with less features
-```{r nycomps_feat_weight_calc}
-# load prediction function and prediction data
-source("predict.R")
-load("predict.RData")
+## plot summary of weights based on groupings
+```{r weight_summary}
+man_feat_order <- svmweights %>%
+    arrange(man_weight) %>%
+    distinct(category) %>%
+    unlist %>% as.character
 
+p_weight_man_sum <- svmweights %>%
+    distinct(category, man_weight, man_count) %>%
+    mutate(category = factor(category, levels = man_feat_order)) %>%
+    ggplot(aes(x = category)) +
+    geom_bar(aes(y = man_weight), stat = "identity") +
+    geom_text(aes(y = man_weight + 0.03, label = man_count), size = 5*5/14) +
+    ylab("Total Weight Magnitude") +
+    ggtitle("Manually-curated groups") +
+    scale_x_discrete(expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0, 0)) +
+    coord_flip() +
+    theme(axis.title.y = element_blank())
+
+hclust_feat_order <- svmweights %>%
+    arrange(hclust_weight) %>%
+    distinct(cluster) %>%
+    unlist %>% as.character
+
+p_weight_hclust_sum <- svmweights %>%
+    distinct(cluster, hclust_weight, hclust_count) %>%
+    mutate(cluster = factor(cluster, levels = hclust_feat_order)) %>%
+    na.omit %>%
+    ggplot(aes(x = cluster)) +
+    geom_bar(aes(y = hclust_weight), stat = "identity") +
+    geom_text(aes(y = hclust_weight + 0.03, label = hclust_count),
+              size = 5*5/14) +
+    xlab("Cluster ID") +
+    ylab("Total Weight Magnitude") +
+    ggtitle("Hierarchical-clustered groups") +
+    scale_x_discrete(expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0, 0)) +
+    coord_flip()
+
+if (!write_out) {
+    p_weight_man_sum
+    p_weight_hclust_sum
+}
+```
+
+## plot AUC within NYCOMPS with subsets of features
+```{r nycomps_subsets}
 svmweights <- svmweights %>% arrange(desc(abs(weight)))
-nycomps_auc_feat_subsets_posmix <-
+
+nycomps_auc_feat_all_subsets <-
     foreach(maxidx = seq.int(1, nrow(svmweights)),
             .combine = bind_rows, .multicombine = TRUE) %dopar% {
     # specify those features to use
-    use_feats <- as.character(svmweights[seq(1, maxidx),]$feature)
+    use_feats <- as.character(svmweights[seq(1, maxidx),]$old_feat)
     
     # run prediction
     preds <- prediction_fn(
@@ -162,19 +173,69 @@ nycomps_auc_feat_subsets_posmix <-
                ci_labels = c("lower95", "auc", "upper95"),
                thisidx = maxidx,
                svmweights[maxidx,])
-}
-nycomps_auc_feat_subsets_posmix <- dcast(nycomps_auc_feat_subsets_posmix,
-                                  thisidx + weight + rel ~ ci_labels,
-                                  value.var = "ml21")
+} %>%
+    dcast(thisidx + weight + rel ~ ci_labels, value.var = "ml21")
 
-nycomps_auc_feat_subsets <- dcast(nycomps_auc_feat_subsets,
-                                  thisidx + weight + rel ~ ci_labels,
-                                  value.var = "ml21")
+nycomps_auc_feat_hclust <-
+    foreach(thisweight =
+                unique(svmweights$hclust_weight) %>% sort(decreasing = TRUE),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    # specify those features to use
+    use_feats <- svmweights %>%
+        filter(hclust_weight >= thisweight) %>%
+        select(old_feat) %>%
+        unlist %>% as.character
+    
+    # run prediction
+    preds <- prediction_fn(
+        test_data = nycomps_posmix[, use_feats, drop = FALSE],
+        xtrans = daley_allstats_exp_xtrans_params,
+        model_dat_fn = "daley_only_raw_exp_ml21.full.4.model",
+        classify_cmd = "/ul/saladi/apps/svm_rank/svm_rank_classify")
+    
+    # calculate auc
+    data.frame(ml21 = ci.auc(response = nycomps_posmix$gene_outcome != "neg",
+                             predictor = preds,
+                             direction = "<"),
+               ci_labels = c("lower95", "auc", "upper95"),
+               hclust_weight = thisweight)
+} %>%
+    dcast(hclust_weight ~ ci_labels, value.var = "ml21") %>%
+    left_join(svmweights %>% distinct(cluster, hclust_count, hclust_weight),
+              by = c("hclust_weight"))
+
+nycomps_auc_feat_man <-
+    foreach(thisweight =
+                unique(svmweights$man_weight) %>% sort(decreasing = TRUE),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    # specify those features to use
+    use_feats <- svmweights %>%
+        filter(man_weight >= thisweight) %>%
+        select(old_feat) %>%
+        unlist %>% as.character
+    
+    # run prediction
+    preds <- prediction_fn(
+        test_data = nycomps_posmix[, use_feats, drop = FALSE],
+        xtrans = daley_allstats_exp_xtrans_params,
+        model_dat_fn = "daley_only_raw_exp_ml21.full.4.model",
+        classify_cmd = "/ul/saladi/apps/svm_rank/svm_rank_classify")
+    
+    # calculate auc
+    data.frame(ml21 = ci.auc(response = nycomps_posmix$gene_outcome != "neg",
+                             predictor = preds,
+                             direction = "<"),
+               ci_labels = c("lower95", "auc", "upper95"),
+               man_weight = thisweight)
+} %>%
+    dcast(man_weight ~ ci_labels, value.var = "ml21") %>%
+    left_join(svmweights %>% distinct(category, man_count, man_weight),
+              by = c("man_weight"))
 ```
 
-# plotting
+# all weights plotting
 ```{r nycomps_feat_weight_plotting}
-p4_base <- ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
+p4_base <- ggplot(nycomps_auc_feat_all_subsets, aes(thisidx, auc)) +
     geom_hline(yintercept = 0.5, linetype = "longdash", color = "gray") + 
     geom_ribbon(aes(ymin = lower95, ymax = upper95), fill = "#A4A5A5") +
     geom_line() +
@@ -184,7 +245,7 @@ p4_base <- ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
     scale_y_continuous(expand = c(0, 0), labels = function(x) x*100) +
     theme(plot.margin = unit(c(0, 0, 0, 0), "in"))
 
-p4_weights <- ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
+p4_weights <- ggplot(nycomps_auc_feat_all_subsets, aes(thisidx, auc)) +
     geom_line() +
     xlab("Feature Magnitude") +
     scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(0, 81, 15), 89),
@@ -192,10 +253,141 @@ p4_weights <- ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
                            nycomps_auc_feat_subsets_posmix[x, "weight"] %>%
                            abs %>% specify_decimal(k = 2))
 
-## Add secondary y-axis
-## http://stackoverflow.com/a/36761846/2320823
-p4_feat_imp <- secondary_y_axis(p4_base, p4_weights)
+p4_feat_imp_all <- secondary_y_axis(p4_base, p4_weights)
 rm(p4_base, p4_weights)
+```
+
+## manually curated groups
+```{r}
+nycomps_auc_feat_man <- nycomps_auc_feat_man %>%
+    mutate(rank = rank(-man_weight))
+
+p4_base <- ggplot(nycomps_auc_feat_man, aes(rank, auc)) +
+    geom_hline(yintercept = 0.5, linetype = "longdash", color = "gray") + 
+    geom_ribbon(aes(ymin = lower95, ymax = upper95), fill = "#A4A5A5") +
+    geom_line() +
+    geom_text(aes(label = category), size = 5*5/14) +
+    xlab("Number of Feature Categories (decreasing in weight)") +
+    ylab("AUC") +
+    scale_x_continuous(expand = c(0, 0), breaks = c(1, 5, 10, 15)) +
+    scale_y_continuous(expand = c(0, 0), labels = function(x) x*100) +
+    theme(plot.margin = unit(c(0, 0, 0, 0), "in"))
+
+get_man_weight <- function(x) {
+    foreach(thisx = x, .combine = c) %do% {
+        filter(nycomps_auc_feat_man, rank == thisx) %>%
+            select(man_weight) %>% unlist %>% as.numeric
+    } %>% specify_decimal(k = 2)
+}
+
+p4_weights <- ggplot(nycomps_auc_feat_man, aes(rank, auc)) +
+    geom_line() +
+    xlab("Group Magnitude") +
+    scale_x_continuous(expand = c(0, 0),
+                       breaks = c(1, 5, 10, 15),
+                       labels = get_man_weight)
+
+p4_feat_imp_man <- secondary_y_axis(p4_base, p4_weights)
+rm(p4_base, p4_weights)
+
+if (!write_out)
+    ggdraw(p4_feat_imp_man)
+```
+
+## hclust groups
+```{r}
+nycomps_auc_feat_hclust <- nycomps_auc_feat_hclust %>%
+    mutate(rank = rank(-hclust_weight))
+
+p4_base <- ggplot(nycomps_auc_feat_hclust %>% na.omit, aes(rank, auc)) +
+    geom_hline(yintercept = 0.5, linetype = "longdash", color = "gray") + 
+    geom_ribbon(aes(ymin = lower95, ymax = upper95), fill = "#A4A5A5") +
+    geom_line() +
+    geom_text(aes(label = cluster), size = 5*5/14) +
+    xlab("Number of Feature Categories (decreasing in weight)") +
+    ylab("AUC") +
+    scale_x_continuous(expand = c(0, 0), breaks = c(1, 3, 6, 9, 12)) +
+    scale_y_continuous(expand = c(0, 0), labels = function(x) x*100) +
+    theme(plot.margin = unit(c(0, 0, 0, 0), "in"))
+
+get_hclust_weight <- function(x) {
+    foreach(thisx = x, .combine = c) %do% {
+        filter(nycomps_auc_feat_hclust, rank == thisx) %>%
+            select(hclust_weight) %>% unlist %>% as.numeric
+    } %>% specify_decimal(k = 2)
+}
+
+p4_weights <- ggplot(nycomps_auc_feat_hclust %>% na.omit, aes(rank, auc)) +
+    geom_line() +
+    xlab("Group Magnitude") +
+    scale_x_continuous(expand = c(0, 0),
+                       breaks = c(1, 3, 6, 9, 12),
+                       labels = get_hclust_weight)
+
+p4_feat_imp_hclust <- secondary_y_axis(p4_base, p4_weights)
+rm(p4_base, p4_weights)
+
+if (!write_out)
+    ggdraw(p4_feat_imp_hclust)
+```
+
+## compile weights figure
+```{r}
+p5_weights <- plot_grid(
+    plot_grid(p_weight_man_sum, p_weight_hclust_sum,
+              ncol = 1, align = "hv",
+              labels = letters[1:2], label_size = 8),
+    plot_grid(p4_feat_imp_all, p4_feat_imp_man, p4_feat_imp_hclust,
+              ncol = 1, align = "hv",
+              labels = letters[3:5], label_size = 8),
+    nrow = 1)
+
+if (write_out) {
+    save_plot(filename = "plots/p5_weights.pdf", plot = p5_weights,
+          base_width = uconv(183, "mm", "in", "Length"),
+          base_height = 5.5)
+} else {
+    p5_weights
+}
+```
+
+## clustering of entire forward genomes
+```{r big_clustering}
+if (write_out)
+    pdf("plots/forward_corr.pdf", width = 10, height = 10)
+forward_cor_clust <-
+    corrplot(forward_cor_clust, col = viridis(300),
+             method = "square", plotCI = "n",
+             order = "hclust", hclust.method = "complete", addrect = 11,
+             p.mat = forward_cor_mtest[[1]], sig.level = 0.05, insig = "blank",
+             lowCI.mat = forward_cor_mtest[[2]],
+             uppCI.mat = forward_cor_mtest[[3]],
+             tl.cex = .5, tl.col = "black", tl.srt = 45)
+if (write_out)
+    dev.off()
+```
+
+## plot weights in the order of the clustering
+```{r svmweights_cluster_order}
+feat_order <- dimnames(forward_cor_clust)[[1]] %>% rev
+p_svmweights <- svmweights %>%
+    # these are missing from the full forward set
+    filter(!(feature %in% c("avgRNAss", "minRNAss", "maxRNAss",
+                            "q75RNAss", "q25RNAss"))) %>%
+    mutate(feature =
+               factor(feature, labels = feat_order, levels = feat_order)) %>%
+    na.omit %>%
+    ggplot() +
+    geom_bar(aes(x = feature, y = weight), stat = "identity") +
+    ylab(expression("SVM" ^ "rank"*~"score")) +
+    coord_flip() +
+    theme(axis.title.y = element_blank())
+
+if (write_out) {
+    save_plot("plots/svmweights.pdf", p_svmweights, base_height = 10, base_width = 5)
+} else {
+    p_svmweights
+}
 ```
 
 ```{r forward_preds_pca}
@@ -342,6 +534,8 @@ ggplot(nycomps_auc_hmm_training %>% filter(cterm == "all")) +
     #            arrow = arrow(length = unit(0.02, "npc"), type = "closed"))
 ```
 
-```{r}
+```{r session}
+if (write_out)
+    save.image("fig_other.Rdata")
 sessionInfo()
 ```
