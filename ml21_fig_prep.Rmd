@@ -57,7 +57,7 @@ source("preparation-convenience.R")
 
 ## E. coli Training - Data Preparation
 This block prepares the data necesary for plotting the panels of Figure 1.
-```{r ecoli_training_munging}
+```{r ecoli_training_munging, cache=TRUE}
 ecoli_outcomes_exp <- read.csv("training/ecoli_outcomes_exp.csv",
                                header = TRUE, row.names = 1, as.is = TRUE)
 
@@ -217,7 +217,7 @@ calculate p-values. Since we calculate $10^6$ bootstraps/shuffles, this takes
 a couple hours on a 32-core machine. To avoid running this everytime, the code
 is saved in `training_bootstraps_with_bca_ci.R`. Below, a commented out line
 shows how the environment was passed and the results are simply loaded.
-```{r training_bootstraps}
+```{r training_bootstraps, cache=TRUE}
 # save.image("training_bootstraps_with_bca_ci_envinput.RData")
 load("training_bootstraps_with_bca_ci_summary.RData")
 load("training_bootstraps_with_bca_ci.RData")
@@ -455,27 +455,33 @@ if (write_out) {
 }
 ```
 
-# Figure 2 Data Munging - Prediction in NYCOMPS
+## Figure 2 - Prediction in NYCOMPS
+# Data Preparation
 This block analyzes the model's predictive performance within the NYCOMPS
 dataset and prepares the data for plotting.
-```{r}
+```{r nycomps_data_prep, cache=TRUE}
 # Load features as well as well as scores
-nycomps_pos_scores <- read.csv("large-scale/nycomps_only_pos.fna.allstats.csv", header = TRUE) %>%
+nycomps_pos_scores <- read.csv("large-scale/nycomps_only_pos.fna.allstats.csv",
+                               header = TRUE) %>%
     mutate(ml21 = read.table("large-scale/nycomps_only_pos.fna.allstats.daley_only_raw_exp_ml21", header = FALSE)$V1,
            cterm = read.table("large-scale/nycomps_only_pos_phobius.phobiuscterm", header = FALSE)$V1,
            gene_outcome = "pos")
 
-nycomps_neg_scores <- read.csv("large-scale/nycomps_only_neg.fna.allstats.csv", header = TRUE) %>%
+nycomps_neg_scores <- read.csv("large-scale/nycomps_only_neg.fna.allstats.csv",
+                               header = TRUE) %>%
     mutate(ml21 = read.table("large-scale/nycomps_only_neg.fna.allstats.daley_only_raw_exp_ml21", header = FALSE)$V1,
            cterm = read.table("large-scale/nycomps_only_neg_phobius.phobiuscterm", header = FALSE)$V1,
            gene_outcome = "neg")
 
-nycomps_mixed_scores <- read.csv("large-scale/nycomps_mixed.fna.allstats.csv", header = TRUE) %>%
+nycomps_mixed_scores <-
+    read.csv("large-scale/nycomps_mixed.fna.allstats.csv",
+                                 header = TRUE) %>%
     mutate(ml21 = read.table("large-scale/nycomps_mixed.fna.allstats.daley_only_raw_exp_ml21", header = FALSE)$V1,
            cterm = read.table("large-scale/nycomps_mixed_phobius.phobiuscterm", header = FALSE)$V1,
            gene_outcome = "mix")
 
-nycomps_posmix <- rbind(nycomps_pos_scores, nycomps_neg_scores, nycomps_mixed_scores) %>%
+nycomps_posmix <- bind_rows(nycomps_pos_scores, nycomps_neg_scores,
+                            nycomps_mixed_scores) %>%
     separate(title, c("gi", "id", "name"), convert = TRUE) %>%
     select(-gi) %>%
     mutate_rows(gene_outcome %in% c("mix", "pos"), gene_outcome = "≥1 pos") %>%
@@ -506,8 +512,7 @@ nycomps_roc <- foreach(thisplasmid = unique(nycomps_vectors$plasmid_name),
     df <- data.frame(
         my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
         group = thisplasmid,
-        type = "plasmid"
-        )
+        type = "plasmid")
 }
 
 nycomps_roc <- 
@@ -517,8 +522,7 @@ nycomps_roc <-
                      group = "posmix", type = "all"),
           data.frame(my_roc(plasmid_outcome == 1 ~ ml21,
                             data = nycomps_vectors, direction = "<"),
-                     group = "vectors", type = "all")
-    )
+                     group = "vectors", type = "all"))
 
 nycomps_auc <- foreach(thisplasmid = unique(nycomps_vectors$plasmid_name),
                        .combine = bind_rows, .multicombine = TRUE) %dopar% {
@@ -543,96 +547,110 @@ nycomps_auc <- foreach(thisplasmid = unique(nycomps_vectors$plasmid_name),
             transmute(thisresponse = plasmid_outcome == 1,
                       ml21 = ml21)
         data.frame(
-            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
+            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                          direction = "<", method = "delong"),
             group = thisplasmid,
             type = "plasmid",
             cterm = thiscterm,
             ci_labels = c("lower95", "auc", "upper95"),
             count = nrow(thisdata),
-            pos_count = sum(thisdata$thisresponse)
-            )
+            pos_count = sum(thisdata$thisresponse))
     }
     bind_rows(df1, df2)
-}
-
-nycomps_auc <- 
-    rbind(nycomps_auc,
-          data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
+} %>%
+    bind_rows(
+        data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
                                    data = nycomps_posmix, direction = "<"),
-                    group = "posmix", 
-                    type = "all", 
-                    cterm = "all",
-                    ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow(nycomps_posmix),
-                    pos_count = sum(nycomps_posmix$gene_outcome == "≥1 pos")
-                    ),
-          data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
-                                   data = filter(nycomps_posmix, cterm == "CYTOPLASMIC."), direction = "<"),
-                    group = "posmix", 
-                    type = "all", 
-                    cterm = "CYTOPLASMIC.",
-                    ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow( filter(nycomps_posmix, cterm == "CYTOPLASMIC.") ),
-                    pos_count = sum(filter(nycomps_posmix, cterm == "CYTOPLASMIC.")$gene_outcome == "≥1 pos")
-                    ),
-          data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
-                                   data = filter(nycomps_posmix, cterm == "NON-CYTOPLASMIC."), direction = "<"),
-                    group = "posmix", 
-                    type = "all", 
-                    cterm = "NON-CYTOPLASMIC.",
-                    ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow( filter(nycomps_posmix, cterm == "NON-CYTOPLASMIC.") ),
-                    pos_count = sum(filter(nycomps_posmix, cterm == "NON-CYTOPLASMIC.")$gene_outcome == "≥1 pos")
-                    ),
-          data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
+                   group = "posmix", 
+                   type = "all", 
+                   cterm = "all",
+                   ci_labels = c("lower95", "auc", "upper95"),
+                   count = nrow(nycomps_posmix),
+                   pos_count = filter(nycomps_posmix,
+                                      gene_outcome == "≥1 pos") %>% nrow),
+        data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
+                                 data = filter(nycomps_posmix,
+                                               cterm == "CYTOPLASMIC."),
+                                 direction = "<"),
+                   group = "posmix", 
+                   type = "all", 
+                   cterm = "CYTOPLASMIC.",
+                   ci_labels = c("lower95", "auc", "upper95"),
+                   count = filter(nycomps_posmix,
+                                  cterm == "CYTOPLASMIC.") %>% nrow,
+                   pos_count = filter(nycomps_posmix,
+                                      cterm == "CYTOPLASMIC.",
+                                      gene_outcome == "≥1 pos") %>% nrow),
+        data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
+                                 data = filter(nycomps_posmix,
+                                               cterm == "NON-CYTOPLASMIC."),
+                                 direction = "<"),
+                   group = "posmix", 
+                   type = "all", 
+                   cterm = "NON-CYTOPLASMIC.",
+                   ci_labels = c("lower95", "auc", "upper95"),
+                   count = filter(nycomps_posmix,
+                                  cterm == "NON-CYTOPLASMIC.") %>% nrow,
+                   pos_count = filter(nycomps_posmix,
+                                      cterm == "NON-CYTOPLASMIC.",
+                                      gene_outcome == "≥1 pos") %>% nrow),
+        data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
                                    data = nycomps_vectors, direction = "<"),
-                    group = "vectors", 
-                    type = "all", 
-                    cterm = "all",
-                    ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow(nycomps_vectors),
-                    pos_count = sum(nycomps_vectors$plasmid_outcome == 1)
-                    ),
-          data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
-                                   data = filter(nycomps_vectors, cterm == "CYTOPLASMIC."), direction = "<"),
+                   group = "vectors", 
+                   type = "all", 
+                   cterm = "all",
+                   ci_labels = c("lower95", "auc", "upper95"),
+                   count = nrow(nycomps_vectors),
+                   pos_count = filter(nycomps_vectors,
+                                      plasmid_outcome == 1) %>% nrow),
+        data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
+                                   data = filter(nycomps_vectors,
+                                                 cterm == "CYTOPLASMIC."),
+                                   direction = "<"),
                     group = "vectors", 
                     type = "all", 
                     cterm = "CYTOPLASMIC.",
                     ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow( filter(nycomps_vectors, cterm == "CYTOPLASMIC.") ),
-                    pos_count = sum(filter(nycomps_vectors, cterm == "CYTOPLASMIC.")$plasmid_outcome == 1)
-                    ),
-          data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
-                                   data = filter(nycomps_vectors, cterm == "NON-CYTOPLASMIC."), direction = "<"),
-                    group = "vectors", 
-                    type = "all", 
-                    cterm = "NON-CYTOPLASMIC.",
-                    ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow( filter(nycomps_vectors, cterm == "NON-CYTOPLASMIC.") ),
-                    pos_count = sum(filter(nycomps_vectors, cterm == "NON-CYTOPLASMIC.")$plasmid_outcome == 1)
-                    )
-    )
-
-nycomps_auc <- dcast(nycomps_auc,
-                     group + type + cterm + count + pos_count ~ ci_labels,
-                     value.var = "ml21")
+                    count = filter(nycomps_vectors,
+                                   cterm == "CYTOPLASMIC.") %>% nrow,
+                    pos_count = filter(nycomps_vectors,
+                                       cterm == "CYTOPLASMIC.",
+                                       plasmid_outcome == 1) %>% nrow),
+        data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
+                                 data = filter(nycomps_vectors,
+                                               cterm == "NON-CYTOPLASMIC."),
+                                 direction = "<"),
+                   group = "vectors", 
+                   type = "all", 
+                   cterm = "NON-CYTOPLASMIC.",
+                   ci_labels = c("lower95", "auc", "upper95"),
+                   count = filter(nycomps_vectors,
+                                  cterm == "NON-CYTOPLASMIC.") %>% nrow,
+                   pos_count = filter(nycomps_vectors,
+                                      cterm == "NON-CYTOPLASMIC.",
+                                      plasmid_outcome == 1) %>% nrow)) %>%
+    dcast(group + type + cterm + count + pos_count ~ ci_labels,
+          value.var = "ml21")
 
 nycomps_median <- nycomps_posmix %>%
     group_by(gene_outcome) %>%
     summarize(median_ml21 = median(ml21))
 
 nycomps_xscale <- nycomps_posmix$ml21 %>%
-    quantile(probs = c(.0025,.9975), names = FALSE)
-nycomps_xscale[[1]] <- nycomps_xscale[[1]]-1
-nycomps_xscale[[2]] <- nycomps_xscale[[2]]+1
+    quantile(probs = c(.0025, .9975), names = FALSE)
+nycomps_xscale[[1]] <- nycomps_xscale[[1]] - 1
+nycomps_xscale[[2]] <- nycomps_xscale[[2]] + 1
 nycomps_breaks <- seq(-6, 6, 2)
+
+if (write_out)
+    write.csv(nycomps_auc, file = "nycomps_auc.csv", row.names = FALSE)
 ```
 
-# NYCOMPS - noRNAss
+## NYCOMPS without RNA Secondary Structure predictions
 This block analyzes the effect of not including full sequence-length RNA
 secondary structure calculations on predictive performance on the NYCOMPS
 dataset.
-```{r}
+```{r nycomps_nornass, cache=TRUE}
 nycomps_pos_scores_noRNAss <- read.csv("large-scale/nycomps_only_pos.fna.allstats_noRNAss.csv", header = TRUE) %>%
     mutate(ml21 = read.table("large-scale/nycomps_only_pos.fna.allstats_noRNAss.csv.ml21", header = FALSE)$V1,
            cterm = read.table("large-scale/nycomps_only_pos_phobius.phobiuscterm", header = FALSE)$V1,
@@ -698,7 +716,8 @@ nycomps_auc_noRNAss <-
             transmute(thisresponse = plasmid_outcome == 1,
                       ml21 = ml21)
         data.frame(
-            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
+            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                          direction = "<", method = "delong"),
             group = thisplasmid,
             type = "plasmid",
             cterm = thiscterm,
@@ -709,80 +728,107 @@ nycomps_auc_noRNAss <-
     }
     
     bind_rows(df1, df2)
-}
+} %>%
+    bind_rows(
+        data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
+                               data = nycomps_posmix_noRNAss,
+                               direction = "<"),
+                group = "posmix", 
+                type = "all", 
+                cterm = "all",
+                ci_labels = c("lower95", "auc", "upper95")),
+        data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
+                               data = filter(nycomps_posmix_noRNAss,
+                                             cterm == "CYTOPLASMIC."),
+                               direction = "<"),
+                group = "posmix", 
+                type = "all", 
+                cterm = "CYTOPLASMIC.",
+                ci_labels = c("lower95", "auc", "upper95")),
+        data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
+                               data = filter(nycomps_posmix_noRNAss,
+                                             cterm == "NON-CYTOPLASMIC."),
+                               direction = "<"),
+                group = "posmix", 
+                type = "all", 
+                cterm = "NON-CYTOPLASMIC.",
+                ci_labels = c("lower95", "auc", "upper95")),
+        data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
+                               data = nycomps_vectors_noRNAss,
+                               direction = "<"),
+                group = "vectors", 
+                type = "all", 
+                cterm = "all",
+                ci_labels = c("lower95", "auc", "upper95")),
+        data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
+                               data = filter(nycomps_vectors_noRNAss,
+                                             cterm == "CYTOPLASMIC."),
+                               direction = "<"),
+                group = "vectors", 
+                type = "all", 
+                cterm = "CYTOPLASMIC.",
+                ci_labels = c("lower95", "auc", "upper95")),
+        data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
+                               data = filter(nycomps_vectors_noRNAss,
+                                             cterm == "NON-CYTOPLASMIC."),
+                               direction = "<"),
+                group = "vectors", 
+                type = "all", 
+                cterm = "NON-CYTOPLASMIC.",
+                ci_labels = c("lower95", "auc", "upper95"))) %>%
+        dcast(group + type + cterm + count + pos_count ~ ci_labels,
+        value.var = "ml21")
 
-
-nycomps_auc_noRNAss <- 
-    rbind(nycomps_auc_noRNAss,
-          data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
-                                   data = nycomps_posmix_noRNAss, direction = "<"),
-                    group = "posmix", 
-                    type = "all", 
-                    cterm = "all",
-                    ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow(nycomps_posmix_noRNAss),
-                    pos_count = sum(nycomps_posmix_noRNAss$gene_outcome == "≥1 pos")
-                    ),
-          data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
-                                   data = filter(nycomps_posmix_noRNAss, cterm == "CYTOPLASMIC."), direction = "<"),
-                    group = "posmix", 
-                    type = "all", 
-                    cterm = "CYTOPLASMIC.",
-                    ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow( filter(nycomps_posmix_noRNAss, cterm == "CYTOPLASMIC.") ),
-                    pos_count = sum(filter(nycomps_posmix_noRNAss, cterm == "CYTOPLASMIC.")$gene_outcome == "≥1 pos")
-                    ),
-          data.frame(ml21 = ci.auc(gene_outcome == "≥1 pos" ~ ml21, 
-                                   data = filter(nycomps_posmix_noRNAss, cterm == "NON-CYTOPLASMIC."), direction = "<"),
-                    group = "posmix", 
-                    type = "all", 
-                    cterm = "NON-CYTOPLASMIC.",
-                    ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow( filter(nycomps_posmix_noRNAss, cterm == "NON-CYTOPLASMIC.") ),
-                    pos_count = sum(filter(nycomps_posmix_noRNAss, cterm == "NON-CYTOPLASMIC.")$gene_outcome == "≥1 pos")
-                    ),
-          data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
-                                   data = nycomps_vectors_noRNAss, direction = "<"),
-                    group = "vectors", 
-                    type = "all", 
-                    cterm = "all",
-                    ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow(nycomps_vectors_noRNAss),
-                    pos_count = sum(nycomps_vectors_noRNAss$plasmid_outcome == 1)
-                    ),
-          data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
-                                   data = filter(nycomps_vectors_noRNAss, cterm == "CYTOPLASMIC."), direction = "<"),
-                    group = "vectors", 
-                    type = "all", 
-                    cterm = "CYTOPLASMIC.",
-                    ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow( filter(nycomps_vectors_noRNAss, cterm == "CYTOPLASMIC.") ),
-                    pos_count = sum(filter(nycomps_vectors_noRNAss, cterm == "CYTOPLASMIC.")$plasmid_outcome == 1)
-                    ),
-          data.frame(ml21 = ci.auc(plasmid_outcome == 1 ~ ml21, 
-                                   data = filter(nycomps_vectors_noRNAss, cterm == "NON-CYTOPLASMIC."), direction = "<"),
-                    group = "vectors", 
-                    type = "all", 
-                    cterm = "NON-CYTOPLASMIC.",
-                    ci_labels = c("lower95", "auc", "upper95"),
-                    count = nrow( filter(nycomps_vectors_noRNAss, cterm == "NON-CYTOPLASMIC.") ),
-                    pos_count = sum(filter(nycomps_vectors_noRNAss, cterm == "NON-CYTOPLASMIC.")$plasmid_outcome == 1)
-                    )
-    )
-
-nycomps_auc_noRNAss <-
-    dcast(nycomps_auc_noRNAss,
-          group + type + cterm + count + pos_count ~ ci_labels,
-          value.var = "ml21")
-
-if (write_out) {
-    write.csv(nycomps_auc_noRNAss, file = "nycomps_nonupack_auc.csv")
-}
+if (write_out)
+    write.csv(nycomps_auc_noRNAss, file = "nycomps_nonupack_auc.csv",
+              row.names = FALSE)
 ```
 
+## nycomps plotting
+```{r nycomps_trial_counts}
+p2_trial_counts <- nycomps_vectors %>%
+    group_by(id) %>% 
+    summarize(count = factor(length(id), levels = 1:8, ordered = TRUE),
+              pos_neg = factor(pos_neg[1], levels = c("neg", "mix", "pos"),
+                               ordered = TRUE)) %>%
+    ggplot(aes(x = count, fill = pos_neg)) +
+    geom_bar(position = "stack", width = 0.5) +
+    xlab("Number of Trials") +
+    ylab("Number of Different Genes") +
+    scale_fill_manual(values = c("#A4A5A5", "#AD665D", "#A10F1C")) +
+    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_discrete(expand = c(0, 0), drop = FALSE) +
+    theme(legend.position = "none")
 
-# nycomps plotting
-```{r}
+if (write_out)
+    p2_trial_counts
+```
+
+```{r nycomps_posmix_ppv}
+p2_posmix_ppv_prep <- prep_for_polygon(filter(nycomps_roc, group == "posmix"))
+p2_posmix_ppv <- ggplot(p2_posmix_ppv_prep) + 
+    geom_polygon(aes(x = threshold_percentiles, y = ppv, group = id,
+                     fill = y_greater_min, color = y_greater_min), size = 0.1) +
+    geom_path(aes(x = threshold_percentiles, y = ppv), size = 0.25, 
+              data = filter(p2_posmix_ppv_prep, type != "min_ppv") %>%
+                     distinct(threshold_percentiles, ppv)) +
+    geom_hline(aes(yintercept = min(min_ppv)),
+               linetype = "dashed", color = "darkgrey", size = 0.5) +
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 1),
+                       labels = function(x) x*100) +
+    scale_y_continuous(expand = c(0, 0), limits = c(0, .6001),
+                       breaks = seq(0, 1, .2), labels = function(x) x*100) +
+    xlab(expression("Percentile SVM" ^ "rank"*~"score")) + 
+    ylab("PPV") +
+    scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
+    theme(legend.position = "None",
+          plot.margin = unit(c(1/16, 1/16, 1/16, 0), "in"))
+
+if (write_out)
+    p2_posmix_ppv
+```
+
+```{r nycomps_posmix_histogram}
 nycomps_svmrank_q75 <- filter(nycomps_roc, group == "posmix") %>%
     slice(which.min(abs(threshold_percentiles - 0.75)))
 
@@ -809,6 +855,11 @@ p2_posmix_histogram <- ggplotGrob(p2_posmix_histogram)
 p2_posmix_histogram$grobs[[8]]$grobs[[1]][[1]][[7]]$gp$col <- "#A4A5A5"
 p2_posmix_histogram$grobs[[8]]$grobs[[1]][[1]][[8]]$gp$col <- "#A10F1C"
 
+if (write_out)
+    ggdraw(p2_posmix_histogram)
+```
+
+```{r nycomps_posmix_roc}
 p2_posmix_roc_label <- filter(nycomps_auc, group == "posmix",
                               cterm == "all") %>% 
     mutate(auc = specify_decimal(auc*100, k = 1),
@@ -837,63 +888,11 @@ p2_posmix_roc <- ggplot(filter(nycomps_roc, group == "posmix")) +
           legend.position = "None",
           plot.margin = unit(c(0, 0, 0, 0), "in"))
 
-p2_posmix_ppv_prep <- prep_for_polygon(filter(nycomps_roc, group == "posmix"))
-p2_posmix_ppv <- ggplot(p2_posmix_ppv_prep) + 
-    geom_polygon(aes(x = threshold_percentiles, y = ppv, group = id,
-                     fill = y_greater_min, color = y_greater_min), size = 0.1) +
-    geom_path(aes(x = threshold_percentiles, y = ppv), size = 0.25, 
-              data = filter(p2_posmix_ppv_prep, type != "min_ppv") %>%
-                     distinct(threshold_percentiles, ppv)) +
-    geom_hline(aes(yintercept = min(min_ppv)),
-               linetype="dashed", color="darkgrey", size = 0.5) +
-    scale_x_continuous(expand = c(0, 0), limits = c(0, 1),
-                       labels = function(x) x*100) +
-    scale_y_continuous(expand = c(0, 0), limits = c(0, .6001),
-                       breaks = seq(0, 1, .2), labels = function(x) x*100) +
-    xlab(expression("Percentile SVM"^"rank"*~"score")) + 
-    ylab("PPV") +
-    scale_color_manual(values = c("#A4A5A5","#A10F1C")) + 
-    theme(legend.position = "None",
-          plot.margin = unit(c(1/16, 1/16, 1/16, 0), "in"))
+if (write_out)
+    p2_posmix_roc
+```
 
-p2_trial_counts <- nycomps_vectors %>%
-    group_by(id) %>% 
-    summarize(count = factor(length(id), levels = 1:8, ordered = TRUE),
-              pos_neg = factor(pos_neg[1], levels = c("neg", "mix", "pos"),
-                               ordered = TRUE)) %>%
-    ggplot(aes(x = count, fill = pos_neg)) +
-    geom_bar(position = "stack", width = 0.5) +
-    xlab("Number of Trials") +
-    ylab("Number of Different Genes") +
-    scale_fill_manual(values = c("#A4A5A5", "#AD665D", "#A10F1C")) +
-    scale_y_continuous(expand = c(0, 0)) +
-    scale_x_discrete(expand = c(0, 0), drop = FALSE) +
-    theme(legend.position = "none")
-
-p4_nvector_ppv_prep <- prep_for_polygon(filter(nycomps_roc, group == "N"))
-p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) + 
-    geom_polygon(aes(x = thresholds, y = ppv, group = id, fill = y_greater_min,
-                     color = y_greater_min), size = 0.1) +
-    geom_path(aes(x = thresholds, y = ppv), size = 0.5,
-              data = filter(p4_nvector_ppv_prep, type != "min_ppv") %>%
-                     distinct(thresholds, ppv)) +
-    geom_hline(aes(yintercept = min(min_ppv)),
-               linetype = "dashed", color = "darkgrey", size = 0.5) +
-    annotate("text", x = -1.7, y = 55, size = 7*5/14,
-             label = "Expression in (N) His-FLAG-TEV-", fontface = "bold") + 
-    coord_cartesian(xlim = nycomps_xscale) +
-    scale_x_continuous(expand = c(0, 0), breaks = nycomps_breaks) +
-    scale_y_continuous(expand = c(0, 0), limits = c(0, .6),
-                       breaks = seq(0, 1, .2), labels = function(x) x*100) +
-    xlab(expression("SVM" ^ "rank"*~"score")) + 
-    ylab("Positive Predictive Value") +
-    scale_color_manual(values = c("#A4A5A5", "#A10F1C")) + 
-    scale_fill_manual(values = c("#A4A5A5", "#A10F1C")) + 
-    theme(legend.position = "None",
-          plot.margin = unit(c(0, 0, 0, 0), "in"))
-
-write.csv(nycomps_auc, file = "nycomps_auc.csv", row.names = FALSE)
-
+```{r nycomps_auc_table}
 nycomps_cterm <-
     filter(nycomps_auc,
            type == "plasmid" | (type == "all" & group == "vectors"),
@@ -959,6 +958,14 @@ p2_auc_table <- change_cell(p2_auc_table, 5, 3, tnew = 4, bnew = 5)
 p2_auc_table <- change_cell(p2_auc_table, 6, 2, tnew = 6, bnew = 7)
 p2_auc_table <- change_cell(p2_auc_table, 6, 3, tnew = 6, bnew = 7)
 
+if (write_out)
+    ggdraw(p2_auc_table)
+```
+
+## Compile all panels into full figure 2
+A diagram with arrows showing a summary of the outcomes (with the three arrows)
+was added in Adobe Illustrator after the fact.
+```{r nycomps_fig_compilation}
 p2_main <- ggdraw() +
     draw_plot(
         plot_grid(p2_posmix_ppv, p2_posmix_histogram, 
@@ -988,13 +995,38 @@ if (write_out == TRUE) {
 } else {
     p2_main
 }
-
 ```
 
-# p3  tb, archaea, gpcrs, surade, and more!
-# p3 ROCs (all)
-```{r}
-# archaea
+```{r fig4_nycomps_nvector_ppv}
+p4_nvector_ppv_prep <- prep_for_polygon(filter(nycomps_roc, group == "N"))
+p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) + 
+    geom_polygon(aes(x = thresholds, y = ppv, group = id, fill = y_greater_min,
+                     color = y_greater_min), size = 0.1) +
+    geom_path(aes(x = thresholds, y = ppv), size = 0.5,
+              data = filter(p4_nvector_ppv_prep, type != "min_ppv") %>%
+                     distinct(thresholds, ppv)) +
+    geom_hline(aes(yintercept = min(min_ppv)),
+               linetype = "dashed", color = "darkgrey", size = 0.5) +
+    annotate("text", x = -1.7, y = 55, size = 7*5/14,
+             label = "Expression in (N) His-FLAG-TEV-", fontface = "bold") + 
+    coord_cartesian(xlim = nycomps_xscale) +
+    scale_x_continuous(expand = c(0, 0), breaks = nycomps_breaks) +
+    scale_y_continuous(expand = c(0, 0), limits = c(0, .6),
+                       breaks = seq(0, 1, .2), labels = function(x) x*100) +
+    xlab(expression("SVM" ^ "rank"*~"score")) + 
+    ylab("Positive Predictive Value") +
+    scale_color_manual(values = c("#A4A5A5", "#A10F1C")) + 
+    scale_fill_manual(values = c("#A4A5A5", "#A10F1C")) + 
+    theme(legend.position = "None",
+          plot.margin = unit(c(0, 0, 0, 0), "in"))
+
+if (write_out)
+    p4_nvector_ppv
+```
+
+# Figure 3: Predictive performance within small-scale datasets
+## archaea
+```{r archaea_data_prep, cache=TRUE}
 archaea_scores <- read.csv("small-scale/archaea.fna.allstats.csv",
                            header = TRUE, row.names = 1)
 rownames(archaea_scores) <- getname(rownames(archaea_scores))
@@ -1056,7 +1088,10 @@ archaea_auc <- dcast(archaea_auc, positive_threshold + pos_counts + count ~ ci_l
 
 archaea_median <- median(filter(archaea_outcomes,
                                 Measurement != 'Scanning Densitometry of SDS-PAGE (%)')$ml21)
+```
 
+## archaea plotting
+```{r archaea_plotting}
 p3_archaea_sdspage_data <- archaea_outcomes %>%
     filter(Measurement == 'Scanning Densitometry of SDS-PAGE (%)') %>%
     group_by(Protein, ml21) %>%
@@ -1075,15 +1110,15 @@ p3_archaea_sdspage_data2 <- rbind(filter(p3_archaea_sdspage_data2, Protein != "H
     filter(p3_archaea_sdspage_data2, Protein == "Hbor39700", Outcome == 12)[2,] %>% mutate(Outcome = 11.8))
 
 p3_archaea_sdspage <- ggplot(filter(archaea_outcomes, Measurement == 'Scanning Densitometry of SDS-PAGE (%)')) +
-    geom_vline(xintercept = archaea_median-.015, linetype="dashed", color = "black", size = 0.5) +
-    geom_point(aes(x=ml21, y=as.numeric(Outcome)), color="#A10F1C", size = 3, shape = 95, 
+    geom_vline(xintercept = archaea_median - .015, linetype = "dashed", color = "black", size = 0.5) +
+    geom_point(aes(x = ml21, y = as.numeric(Outcome)), color = "#A10F1C", size = 3, shape = 95, 
                data = p3_archaea_sdspage_data2) + 
-    geom_errorbar(aes(x=ml21, ymin=sds_min, ymax=sds_max), color="#A10F1C", size = 0.27, width = 0.04,
+    geom_errorbar(aes(x = ml21, ymin = sds_min, ymax = sds_max), color = "#A10F1C", size = 0.27, width = 0.04,
                    data = p3_archaea_sdspage_data) +
     scale_y_continuous(expand = c(0,0), limits = c(0, 40)) +
     scale_x_continuous(expand = c(0,0), limits = c(-3.2, -1)) +
     ylab("Percentage of\nMembrane Protein") +
-    xlab(expression("SVM"^"rank"*~"score")) + 
+    xlab(expression("SVM" ^ "rank"*~"score")) + 
     scale_color_manual(values = brewer.pal(3, "Dark2")) +
     theme(axis.title = element_blank(),
               plot.margin = unit(c(1, 0, 2, 0), "mm"))
@@ -1157,9 +1192,10 @@ p3_archaea_roc <- ggplot(archaea_roc) +
           aspect.ratio = 1,
           plot.margin = unit(c(0, 0, 0, 0), "lines"),
           axis.title = element_text(size = 6))
-
+```
 
 ### M. TUBERCULOSIS OUTCOMES AND SCORES (FROM TIM CROSS'S FIRST PAPER)
+```{r mt_data_prep, cache=TRUE}
 tcross_outcomes <- read.csv("small-scale/tcross_mt_outcomes.csv",
                             header = TRUE, row.names = 1, as.is = TRUE) %>%
     mutate(cloned = Cloned,
@@ -1233,8 +1269,10 @@ tcross_outcomes <- select(tcross_outcomes, -ml21_vector_N)
 # > table(as.numeric(tcross_outcomes$outcome))
 #   1   2   3 
 # 208  66  53 
-tcross_roc <- foreach(thisthreshold = c(2, 3), .combine='rbind') %dopar% {
-    foreach(thisfraction=unique(tcross_outcomes$fraction), .combine='rbind') %dopar% {
+tcross_roc <- foreach(thisthreshold = c(2, 3),
+                      .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    foreach(thisfraction = unique(tcross_outcomes$fraction),
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
         thisdata <- filter(tcross_outcomes, fraction == thisfraction)
         thisdata <- mutate(thisdata, thisresponse = as.numeric(outcome) >= thisthreshold)
         roc1 <- data.frame(
@@ -1288,7 +1326,10 @@ tcross_outcomes <- gather(tcross_outcomes, score_type, score_value, ml21:ml21_ve
 tcross_median <- tcross_outcomes %>%
     group_by(score_type, fraction) %>%
     summarize(median = median(score_value))
+```
 
+## mt plotting
+```{r mt_plotting}
 p3_mt <- ggplot(filter(tcross_outcomes,
                        score_type == "ml21", fraction == "MEM")) +
     geom_vline(aes(xintercept = median(score_value)),
@@ -1350,9 +1391,10 @@ p3_mt_roc <- ggplot(filter(tcross_roc,
           plot.margin = unit(c(0, 0, 0, 0), "lines"),
           plot.title = element_text(size = 7, face = "italic"),
           axis.title = element_text(size = 6))
+```
 
-
-# GPCRs
+## GPCRs
+```{r gpcr_data_prep, cache=TRUE}
 lundstrom_outcomes <-
     read.csv("small-scale/lundstrom1.fna.allstats.csv", header = TRUE) %>%
     bind_cols(read.table("small-scale/lundstrom1.fna.allstats.daley_only_raw_exp_ml21",
@@ -1434,7 +1476,10 @@ lundstrom_auc <- foreach(thisthreshold = c(2, 3, 4),
 } %>%
     dcast(host + positive_threshold + count + pos_count ~ ci_labels,
           value.var = "ml21")
+```
 
+## GPCR plotting
+```{r gpcr_plotting}
 # We need to do it this way to break the x axis
 p3_gpcr <- ggplot(filter(lundstrom_outcomes,
                          host %in% c("E..coli", "P..pastoris"))) +
@@ -1540,7 +1585,295 @@ p3_gpcr_roc$grobs$strip_t2$grobs[[1]]$children[[2]]$children[[1]]$label <-
     "P. pastoris"
 p3_gpcr_roc$grobs$strip_t2$grobs[[1]]$children[[2]]$children[[1]]$gp$col <- 
     "#D95F02"
+```
 
+## fig3 main
+```{r fig3_main_plotting}
+p3_main <- ggdraw() +
+    draw_plot(
+        plot_grid(p3_archaea_western, p3_archaea_sdspage, p3_mt, NULL,
+                  labels = c("a", "","","e"), label_size = 8, ncol = 1, align = "v", rel_heights = c(1.8, 1.8, 2.2, 3.2)),
+        x = 0, y = 0, width = .8, height = 1) + 
+    draw_plot_label("c", x = 0, y = .62, size = 8) +
+    draw_plot(p3_gpcr_main, x = 0.003, y = 0, width = .797, height = .37) +
+    annotate("segment", x = .0975, xend = .0935, y = .063, yend = .072) + 
+    annotate("segment", x = .1010, xend = .0970, y = .063, yend = .072) + 
+    draw_label("Number of Conditions", x = .03, y = .912, angle = 90, size = 7) + 
+    draw_label("Percentage of\nMembrane Protein", x = .03, y = .71, angle = 90, size = 7) + 
+    draw_label("Coomassie Blue", x = .22, y = .945, size = 6, colour = "#A10F1C") + 
+    draw_label("Western Blot", x = .22, y = .925, size = 6, colour = "#AD665D") + 
+    draw_label("No Expression", x = .22, y = .895, size = 6, colour = "#A4A5A5") + 
+    draw_plot(
+        plot_grid(p3_archaea_roc, p3_mt_roc, NULL,
+                  labels = c("b","d","f"), label_size = 8, ncol = 1, align = "hv"),
+        x = .82, y = .25, width = .16, height = .75) +
+    draw_plot(p3_gpcr_roc, x = .815, y = 0, width = .17, height = .5)
+
+if (write_out) {
+    save_plot(filename = "plots/fig3_w_panels.pdf", plot = p3_main,
+              base_width = uconv(183, "mm", "in", "Length"), base_height = 5)
+} else {
+    p3_main
+}
+```
+
+## hpylori
+```{r hpylori_data_prep, cache=TRUE}
+hpylori_outcomes <- read.csv("small-scale/hpylori_psakis.ffn.allstats.csv",
+                           header = TRUE, as.is = TRUE) %>%
+    transmute(gene = title,
+              ml21 = read.table(
+                  "small-scale/hpylori_psakis.ffn.allstats.daley_only_raw_exp_ml21")$V1)
+
+hpylori_outcomes <- read.csv("small-scale/hpylori-psakis.csv",
+                             header = TRUE, as.is = TRUE) %>%
+    filter(!is.na(as.numeric(Outcome))) %>% 
+    mutate(gene = toupper(Code),
+           outcome = factor(Outcome),
+           group = factor(Vector,
+                          levels = c("pET", "LAC / A", "LAC / M",
+                                     "TEV / A", "TEV / M"),
+                          labels = c("pET28 / pET36", "pQL60Lac / Automatic",
+                                     "pQL60Lac / Manual", 
+                                     "pQTev / Automatic", "pQTev / Manual")),
+           vector = factor(substring(Vector, 1, 3)),
+           scoring = factor(substrRight(Vector, 1))) %>%
+    select(gene, group, vector, scoring, outcome) %>%
+    inner_join(hpylori_outcomes, by = c("gene" = "gene"))
+
+hpylori_outcomes_means <- hpylori_outcomes %>%
+    group_by(gene, vector) %>%
+    summarize(outcome = mean(as.numeric(as.character(outcome)), na.rm = TRUE),
+              ml21 = ml21[[1]])
+
+hpylori_median <- rbind(
+    group_by(hpylori_outcomes, group) %>%
+        summarise(count = length(ml21),
+                  median = median(ml21),
+                  type = "direct"),
+    data.frame(group = "all", 
+           count = length(rbind(hpylori_outcomes,
+                                filter(hpylori_outcomes, vector == "pET"))$ml21),
+           median = median(rbind(hpylori_outcomes,
+                                 filter(hpylori_outcomes, vector == "pET"))$ml21),
+           type = "direct"),
+    group_by(hpylori_outcomes, vector) %>%
+        summarise( count = length(ml21),
+                   median = median(ml21),
+                   type = "mean") %>%
+        rename(group = vector),
+    data.frame(group = "all", 
+               count = length(hpylori_outcomes_means$ml21),
+               median = median(hpylori_outcomes_means$ml21),
+               type = "mean")
+    )
+
+hpylori_roc <- foreach(thisthreshold = c(1, 2, 3),
+                       .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    # ROC for each vector separately
+    roc1 <- foreach(thisgroup = unique(hpylori_outcomes$group),
+                    .combine = bind_rows, .multicombine = TRUE) %dopar% {
+        thisdata <- filter(hpylori_outcomes, group == thisgroup) %>%
+            mutate(thisresponse = 
+                       as.numeric(as.character(outcome)) >= thisthreshold)
+        data.frame(
+            my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
+            group = thisgroup,
+            positive_threshold = thisthreshold,
+            type = "direct")
+    }
+    # ROC for all vectors together
+    # need to double pET measurements since LAC and TEV have both manual and automated scores
+    thisdata <- hpylori_outcomes %>%
+        bind_rows(filter(hpylori_outcomes, vector == "pET")) %>%
+        mutate(thisresponse =
+                   as.numeric(as.character(outcome)) >= thisthreshold)
+    roc2 <- data.frame(
+        my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
+        group = "all",
+        positive_threshold = thisthreshold,
+        type = "direct")
+    
+    roc3 <- foreach(thisthreshold = c(thisthreshold, thisthreshold - 0.5),
+                    .combine = bind_rows, .multicombine = TRUE) %dopar% { 
+        roc4 <- foreach(thisgroup = unique(hpylori_outcomes_means$vector),
+                        .combine = bind_rows, .multicombine = TRUE) %dopar% {
+            thisdata <- filter(hpylori_outcomes_means, vector == thisgroup) %>%
+                mutate(thisresponse = 
+                           as.numeric(as.character(outcome)) >= thisthreshold)
+            data.frame(
+                my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
+                group = thisgroup,
+                positive_threshold = thisthreshold,
+                type = "mean")
+        }
+        
+        # ROC for all vectors together (means)
+        thisdata <- hpylori_outcomes_means %>%
+            mutate(thisresponse = 
+                       as.numeric(as.character(outcome)) >= thisthreshold)
+        roc5 <- data.frame(
+            my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
+            group = "all",
+            positive_threshold = thisthreshold,
+            type = "mean")
+        
+        bind_rows(roc4,roc5)
+    }
+    
+    bind_rows(roc1, roc2, roc3)
+}
+
+hpylori_auc <- foreach(thisthreshold = c(1, 2, 3),
+                       .combine = bind_rows, .multicombine = TRUE) %dopar% {
+    # AUC for each vector separately
+    auc1 <- foreach(thisgroup = unique(hpylori_outcomes$group),
+                    .combine = bind_rows, .multicombine = TRUE) %dopar% {
+        thisdata <- filter(hpylori_outcomes, group == thisgroup) %>%
+            mutate(thisresponse =
+                       as.numeric(as.character(outcome)) >= thisthreshold)
+        data.frame(
+            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                          direction = "<", method = "delong"),
+            group = thisgroup,
+            positive_threshold = thisthreshold,
+            type = "direct",
+            count = length(thisdata$thisresponse),
+            pos_count = sum(thisdata$thisresponse),
+            ci_labels = c("lower95", "auc", "upper95")
+          )
+    }
+    
+    # AUC for all vectors together
+    # need to double pET since only one measurement vs two ("Auto" and "Manual" for LAC and TEV)
+    thisdata <- rbind(hpylori_outcomes, filter(hpylori_outcomes, vector == "pET")) %>%
+        mutate(thisresponse = 
+                   as.numeric(as.character(outcome)) >= thisthreshold)
+    auc2 <- data.frame(
+        group = "all",
+        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                      direction = "<", method = "delong"),
+        positive_threshold = thisthreshold,
+        type = "direct",
+        count = length(thisdata$thisresponse),
+        pos_count = sum(thisdata$thisresponse),
+        ci_labels = c("lower95", "auc", "upper95")
+        )
+    
+    auc3 <- foreach(thisthreshold = c(thisthreshold, thisthreshold - 0.5),
+                    .combine = bind_rows, .multicombine = TRUE) %dopar% {
+        auc4 <- foreach(thisgroup = unique(hpylori_outcomes_means$vector),
+                        .combine = bind_rows, .multicombine = TRUE) %dopar% {
+            thisdata <- filter(hpylori_outcomes_means, vector == thisgroup) %>%
+                mutate(thisresponse = 
+                           as.numeric(as.character(outcome)) >= thisthreshold)
+            data.frame(
+                ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                              direction = "<", method = "delong"),
+                group = thisgroup,
+                positive_threshold = thisthreshold,
+                type = "mean",
+                count = length(thisdata$thisresponse),
+                pos_count = sum(thisdata$thisresponse),
+                ci_labels = c("lower95", "auc", "upper95")
+              )
+        }
+        
+        # AUC for means outcomes of all vectors together
+        thisdata <- hpylori_outcomes_means %>%
+            mutate(thisresponse = 
+                       as.numeric(as.character(outcome)) >= thisthreshold)
+        auc5 <- data.frame(
+            group = "all",
+            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
+                          direction = "<", method = "delong"),
+            positive_threshold = thisthreshold,
+            type = "mean",
+            count = length(thisdata$thisresponse),
+            pos_count = sum(thisdata$thisresponse),
+            ci_labels = c("lower95", "auc", "upper95")
+            )
+        
+        bind_rows(auc4, auc5)
+    }
+    
+    bind_rows(auc1, auc2, auc3)
+} %>%
+    dcast(group + positive_threshold + type + count + pos_count ~ ci_labels,
+          value.var = "ml21")
+```
+
+## hpylori plotting
+```{r hpylori_plotting}
+p3_hpylori <- ggplot(hpylori_outcomes_means) + 
+    geom_vline(aes(xintercept = median(ml21)),
+               size = 0.5, linetype = "dashed") +
+    geom_point(aes(x = ml21, y = outcome, color = outcome),
+               size = 0.75, position = position_quasirandom(varwidth = TRUE)) +
+    annotate("text", x = -6.5, y = 3.25, label = "H. pylori", size = 7*5/14, fontface = "bold.italic") + 
+    scale_color_gradient(low = "#A4A5A5", high = "#A10F1C",
+                         na.value = "black") +
+    scale_x_continuous(breaks = c(-8:1), expand = c(0.01, 0.01)) +
+    scale_y_continuous(breaks = seq(0, 3, 0.5), expand = c(0.02, 0.02)) +
+    xlab(expression("SVM" ^ "rank"*~"score")) + 
+    ylab("Reported Outcome") +
+    theme(legend.position = "None",
+              axis.title.y = element_blank(),
+              axis.title.x = element_blank(),
+              plot.margin = unit(c(2, 0, 0, 0), "mm"))
+
+p3_hpylori_roc <- ggplot(filter(hpylori_roc, group == "all", type == "mean")) + 
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+    geom_path(aes(x = 1 - specificities, y = sensitivities,
+                  color = factor(positive_threshold)), size = 0.25) +
+    scale_color_manual(values = colorRampPalette(c("#A4A5A5", "#A10F1C"))(7)[2:7], na.value = "black") +
+    ylab("True Positive Rate") +
+    xlab("False Positive Rate") +
+    ggtitle("H. pylori") + 
+    scale_y_continuous(expand = c(0, 0), breaks = c(0, .5, 1),
+                       limits = c(0, 1), labels = function(x){x*100}) + 
+    scale_x_continuous(expand = c(0, 0), breaks = c(0, .5, 1),
+                       limits = c(0, 1), labels = function(x){x*100}) +
+    theme(legend.position = "None", aspect.ratio = 1,
+              plot.margin = unit(c(0, 0, 0, 0), "lines"),
+              plot.title = element_text(size = 7, face = "italic"),
+              axis.title = element_text(size = 6))
+
+hpylori_auc_labels <- filter(hpylori_auc, group == "all", type == "mean") %>%
+    arrange(-positive_threshold) %>%
+    mutate(auc = specify_decimal(auc*100, k = 1),
+           lower95 = specify_decimal(lower95*100, k = 1),
+           upper95 = specify_decimal(upper95*100, k = 1),
+           ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')"))
+hpylori_auc_labels$x <- rep(.5, 6)
+hpylori_auc_labels$y <- c(.52, .43, .34, .25, .16, .07)
+hpylori_auc_labels$y <- c(.60, .50, .40, .30, .20, .10)
+
+
+hpylori_auc_counts <- filter(hpylori_auc, group == "all", type == "mean")$pos_count %>% rev %>% toString %>% paste
+hpylori_auc_counts <- paste0("list(", hpylori_auc_counts, "/", filter(hpylori_auc, group == "all", type == "mean")$count[[1]], ")")
+
+p3_hpylori_auc <- ggplot(hpylori_auc_labels) + 
+    geom_text(aes(x = x, y = y, label = ci,
+                  color = factor(positive_threshold)),
+              parse = TRUE, size = 5*5/14) +
+    annotate(geom = "text", x = .5, y = .70,
+             label = hpylori_auc_counts, size = 5*5/14, parse = TRUE) +
+    scale_color_manual(values = colorRampPalette(c("#A4A5A5", "#A10F1C"))(7)[2:7], na.value = "black") +
+#    scale_y_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) + 
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 1)) +
+    theme(
+        legend.position = "None",
+        plot.margin = unit(c(0, 0, 0, 0), "lines"),
+        plot.title = element_blank(),
+        axis.title = element_blank(),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank())
+```
+
+## Koth
+```{r koth_data_prep, cache=TRUE}
 # e. coli Koth
 koth_ec_outcomes <- read.csv("small-scale/koth_ec.ffn.allstats.csv_namefix", 
                            header = TRUE, as.is = TRUE) %>%
@@ -1609,7 +1942,10 @@ koth_auc <- foreach(thisgroup = unique(koth_outcomes$group),
 } %>%
     dcast(group + positive_threshold + pos_count + count ~ ci_labels,
           value.var = "ci")
+```
 
+### Koth plotting
+```{r koth_plotting}
 p3_koth <- ggplot(koth_outcomes) +
     geom_segment(aes(y = median(ml21), yend = median(ml21),
                      x = 1.5, xend = 2.5), size = 0.5, linetype = "dashed", 
@@ -1704,8 +2040,10 @@ p3_koth_roc <- ggplot(koth_roc) +
           aspect.ratio = 1,
           plot.margin = unit(c(0, 0, 0, 0), "lines"),
           axis.title = element_text(size = 6))
+```
 
-# surade
+## surade
+```{r surade_data_prep, cache=TRUE}
 surade_outcomes <- read.csv("small-scale/surade.fna.allstats.csv",
                           header = TRUE, as.is = TRUE) %>%
     transmute(gi = as.numeric(getname(title)),
@@ -1872,7 +2210,10 @@ surade_median <- surade_outcomes %>%
     group_by(vector) %>%
     summarize(median = median(ml21),
               median_vector = median(ml21_vector))
+```
 
+## surade plotting
+```{r surade_plotting}
 p3_surade <- ggplot(filter(surade_outcomes, vector %in% 
                                     c("E. coli pTTQ18-A", "E. coli pTTQ18-C",
                                       "E. coli pQE-A", "E. coli pQE-C"))) +
@@ -1924,265 +2265,10 @@ p3_surade_roc <- ggplot(filter(surade_roc, vector == "pETonly")) +
           aspect.ratio = 1,
           plot.margin = unit(c(0, 0, 0, 0), "lines"),
           axis.title = element_text(size = 6))
+```
 
-# hpylori
-hpylori_outcomes <- read.csv("small-scale/hpylori_psakis.ffn.allstats.csv",
-                           header = TRUE, as.is = TRUE) %>%
-    transmute(gene = title,
-              ml21 = read.table(
-                  "small-scale/hpylori_psakis.ffn.allstats.daley_only_raw_exp_ml21")$V1)
-
-hpylori_outcomes <- read.csv("small-scale/hpylori-psakis.csv",
-                             header = TRUE, as.is = TRUE) %>%
-    filter(!is.na(as.numeric(Outcome))) %>% 
-    mutate(gene = toupper(Code),
-           outcome = factor(Outcome),
-           group = factor(Vector,
-                          levels = c("pET", "LAC / A", "LAC / M",
-                                     "TEV / A", "TEV / M"),
-                          labels = c("pET28 / pET36", "pQL60Lac / Automatic",
-                                     "pQL60Lac / Manual", 
-                                     "pQTev / Automatic", "pQTev / Manual")),
-           vector = factor(substring(Vector, 1, 3)),
-           scoring = factor(substrRight(Vector, 1))) %>%
-    select(gene, group, vector, scoring, outcome) %>%
-    inner_join(hpylori_outcomes, by = c("gene" = "gene"))
-
-hpylori_outcomes_means <- hpylori_outcomes %>%
-    group_by(gene, vector) %>%
-    summarize(outcome = mean(as.numeric(as.character(outcome)), na.rm = TRUE),
-              ml21 = ml21[[1]])
-
-hpylori_median <- rbind(
-    group_by(hpylori_outcomes, group) %>%
-        summarise(count = length(ml21),
-                  median = median(ml21),
-                  type = "direct"),
-    data.frame(group = "all", 
-           count = length(rbind(hpylori_outcomes,
-                                filter(hpylori_outcomes, vector == "pET"))$ml21),
-           median = median(rbind(hpylori_outcomes,
-                                 filter(hpylori_outcomes, vector == "pET"))$ml21),
-           type = "direct"),
-    group_by(hpylori_outcomes, vector) %>%
-        summarise( count = length(ml21),
-                   median = median(ml21),
-                   type = "mean") %>%
-        rename(group = vector),
-    data.frame(group = "all", 
-               count = length(hpylori_outcomes_means$ml21),
-               median = median(hpylori_outcomes_means$ml21),
-               type = "mean")
-    )
-
-hpylori_roc <- foreach(thisthreshold = c(1, 2, 3),
-                       .combine = bind_rows, .multicombine = TRUE) %dopar% {
-    # ROC for each vector separately
-    roc1 <- foreach(thisgroup = unique(hpylori_outcomes$group),
-                    .combine = bind_rows, .multicombine = TRUE) %dopar% {
-        thisdata <- filter(hpylori_outcomes, group == thisgroup)
-        thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
-        data.frame(
-            my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
-            group = thisgroup,
-            positive_threshold = thisthreshold,
-            type = "direct")
-    }
-    # ROC for all vectors together
-    # need to double pET measurements since LAC and TEV have both manual and automated scores
-    thisdata <- rbind(hpylori_outcomes, filter(hpylori_outcomes, vector == "pET"))
-    thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
-    roc2 <- data.frame(
-        my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
-        group = "all",
-        positive_threshold = thisthreshold,
-        type = "direct")
-    
-    roc3 <- foreach(thisthreshold = c(thisthreshold, thisthreshold - 0.5),
-                    .combine = bind_rows, .multicombine = TRUE) %dopar% { 
-        roc4 <- foreach(thisgroup = unique(hpylori_outcomes_means$vector),
-                        .combine = bind_rows, .multicombine = TRUE) %dopar% {
-            thisdata <- filter(hpylori_outcomes_means, vector == thisgroup)
-            thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
-            data.frame(
-                my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
-                group = thisgroup,
-                positive_threshold = thisthreshold,
-                type = "mean")
-        }
-        
-        # ROC for all vectors together (means)
-        thisdata <- hpylori_outcomes_means
-        thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
-        roc5 <- data.frame(
-            my_roc(thisresponse ~ ml21, data = thisdata, direction = "<"),
-            group = "all",
-            positive_threshold = thisthreshold,
-            type = "mean")
-        
-        bind_rows(roc4,roc5)
-    }
-    
-    bind_rows(roc1, roc2, roc3)
-}
-
-hpylori_auc <- foreach(thisthreshold = c(1, 2, 3),
-                       .combine = bind_rows, .multicombine = TRUE) %dopar% {
-    # AUC for each vector separately
-    auc1 <- foreach(thisgroup = unique(hpylori_outcomes$group),
-                    .combine = bind_rows, .multicombine = TRUE) %dopar% {
-        thisdata <- filter(hpylori_outcomes, group == thisgroup)
-        thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
-        data.frame(
-            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
-            group = thisgroup,
-            positive_threshold = thisthreshold,
-            type = "direct",
-            count = length(thisdata$thisresponse),
-            pos_count = sum(thisdata$thisresponse),
-            ci_labels = c("lower95", "auc", "upper95")
-          )
-    }
-    
-    # AUC for all vectors together
-    # need to double pET since only one measurement vs two ("Auto" and "Manual" for LAC and TEV)
-    thisdata <- rbind(hpylori_outcomes, filter(hpylori_outcomes, vector == "pET"))
-    thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
-    auc2 <- data.frame(
-        group = "all",
-        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
-        positive_threshold = thisthreshold,
-        type = "direct",
-        count = length(thisdata$thisresponse),
-        pos_count = sum(thisdata$thisresponse),
-        ci_labels = c("lower95", "auc", "upper95")
-        )
-    
-    auc3 <- foreach(thisthreshold = c(thisthreshold, thisthreshold - 0.5),
-                    .combine = bind_rows, .multicombine = TRUE) %dopar% {
-        auc4 <- foreach(thisgroup = unique(hpylori_outcomes_means$vector),
-                        .combine = bind_rows, .multicombine = TRUE) %dopar% {
-            thisdata <- filter(hpylori_outcomes_means, vector == thisgroup)
-            thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
-            data.frame(
-                ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
-                group = thisgroup,
-                positive_threshold = thisthreshold,
-                type = "mean",
-                count = length(thisdata$thisresponse),
-                pos_count = sum(thisdata$thisresponse),
-                ci_labels = c("lower95", "auc", "upper95")
-              )
-        }
-        
-        # AUC for means outcomes of all vectors together
-        thisdata <- hpylori_outcomes_means
-        thisdata <- mutate(thisdata, thisresponse = as.numeric(as.character(outcome)) >= thisthreshold)
-        auc5 <- data.frame(
-            group = "all",
-            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
-            positive_threshold = thisthreshold,
-            type = "mean",
-            count = length(thisdata$thisresponse),
-            pos_count = sum(thisdata$thisresponse),
-            ci_labels = c("lower95", "auc", "upper95")
-            )
-        
-        bind_rows(auc4, auc5)
-    }
-    
-    bind_rows(auc1, auc2, auc3)
-}
-hpylori_auc <- dcast(hpylori_auc, group + positive_threshold + type + count + pos_count ~ ci_labels, value.var = "ml21")
-
-p3_hpylori <- ggplot(hpylori_outcomes_means) + 
-    geom_vline(aes(xintercept = median(ml21)),
-               size = 0.5, linetype = "dashed") +
-    geom_point(aes(x = ml21, y = outcome, color = outcome),
-               size = 0.75, position = position_quasirandom(varwidth = TRUE)) +
-    annotate("text", x = -6.5, y = 3.25, label = "H. pylori", size = 7*5/14, fontface = "bold.italic") + 
-    scale_color_gradient(low = "#A4A5A5", high = "#A10F1C",
-                         na.value = "black") +
-    scale_x_continuous(breaks = c(-8:1), expand = c(0.01, 0.01)) +
-    scale_y_continuous(breaks = seq(0, 3, 0.5), expand = c(0.02, 0.02)) +
-    xlab(expression("SVM" ^ "rank"*~"score")) + 
-    ylab("Reported Outcome") +
-    theme(legend.position = "None",
-              axis.title.y = element_blank(),
-              axis.title.x = element_blank(),
-              plot.margin = unit(c(2, 0, 0, 0), "mm"))
-
-p3_hpylori_roc <- ggplot(filter(hpylori_roc, group == "all", type == "mean")) + 
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
-    geom_path(aes(x = 1 - specificities, y = sensitivities,
-                  color = factor(positive_threshold)), size = 0.25) +
-    scale_color_manual(values = colorRampPalette(c("#A4A5A5", "#A10F1C"))(7)[2:7], na.value = "black") +
-    ylab("True Positive Rate") +
-    xlab("False Positive Rate") +
-    ggtitle("H. pylori") + 
-    scale_y_continuous(expand = c(0, 0), breaks = c(0, .5, 1),
-                       limits = c(0, 1), labels = function(x){x*100}) + 
-    scale_x_continuous(expand = c(0, 0), breaks = c(0, .5, 1),
-                       limits = c(0, 1), labels = function(x){x*100}) +
-    theme(legend.position = "None", aspect.ratio = 1,
-              plot.margin = unit(c(0, 0, 0, 0), "lines"),
-              plot.title = element_text(size = 7, face = "italic"),
-              axis.title = element_text(size = 6))
-
-hpylori_auc_labels <- filter(hpylori_auc, group == "all", type == "mean") %>%
-    arrange(-positive_threshold) %>%
-    mutate(auc = specify_decimal(auc*100, k = 1),
-           lower95 = specify_decimal(lower95*100, k = 1),
-           upper95 = specify_decimal(upper95*100, k = 1),
-           ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')"))
-hpylori_auc_labels$x <- rep(.5, 6)
-hpylori_auc_labels$y <- c(.52, .43, .34, .25, .16, .07)
-hpylori_auc_labels$y <- c(.60, .50, .40, .30, .20, .10)
-
-
-hpylori_auc_counts <- filter(hpylori_auc, group == "all", type == "mean")$pos_count %>% rev %>% toString %>% paste
-hpylori_auc_counts <- paste0("list(", hpylori_auc_counts, "/", filter(hpylori_auc, group == "all", type == "mean")$count[[1]], ")")
-
-p3_hpylori_auc <- ggplot(hpylori_auc_labels) + 
-    geom_text(aes(x = x, y = y, label = ci,
-                  color = factor(positive_threshold)),
-              parse = TRUE, size = 5*5/14) +
-    annotate(geom = "text", x = .5, y = .70,
-             label = hpylori_auc_counts, size = 5*5/14, parse = TRUE) +
-    scale_color_manual(values = colorRampPalette(c("#A4A5A5", "#A10F1C"))(7)[2:7], na.value = "black") +
-#    scale_y_continuous(expand = c(0, 0), breaks=c(0, .5, 1), limits=c(0, 1), labels=function(x){x*100}) + 
-    scale_x_continuous(expand = c(0, 0), limits = c(0, 1)) +
-    theme(
-        legend.position = "None",
-        plot.margin = unit(c(0, 0, 0, 0), "lines"),
-        plot.title = element_blank(),
-        axis.title = element_blank(),
-        axis.line = element_blank(),
-        axis.ticks = element_blank(),
-        axis.text = element_blank())
-
-
-p3_main <- ggdraw() +
-    draw_plot(
-        plot_grid(p3_archaea_western, p3_archaea_sdspage, p3_mt, NULL,
-                  labels = c("a", "","","e"), label_size = 8, ncol = 1, align = "v", rel_heights = c(1.8, 1.8, 2.2, 3.2)),
-        x = 0, y = 0, width = .8, height = 1) + 
-    draw_plot_label("c", x = 0, y = .62, size = 8) +
-    draw_plot(p3_gpcr_main, x = 0.003, y = 0, width = .797, height = .37) +
-    annotate("segment", x = .0975, xend = .0935, y = .063, yend = .072) + 
-    annotate("segment", x = .1010, xend = .0970, y = .063, yend = .072) + 
-    draw_label("Number of Conditions", x = .03, y = .912, angle = 90, size = 7) + 
-    draw_label("Percentage of\nMembrane Protein", x = .03, y = .71, angle = 90, size = 7) + 
-    draw_label("Coomassie Blue", x = .22, y = .945, size = 6, colour = "#A10F1C") + 
-    draw_label("Western Blot", x = .22, y = .925, size = 6, colour = "#AD665D") + 
-    draw_label("No Expression", x = .22, y = .895, size = 6, colour = "#A4A5A5") + 
-    draw_plot(
-        plot_grid(p3_archaea_roc, p3_mt_roc, NULL,
-                  labels = c("b","d","f"), label_size = 8, ncol = 1, align = "hv"),
-        x = .82, y = .25, width = .16, height = .75) +
-    draw_plot(p3_gpcr_roc, x = .815, y = 0, width = .17, height = .5)
-
-
+## fig3 extended plotting
+```{r fig3_extended_plotting}
 p3_extended <- ggdraw() +
     draw_plot(
         plot_grid(p3_hpylori, p3_tmaritima, p3_surade,
@@ -2208,9 +2294,6 @@ p3_extended_koth_all <- ggdraw() +
         x = .80, y = 0, width = .17, height = 1)
 
 if (write_out) {
-    save_plot(filename = "plots/fig3_w_panels.pdf", plot = p3_main,
-              base_width = uconv(183, "mm", "in", "Length"), base_height = 5)
-
     save_plot(filename = "plots/extfig1.pdf", plot = p3_extended,
               base_width = uconv(183, "mm", "in", "Length"), base_height = 5)
     
@@ -2223,7 +2306,7 @@ if (write_out) {
 ```
 
 # p4 - forward predictions
-```{r}
+```{r forward_data_prep, cache=TRUE}
 # load allstats and scores
 celegans <- read.csv("forward-preds/celegans_mp_wormbase.fna.allstats.csv", header = TRUE, as.is = TRUE) %>%
     mutate(group = "Metazoa",
@@ -2317,7 +2400,10 @@ forward_targets_table <- group_by(forward_preds, group, species) %>%
         polyMPs_ge_ECmed = sum(ml21 > forward_ec_thresholds[[3]] & numTMs > 1),
         polyMPs_ge_ECq3 = sum(ml21 > forward_ec_thresholds[[4]] & numTMs > 1)
       ) %>% ungroup
+```
 
+## forward plotting
+```{r forward_plotting}
 forward_preds_order <- c(
     "Vibrio cholerae",
     "Helicobacter pylori",
@@ -2402,10 +2488,13 @@ p4_selected_violin <- ggplot(forward_preds %>% filter(species %in% selected_viol
               axis.title.y = element_blank(),
               axis.text.y = element_blank(),
               axis.line.y = element_blank())
+
+if (write_out)
+    p4_selected_violin
 ```
 
 ## Load Fluman, et al., aSD mutant data (Figure 6 in their paper)
-```{r}
+```{r fluman_data_prep, cache=TRUE}
 rel_diff <- function(mut, wt, func = range) {
     2*(mut - wt)/abs((wt + mut))
 }
@@ -2442,7 +2531,10 @@ fluman_asd <- fluman_asd %>%
     inner_join(fluman_asd_features, by = c("gene" = "gene")) %>%
     mutate(rel_relareaSD = rel_diff(relareaSD.y, relareaSD.x),
            rel_totalSDsites = rel_diff(totalSDsites.y, totalSDsites.x))
+```
 
+# fluman asd plotting
+```{r fluman_asd_plotting}
 p4_fluman_asd_prep <- fluman_asd %>%
     select(gene, rel_outcome, rel_ml21, rel_totalSDsites) %>% # ,
     gather(metric, value, -gene) %>%
@@ -2464,10 +2556,13 @@ p4_fluman_asd <- ggplot(p4_fluman_asd_prep, aes(x = gene, y = value, fill = metr
         legend.key.size = unit(0.25, "cm"),
         legend.position = c(.60, .20),
         aspect.ratio = 1)
+
+if (write_out)
+    p4_fluman_asd
 ```
 
 ## deal with feature distributions
-```{r}
+```{r feature_distributions, cache=TRUE}
 forward_features <- forward_preds %>%
     select(-ml21, -group) %>%
     mutate(set = "forward")
@@ -2668,7 +2763,10 @@ selected_features <- selected_features %>%
                                            "tRNA Adapation Index", "Positive Cytoplasmic Residues\n(normalized)", "Codon Pair Score",
                                            "ΔG of Insertion (Hessa, et al.)", "Shine-Dalgarno Sites (normalized)", "Length of TM1-TM2 Loop",
                                            "RNA Secondary Structure\n(1st 40 codons)", "Mean Disorder Prediction (RONN)")))
+```
 
+## feature distribution plotting
+```{r feat_dist_plotting}
 pext2_feature_dist <- ggplot(p2ext_feature_dist_prep) +
     geom_step_hist(aes(x = featurevalue, color = group),
                    alpha = 0.7, position = "identity", bins = 50) +
@@ -2789,8 +2887,10 @@ pext2_hs_ec_pp <- ggplot(overlap, aes(x = human_ec, y = human_pp, label = featur
     scale_y_continuous(limits = c(0,1), expand = c(0,0),
                        labels = function(x) x*100) +
     theme(aspect.ratio = 1)
+```
 
-
+## Figure 4 Compilation
+```{r}
 p4_main <- ggdraw() + 
     draw_plot(plot_grid(p4_selected_violin, p4_nvector_ppv,
                         nrow = 2, align = "hv", rel_heights = c(3, 1),
@@ -2910,7 +3010,8 @@ p_weights <-
     theme(axis.title.y = element_blank())
 ```
 
-```{r nycomps_feat_weight}
+## plot nycomps AUC with less features
+```{r nycomps_feat_weight_calc}
 # load prediction function and prediction data
 source("predict.R")
 load("predict.RData")
@@ -2947,7 +3048,7 @@ nycomps_auc_feat_subsets <- dcast(nycomps_auc_feat_subsets,
 ```
 
 # plotting
-```{r}
+```{r nycomps_feat_weight_plotting}
 p4_base <- ggplot(nycomps_auc_feat_subsets_posmix, aes(thisidx, auc)) +
     geom_hline(yintercept = 0.5, linetype = "longdash", color = "gray") + 
     geom_ribbon(aes(ymin = lower95, ymax = upper95), fill = "#A4A5A5") +
@@ -2972,7 +3073,7 @@ p4_feat_imp <- secondary_y_axis(p4_base, p4_weights)
 rm(p4_base, p4_weights)
 ```
 
-```{r pca}
+```{r forward_preds_pca}
 source("https://bioconductor.org/biocLite.R")
 library(pcaMethods)
 
@@ -2988,7 +3089,7 @@ forward_nipals <- pca(forward_trans, center = TRUE, scale = "uv",
 ```
 
 # Calculate Pfam overlap between E. coli and NYCOMPS
-```{r}
+```{r pfam_nycomps_overlap}
 ecoli_pfam <- bind_rows(
     read.table("../ml-datasets/ecoli-daley-fluman/precalc/Daley_gfp.fna.faa.pfamA",
                comment.char = '#', as.is = TRUE),
