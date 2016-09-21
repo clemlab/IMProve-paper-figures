@@ -1,9 +1,9 @@
 # A set of functions written to make data munging and preparation easier
 
-specify_decimal <- function(x, k) format(round(x, k), nsmall=k)
+specify_decimal <- function(x, k) format(round(x, k), nsmall = k)
 
 substrRight <- function(x, n){
-    substr(x, nchar(x)-n+1, nchar(x))
+    substr(x, nchar(x) - n + 1, nchar(x))
 }
 
 perc.rank <- function(x) trunc(rank(x))/length(x)
@@ -27,37 +27,37 @@ rem_extrema <- function(x, max = TRUE, min = TRUE) {
 
 getname <- function(vector, token = 1) {
     vector <- as.character(vector)
-    unlist(lapply(vector, function(x) strsplit(x, "[[:space:]]|(?=[|])", perl=TRUE)[[1]][token]))
+    unlist(lapply(vector, function(x) strsplit(x, "[[:space:]]|(?=[|])", perl = TRUE)[[1]][token]))
 }
 
-fd_bw <- function (x) { 2 * IQR(x) * length(x)^(-1/3) }
+fd_bw <- function(x) {
+    2 * IQR(x) * length(x) ^ (-1/3)
+}
 
 level_ranks <- function(x, extra_starting_level = FALSE) {
     x <- as.numeric(factor(x))
     x_levels <- unique(x)
     
-    if(extra_starting_level) {
-        x_levels <- c(min(x_levels)-1, x_levels)
+    if (extra_starting_level) {
+        x_levels <- c(min(x_levels) - 1, x_levels)
     }
     map_df <- data.frame(old = x_levels, 
                          new = percent_rank(x_levels))
     map_df$new[match(x, map_df$old)]
 }
 
-# modified from from asbio::ConDis.matrix  http://www.inside-r.org/packages/cran/asbio/docs/ConDis.matrix
-ConDis.matrix2 <- function (Y1, Y2) 
+# modified from from asbio::ConDis.matrix
+# http://www.inside-r.org/packages/cran/asbio/docs/ConDis.matrix
+ConDis.matrix2 <- function(Y1, Y2) 
 {
     n <- length(Y1)
-    m <- as.data.frame(matrix(nrow = n, ncol = n, dimnames = list(seq(1, 
-                                                                      n), seq(1, n))))
-    foreach (i=1:n, .combine = 'c') %do% {
-        foreach (j=i:n, .combine = 'c') %do% { # changed bounds from 1:n to i:n
+    foreach(i = 1:n, .combine = c) %do% {
+        # changed bounds from 1:n to i:n
+        foreach(j = i:n, .combine = c) %do% {
             ifelse((Y1[i] > Y1[j] & Y2[i] > Y2[j]) | (Y1[i] < Y1[j] & Y2[i] < Y2[j]), 1,
                    ifelse((Y1[i] < Y1[j] & Y2[i] > Y2[j]) | (Y1[i] > Y1[j] & Y2[i] < Y2[j]), -1, 0))
         }
     }
-    #    m[upper.tri(m, diag = TRUE)] <- NA
-    #    m
 }
 
 # analytic method (didn't end up using this)
@@ -65,11 +65,11 @@ spearman_95ci <- function(spearman, nobs) {
     # http://stats.stackexchange.com/questions/18887/how-to-calculate-a-confidence-interval-for-spearmans-rank-correlation
     # http://www.ncss.com/wp-content/themes/ncss/pdf/Procedures/PASS/Confidence_Intervals_for_Spearmans_Rank_Correlation.pdf
     base <- atanh(spearman)
-    delta <- 1.96/sqrt(nobs-3)
+    delta <- 1.96/sqrt(nobs - 3)
     c(tanh(base - delta), tanh(base + delta))
 }
 
-estimate_overlap <- function (A, B, method = 'locfit', n.grid = 2^13) {
+estimate_overlap <- function(A, B, method = 'locfit', n.grid = 2 ^ 13) {
     require(gss)
     # if both values are only positive
     # take the log
@@ -79,7 +79,7 @@ estimate_overlap <- function (A, B, method = 'locfit', n.grid = 2^13) {
     #     }
     
     # if the length of the sets are non-zero, the calculate a KDE
-    if(length(A) == 0 | length(B) == 0) {
+    if (length(A) == 0 | length(B) == 0) {
         return(NA)
     }
     
@@ -92,19 +92,19 @@ estimate_overlap <- function (A, B, method = 'locfit', n.grid = 2^13) {
     # Set up mesh
     mesh <- seq(range_all[[1]], range_all[[2]], length = n.grid)
     
-    if(method == 'gss') {
+    if (method == 'gss') {
         # fit each density independently, set extent with `domain`
-        fitA <- gss::ssden(~A, domain=data.frame(A=range_all))
-        fitB <- gss::ssden(~B, domain=data.frame(B=range_all))
+        fitA <- gss::ssden(~A, domain = data.frame(A=range_all))
+        fitB <- gss::ssden(~B, domain = data.frame(B=range_all))
         
         # calculate density at each grid point
         densityA <- gss::dssden(fitA, mesh)
         densityB <- gss::dssden(fitB, mesh)
-    } else if(method == 'locfit') {
+    } else if (method == 'locfit') {
         # calculate density at each grid point
         densityA <- locfit::density.lf(A, ev = mesh, maxit = 10000)$y
         densityB <- locfit::density.lf(B, ev = mesh, maxit = 10000)$y
-    } else if(method == 'logspline') {
+    } else if (method == 'logspline') {
         # Doesn't work for edge cases, e.g. freqens
         #       tryCatch({
         fitA <- logspline::logspline(A)
@@ -141,7 +141,7 @@ calc_auc_roc <- function(data, grouping_col, outcome_col, score_col = "ml21", me
                                      outcome_percentile = this_perc_rank,
                                      stringsAsFactors = FALSE)
             
-            if(method == "auc") {
+            if (method == "auc") {
                 ci_obj <- ci.auc(response = this_response,
                                  predictor = this_subset[, score_col],
                                  direction = "<",
@@ -172,12 +172,14 @@ my_roc <- function(...) {
     require(pROC)
     require(dplyr)
     pROC_outcome <- roc(...)
-    pROC_outcome$ppv <- foreach(thisthreshold = pROC_outcome$thresholds, .combine='c') %dopar% {
+    pROC_outcome$ppv <- foreach(thisthreshold = pROC_outcome$thresholds,
+                                .combine = c, .multicombine = TRUE) %dopar% {
         truepos <- sum(pROC_outcome$cases >= thisthreshold)
         predpos <- sum(c(pROC_outcome$cases, pROC_outcome$controls) >= thisthreshold)
         truepos/predpos
     }
-    pROC_outcome$npv <- foreach(thisthreshold = pROC_outcome$thresholds, .combine='c') %dopar% {
+    pROC_outcome$npv <- foreach(thisthreshold = pROC_outcome$thresholds,
+                                .combine = c, .multicombine = TRUE) %dopar% {
         trueneg <- sum(pROC_outcome$controls <= thisthreshold)
         predneg <- sum(c(pROC_outcome$cases, pROC_outcome$controls) <= thisthreshold)
         trueneg/predneg
@@ -189,6 +191,35 @@ my_roc <- function(...) {
     pROC_outcome[c("thresholds", "threshold_percentiles", "sensitivities","specificities","ppv", "min_ppv", "npv", "min_npv")]
 }
 
+# necessary for PPV (e.g. Figure 2B)
+prep_for_polygon <- function(df, x = "thresholds", y = "ppv", min_y = "min_ppv") {
+    # prep_for_polygon(data.frame(thresholds = c(1, 2, -3), ppv = c(1, 5, 10)), min_ppv = 1)
+    # order by thresholds
+    df <- df[order(df[,x], decreasing = TRUE),]
+    
+    # min y value
+    min_y_val <- df[, min_y][1]
+    
+    # top of polygon
+    df$y_greater_min <- df[,y] > min_y_val
+    df <- df[seq_len(nrow(df)) %>% rep(each = 2) %>% tail(-1) %>% head(-1),]
+    rownames(df) <- seq(length = nrow(df))
+    df$id <-  rep(seq(nrow(df)/2), each = 2)
+    df$type <- y
+    
+    # bottom of polygon
+    df <- df[rep(seq_len(nrow(df)), each = 2),]
+    df[grepl(".1", rownames(df), fixed = TRUE),]$type <- min_y
+    df[df$type == min_y, y] <- min_y_val
+    
+    # order for geom_polygon (needs to be closed)
+    foreach(thisid = unique(df$id), .combine = rbind) %do% {
+        thisdata <- filter(df, id == thisid) 
+        thisdata <- thisdata[order(thisdata[, x], thisdata[,y], decreasing = TRUE),]
+        rbind(thisdata[1,], thisdata[2,], thisdata[4,], thisdata[3,])
+    }
+}
+
 
 # http://stackoverflow.com/a/34859307/2320823
 GeomStepHist <- ggproto("GeomStepHist", GeomPath,
@@ -198,11 +229,13 @@ GeomStepHist <- ggproto("GeomStepHist", GeomPath,
                             data <- as.data.frame(data)[order(data$x), ]
                             
                             n <- nrow(data)
-                            i <- rep(1:n, each=2)
+                            i <- rep(1:n, each = 2)
                             newdata <- rbind(
-                                transform(data[1, ], x=x - width/2, y=0),
-                                transform(data[i, ], x=c(rbind(data$x-data$width/2, data$x+data$width/2))),
-                                transform(data[n, ], x=x + width/2, y=0)
+                                transform(data[1, ], x = x - width/2, y = 0),
+                                transform(data[i, ],
+                                          x = c(rbind(data$x - data$width/2,
+                                                      data$x + data$width/2))),
+                                transform(data[n, ], x = x + width/2, y = 0)
                             )
                             rownames(newdata) <- NULL
                             
@@ -228,6 +261,7 @@ geom_step_hist <- function(mapping = NULL, data = NULL, stat = "bin",
         )
     )
 }
+
 
 # GeomPolygon2, GeomViolin2, geom_violin2
 # Used to create a violin plot where alpha pertain only to fill (not outline)
@@ -328,32 +362,102 @@ geom_violin2 <- function(mapping = NULL, data = NULL, stat = "ydensity",
     )
 }
 
-change_cell <- function(table, row, col, name="core", tnew=NA, bnew=NA, lnew=NA, rnew=NA, znew=TRUE) {
+find_cell <- function(table, row, col, name="core-fg") {
+    l <- table$layout
+    which(l$t == row & l$l == col & l$name == name)
+}
+
+change_cell <- function(table, row, col, name="core",
+                        tnew=NA, bnew=NA, lnew=NA, rnew=NA, znew=TRUE) {
     l <- table$layout
     
-    ind_fg = which(l$t==row & l$l==col & l$name==paste0(name, '-fg'))
-    ind_bg = which(l$t==row & l$l==col & l$name==paste0(name, '-bg'))
+    ind_fg = which(l$t == row & l$l == col & l$name == paste0(name, '-fg'))
+    ind_bg = which(l$t == row & l$l == col & l$name == paste0(name, '-bg'))
     
-    if(!is.na(tnew)) {
+    if (!is.na(tnew)) {
         table$layout[ind_fg, 't'] <- tnew
         table$layout[ind_bg, 't'] <- tnew
     }
-    if(!is.na(bnew)) {
+    if (!is.na(bnew)) {
         table$layout[ind_fg, 'b'] <- bnew
         table$layout[ind_bg, 'b'] <- bnew
     }
-    if(!is.na(lnew)) {
+    if (!is.na(lnew)) {
         table$layout[ind_fg, 'l'] <- lnew
         table$layout[ind_bg, 'l'] <- lnew
     }
-    if(!is.na(rnew)) {
+    if (!is.na(rnew)) {
         table$layout[ind_fg, 'r'] <- rnew
         table$layout[ind_bg, 'r'] <- rnew
     }
-    if(znew) {
-        zpos <- max(p2_auc_table$layout$z)
-        table$layout[ind_fg, 'z'] <- zpos+1
+    if (znew) {
+        zpos <- max(table$layout$z)
+        table$layout[ind_fg, 'z'] <- zpos + 1
         table$layout[ind_bg, 'z'] <- zpos
     }
     table
+}
+
+## Add secondary y-axis
+## http://stackoverflow.com/a/36761846/2320823
+secondary_y_axis <- function(g_base, g_secondary) {
+    g1 <- ggplotGrob(g_base)    
+    g2 <- ggplotGrob(g_secondary)    
+    
+    ## Get the position of the plot panel in g1
+    pp <- c(subset(g1$layout, name == "panel", se = t:r))
+    
+    # Title grobs have margins. 
+    # The margins need to be swapped.
+    # Function to swap margins - 
+    # taken from the cowplot package:
+    # https://github.com/wilkelab/cowplot/blob/master/R/switch_axis.R
+    vinvert_title_grob <- function(grob) {
+        heights <- grob$heights
+        grob$heights[1] <- heights[3]
+        grob$heights[3] <- heights[1]
+        grob$vp[[1]]$layout$heights[1] <- heights[3]
+        grob$vp[[1]]$layout$heights[3] <- heights[1]
+        
+        grob$children[[1]]$hjust <- 1 - grob$children[[1]]$hjust 
+        grob$children[[1]]$vjust <- 1 - grob$children[[1]]$vjust 
+        grob$children[[1]]$y <- unit(1, "npc") - grob$children[[1]]$y
+        grob
+    }
+    
+    # Copy xlab from g2 and swap margins
+    index <- which(g2$layout$name == "xlab")
+    xlab <- g2$grobs[[index]]
+    xlab <- vinvert_title_grob(xlab)
+    
+    # Put xlab at the top of g1
+    g1 <- gtable_add_rows(g1, g2$heights[g2$layout[index, ]$t], pp$t - 1)
+    g1 <- gtable_add_grob(g1, xlab, pp$t, pp$l, pp$t, pp$r,
+                          clip = "off", name = "topxlab")
+    
+    # Get "feet" axis (axis line, tick marks and tick mark labels) from g2
+    index <- which(g2$layout$name == "axis-b")
+    xaxis <- g2$grobs[[index]]
+    
+    # Move the axis line to the bottom (Not needed in your example)
+    xaxis$children[[1]]$y <- unit.c(unit(0, "npc"), unit(0, "npc"))
+    
+    # Swap axis ticks and tick mark labels
+    ticks <- xaxis$children[[2]]
+    ticks$heights <- rev(ticks$heights)
+    ticks$grobs <- rev(ticks$grobs)
+    
+    # Move tick marks
+    ticks$grobs[[2]]$y <- ticks$grobs[[2]]$y - unit(1, "npc") + unit(3, "pt")
+    
+    # Sswap tick mark labels' margins
+    ticks$grobs[[1]] <- vinvert_title_grob(ticks$grobs[[1]])
+    
+    # Put ticks and tick mark labels back into xaxis
+    xaxis$children[[2]] <- ticks
+    
+    # Add axis to top of g1
+    g1 <- gtable_add_rows(g1, g2$heights[g2$layout[index, ]$t], pp$t)
+    gtable_add_grob(g1, xaxis, pp$t + 1, pp$l, pp$t + 1, pp$r,
+                    clip = "off", name = "axis-t")
 }
