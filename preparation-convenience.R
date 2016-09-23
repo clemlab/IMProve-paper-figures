@@ -461,3 +461,45 @@ secondary_y_axis <- function(g_base, g_secondary) {
     gtable_add_grob(g1, xaxis, pp$t + 1, pp$l, pp$t + 1, pp$r,
                     clip = "off", name = "axis-t")
 }
+
+preprocess_vars <- function(test_data, xtrans) {
+    prediction_features <- names(xtrans$mean)
+    
+    # features in the test dataset
+    test_data_features <- colnames(test_data)
+    
+    # features requested for the ML but not in the input dataset
+    # keep in mind setdiff gives the asymmetric difference
+    # (http://stat.ethz.ch/R-manual/R-patched/library/base/html/sets.html)
+    missing_features <- setdiff(prediction_features, colnames(test_data))
+    
+    for (x in missing_features) {
+        test_data[[x]] <- NA
+    }
+    rm(x)
+    
+    # keep only the columns we want for the ML (get rid of the extras)
+    test_data <- test_data[, prediction_features]
+    
+    # do the preprocessing (scaling and centering)
+    transformed <- predict(xtrans, test_data)
+    
+    transformed[, !(colnames(transformed) %in% missing_features)]
+}
+
+cor.mtest <- function(mat, conf.level = 0.95){
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat <- lowCI.mat <- uppCI.mat <- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    diag(lowCI.mat) <- diag(uppCI.mat) <- 1
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[,i], mat[,j], conf.level = conf.level)
+            p.mat[i,j] <- p.mat[j,i] <- tmp$p.value
+            lowCI.mat[i,j] <- lowCI.mat[j,i] <- tmp$conf.int[1]
+            uppCI.mat[i,j] <- uppCI.mat[j,i] <- tmp$conf.int[2]
+        }
+    }
+    return(list(p.mat, lowCI.mat, uppCI.mat))
+}

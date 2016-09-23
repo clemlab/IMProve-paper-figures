@@ -442,8 +442,8 @@ if (write_out) {
 ```
 
 ## Save environment for future reference
-```{r}
+```{r session}
 if (write_out)
-    save.image("fig_training.Rmd")
+    save.image("fig_training.Rdata")
 sessionInfo()
 ```
