@@ -37,18 +37,18 @@ fd_bw <- function(x) {
 level_ranks <- function(x, extra_starting_level = FALSE) {
     x <- as.numeric(factor(x))
     x_levels <- unique(x)
-    
+
     if (extra_starting_level) {
         x_levels <- c(min(x_levels) - 1, x_levels)
     }
-    map_df <- data.frame(old = x_levels, 
+    map_df <- data.frame(old = x_levels,
                          new = percent_rank(x_levels))
     map_df$new[match(x, map_df$old)]
 }
 
 # modified from from asbio::ConDis.matrix
 # http://www.inside-r.org/packages/cran/asbio/docs/ConDis.matrix
-ConDis.matrix2 <- function(Y1, Y2) 
+ConDis.matrix2 <- function(Y1, Y2)
 {
     n <- length(Y1)
     foreach(i = 1:n, .combine = c) %do% {
@@ -77,26 +77,26 @@ estimate_overlap <- function(A, B, method = 'locfit', n.grid = 2 ^ 13) {
     #         A <- log(A)
     #         B <- log(B)
     #     }
-    
+
     # if the length of the sets are non-zero, the calculate a KDE
     if (length(A) == 0 | length(B) == 0) {
         return(NA)
     }
-    
+
     # rangeA <- range(A)
     # rangeB <- range(B)
     # range_all <- c(min(rangeA[[1]], rangeB[[1]]), max(rangeA[[2]], rangeB[[2]]))
-    
+
     # Calculate Extent
     range_all <- c(min(A, B), max(A, B))
     # Set up mesh
     mesh <- seq(range_all[[1]], range_all[[2]], length = n.grid)
-    
+
     if (method == 'gss') {
         # fit each density independently, set extent with `domain`
         fitA <- gss::ssden(~A, domain = data.frame(A=range_all))
         fitB <- gss::ssden(~B, domain = data.frame(B=range_all))
-        
+
         # calculate density at each grid point
         densityA <- gss::dssden(fitA, mesh)
         densityB <- gss::dssden(fitB, mesh)
@@ -109,7 +109,7 @@ estimate_overlap <- function(A, B, method = 'locfit', n.grid = 2 ^ 13) {
         #       tryCatch({
         fitA <- logspline::logspline(A)
         fitB <- logspline::logspline(B)
-        
+
         densityA <- logspline::dlogspline(mesh, fitA)
         densityB <- logspline::dlogspline(mesh, fitB)
         #      },  error = function(e) err <- TRUE)
@@ -125,22 +125,22 @@ estimate_overlap <- function(A, B, method = 'locfit', n.grid = 2 ^ 13) {
 
 calc_auc_roc <- function(data, grouping_col, outcome_col, score_col = "ml21", method = "auc") {
     require(foreach)
-    
+
     foreach(this_group = data[, grouping_col] %>% unique, .combine = rbind) %do% {
         this_subset <- data[data[, grouping_col] == this_group, ]
-        
+
         # within each grouping and go through each activity
         foreach(this_threshold = this_subset[, outcome_col] %>% unique %>% rem_extrema(max = FALSE), .combine = rbind) %dopar% {
             # take all activities greater than the current one as true
             this_response <- this_subset[, outcome_col] >= this_threshold
             this_perc_rank <- perc_rank_single(this_subset[, outcome_col], this_threshold)
-            
+
             results_df <- data.frame(grouping_col = grouping_col,
                                      group = this_group,
                                      outcome_threshold = this_threshold,
                                      outcome_percentile = this_perc_rank,
                                      stringsAsFactors = FALSE)
-            
+
             if (method == "auc") {
                 ci_obj <- ci.auc(response = this_response,
                                  predictor = this_subset[, score_col],
@@ -166,7 +166,7 @@ calc_auc_roc <- function(data, grouping_col, outcome_col, score_col = "ml21", me
             }
         }
     }
-} 
+}
 
 my_roc <- function(...) {
     require(pROC)
@@ -196,25 +196,25 @@ prep_for_polygon <- function(df, x = "thresholds", y = "ppv", min_y = "min_ppv")
     # prep_for_polygon(data.frame(thresholds = c(1, 2, -3), ppv = c(1, 5, 10)), min_ppv = 1)
     # order by thresholds
     df <- df[order(df[,x], decreasing = TRUE),]
-    
+
     # min y value
     min_y_val <- df[, min_y][1]
-    
+
     # top of polygon
     df$y_greater_min <- df[,y] > min_y_val
     df <- df[seq_len(nrow(df)) %>% rep(each = 2) %>% tail(-1) %>% head(-1),]
     rownames(df) <- seq(length = nrow(df))
     df$id <-  rep(seq(nrow(df)/2), each = 2)
     df$type <- y
-    
+
     # bottom of polygon
     df <- df[rep(seq_len(nrow(df)), each = 2),]
     df[grepl(".1", rownames(df), fixed = TRUE),]$type <- min_y
     df[df$type == min_y, y] <- min_y_val
-    
+
     # order for geom_polygon (needs to be closed)
     foreach(thisid = unique(df$id), .combine = rbind) %do% {
-        thisdata <- filter(df, id == thisid) 
+        thisdata <- filter(df, id == thisid)
         thisdata <- thisdata[order(thisdata[, x], thisdata[,y], decreasing = TRUE),]
         rbind(thisdata[1,], thisdata[2,], thisdata[4,], thisdata[3,])
     }
@@ -224,10 +224,10 @@ prep_for_polygon <- function(df, x = "thresholds", y = "ppv", min_y = "min_ppv")
 # http://stackoverflow.com/a/34859307/2320823
 GeomStepHist <- ggproto("GeomStepHist", GeomPath,
                         required_aes = c("x"),
-                        
+
                         draw_panel = function(data, panel_scales, coord, direction) {
                             data <- as.data.frame(data)[order(data$x), ]
-                            
+
                             n <- nrow(data)
                             i <- rep(1:n, each = 2)
                             newdata <- rbind(
@@ -238,13 +238,13 @@ GeomStepHist <- ggproto("GeomStepHist", GeomPath,
                                 transform(data[n, ], x = x + width/2, y = 0)
                             )
                             rownames(newdata) <- NULL
-                            
+
                             GeomPath$draw_panel(newdata, panel_scales, coord)
                         }
 )
 
 geom_step_hist <- function(mapping = NULL, data = NULL, stat = "bin",
-                           direction = "hv", position = "stack", na.rm = FALSE, 
+                           direction = "hv", position = "stack", na.rm = FALSE,
                            show.legend = NA, inherit.aes = TRUE, ...) {
     layer(
         data = data,
@@ -304,7 +304,7 @@ GeomViolin2 <- ggproto("GeomViolin", Geom,
                                        xmax = x + width / 2
                            )
                        },
-                       
+
                        draw_group = function(self, data, ..., draw_quantiles = NULL) {
                            data <- transform(data,
                                              xminv = x - violinwidth * (x - xmin),
@@ -370,10 +370,10 @@ find_cell <- function(table, row, col, name="core-fg") {
 change_cell <- function(table, row, col, name="core",
                         tnew=NA, bnew=NA, lnew=NA, rnew=NA, znew=TRUE) {
     l <- table$layout
-    
+
     ind_fg = which(l$t == row & l$l == col & l$name == paste0(name, '-fg'))
     ind_bg = which(l$t == row & l$l == col & l$name == paste0(name, '-bg'))
-    
+
     if (!is.na(tnew)) {
         table$layout[ind_fg, 't'] <- tnew
         table$layout[ind_bg, 't'] <- tnew
@@ -401,15 +401,17 @@ change_cell <- function(table, row, col, name="core",
 ## Add secondary y-axis
 ## http://stackoverflow.com/a/36761846/2320823
 secondary_y_axis <- function(g_base, g_secondary) {
-    g1 <- ggplotGrob(g_base)    
-    g2 <- ggplotGrob(g_secondary)    
-    
+    require(grid)
+    require(gtable)
+    g1 <- ggplotGrob(g_base)
+    g2 <- ggplotGrob(g_secondary)
+
     ## Get the position of the plot panel in g1
     pp <- c(subset(g1$layout, name == "panel", se = t:r))
-    
-    # Title grobs have margins. 
+
+    # Title grobs have margins.
     # The margins need to be swapped.
-    # Function to swap margins - 
+    # Function to swap margins -
     # taken from the cowplot package:
     # https://github.com/wilkelab/cowplot/blob/master/R/switch_axis.R
     vinvert_title_grob <- function(grob) {
@@ -418,44 +420,44 @@ secondary_y_axis <- function(g_base, g_secondary) {
         grob$heights[3] <- heights[1]
         grob$vp[[1]]$layout$heights[1] <- heights[3]
         grob$vp[[1]]$layout$heights[3] <- heights[1]
-        
-        grob$children[[1]]$hjust <- 1 - grob$children[[1]]$hjust 
-        grob$children[[1]]$vjust <- 1 - grob$children[[1]]$vjust 
+
+        grob$children[[1]]$hjust <- 1 - grob$children[[1]]$hjust
+        grob$children[[1]]$vjust <- 1 - grob$children[[1]]$vjust
         grob$children[[1]]$y <- unit(1, "npc") - grob$children[[1]]$y
         grob
     }
-    
+
     # Copy xlab from g2 and swap margins
     index <- which(g2$layout$name == "xlab")
     xlab <- g2$grobs[[index]]
     xlab <- vinvert_title_grob(xlab)
-    
+
     # Put xlab at the top of g1
     g1 <- gtable_add_rows(g1, g2$heights[g2$layout[index, ]$t], pp$t - 1)
     g1 <- gtable_add_grob(g1, xlab, pp$t, pp$l, pp$t, pp$r,
                           clip = "off", name = "topxlab")
-    
+
     # Get "feet" axis (axis line, tick marks and tick mark labels) from g2
     index <- which(g2$layout$name == "axis-b")
     xaxis <- g2$grobs[[index]]
-    
+
     # Move the axis line to the bottom (Not needed in your example)
     xaxis$children[[1]]$y <- unit.c(unit(0, "npc"), unit(0, "npc"))
-    
+
     # Swap axis ticks and tick mark labels
     ticks <- xaxis$children[[2]]
     ticks$heights <- rev(ticks$heights)
     ticks$grobs <- rev(ticks$grobs)
-    
+
     # Move tick marks
     ticks$grobs[[2]]$y <- ticks$grobs[[2]]$y - unit(1, "npc") + unit(3, "pt")
-    
+
     # Sswap tick mark labels' margins
     ticks$grobs[[1]] <- vinvert_title_grob(ticks$grobs[[1]])
-    
+
     # Put ticks and tick mark labels back into xaxis
     xaxis$children[[2]] <- ticks
-    
+
     # Add axis to top of g1
     g1 <- gtable_add_rows(g1, g2$heights[g2$layout[index, ]$t], pp$t)
     gtable_add_grob(g1, xaxis, pp$t + 1, pp$l, pp$t + 1, pp$r,
@@ -464,26 +466,26 @@ secondary_y_axis <- function(g_base, g_secondary) {
 
 preprocess_vars <- function(test_data, xtrans) {
     prediction_features <- names(xtrans$mean)
-    
+
     # features in the test dataset
     test_data_features <- colnames(test_data)
-    
+
     # features requested for the ML but not in the input dataset
     # keep in mind setdiff gives the asymmetric difference
     # (http://stat.ethz.ch/R-manual/R-patched/library/base/html/sets.html)
     missing_features <- setdiff(prediction_features, colnames(test_data))
-    
+
     for (x in missing_features) {
         test_data[[x]] <- NA
     }
     rm(x)
-    
+
     # keep only the columns we want for the ML (get rid of the extras)
     test_data <- test_data[, prediction_features]
-    
+
     # do the preprocessing (scaling and centering)
     transformed <- predict(xtrans, test_data)
-    
+
     transformed[, !(colnames(transformed) %in% missing_features)]
 }
 
