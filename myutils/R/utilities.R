@@ -1,6 +1,15 @@
 # A set of functions written to make data munging and preparation easier
+library(magrittr)
+library(tidyverse)
+
+library(caret)
+library(pROC)
+
+library(foreach)
+
 
 ## Used for model training
+#' @export
 write_dataset <-
     function(df_to_write, filename, outcome_col = "outcome", query_col = "qid",
              csv = FALSE, feature_select = NULL, features_for_training = FALSE)
@@ -42,6 +51,7 @@ write_dataset <-
     }
 
 ## Used for model training
+#' @export
 calc_performance <- function(df, score_col, outcome_col,
                              subgrp_col, group_col) {
     require(foreach)
@@ -70,15 +80,21 @@ calc_performance <- function(df, score_col, outcome_col,
 }
 
 # http://stackoverflow.com/a/12135122/2320823
+#' @export
 specify_decimal <- function(x, k) format(round(x, k), nsmall = k)
 
+#' @export
 substrRight <- function(x, n){
     substr(x, nchar(x) - n + 1, nchar(x))
 }
 
+#' @export
 perc.rank <- function(x) trunc(rank(x))/length(x)
+
+#' @export
 perc_rank_single <- function(x, xo)  length(x[x <= xo])/length(x)*100
 
+#' @export
 rem_extrema <- function(x, max = TRUE, min = TRUE) {
     x <- data.frame(V1 = x, V2 = x)
     if (max & min) {
@@ -95,15 +111,18 @@ rem_extrema <- function(x, max = TRUE, min = TRUE) {
     }
 }
 
+#' @export
 getname <- function(vector, token = 1) {
     vector <- as.character(vector)
     unlist(lapply(vector, function(x) strsplit(x, "[[:space:]]|(?=[|])", perl = TRUE)[[1]][token]))
 }
 
+#' @export
 fd_bw <- function(x) {
     2 * IQR(x) * length(x) ^ (-1/3)
 }
 
+#' @export
 level_ranks <- function(x, extra_starting_level = FALSE) {
     x <- as.numeric(factor(x))
     x_levels <- unique(x)
@@ -131,6 +150,7 @@ ConDis.matrix2 <- function(Y1, Y2)
 }
 
 # analytic method (didn't end up using this)
+#' @export
 spearman_95ci <- function(spearman, nobs) {
     # http://stats.stackexchange.com/questions/18887/how-to-calculate-a-confidence-interval-for-spearmans-rank-correlation
     # http://www.ncss.com/wp-content/themes/ncss/pdf/Procedures/PASS/Confidence_Intervals_for_Spearmans_Rank_Correlation.pdf
@@ -139,6 +159,7 @@ spearman_95ci <- function(spearman, nobs) {
     c(tanh(base - delta), tanh(base + delta))
 }
 
+#' @export
 estimate_overlap <- function(A, B, method = 'locfit', n.grid = 2 ^ 13) {
     require(gss)
     # if both values are only positive
@@ -193,6 +214,7 @@ estimate_overlap <- function(A, B, method = 'locfit', n.grid = 2 ^ 13) {
     sum(pmin(densityA, densityB))
 }
 
+#' @export
 calc_auc_roc <- function(data, grouping_col, outcome_col, score_col = "ml21", method = "auc") {
     require(foreach)
 
@@ -238,6 +260,7 @@ calc_auc_roc <- function(data, grouping_col, outcome_col, score_col = "ml21", me
     }
 }
 
+#' @export
 my_roc <- function(...) {
     require(pROC)
     require(dplyr)
@@ -262,6 +285,7 @@ my_roc <- function(...) {
 }
 
 # necessary for PPV (e.g. Figure 2B)
+#' @export
 prep_for_polygon <- function(df, x = "thresholds", y = "ppv", min_y = "min_ppv") {
     # prep_for_polygon(data.frame(thresholds = c(1, 2, -3), ppv = c(1, 5, 10)), min_ppv = 1)
     # order by thresholds
@@ -292,6 +316,7 @@ prep_for_polygon <- function(df, x = "thresholds", y = "ppv", min_y = "min_ppv")
 
 
 # http://stackoverflow.com/a/34859307/2320823
+#' @export
 GeomStepHist <- ggproto("GeomStepHist", GeomPath,
                         required_aes = c("x"),
 
@@ -313,6 +338,7 @@ GeomStepHist <- ggproto("GeomStepHist", GeomPath,
                         }
 )
 
+#' @export
 geom_step_hist <- function(mapping = NULL, data = NULL, stat = "bin",
                            direction = "hv", position = "stack", na.rm = FALSE,
                            show.legend = NA, inherit.aes = TRUE, ...) {
@@ -336,6 +362,7 @@ geom_step_hist <- function(mapping = NULL, data = NULL, stat = "bin",
 # GeomPolygon2, GeomViolin2, geom_violin2
 # Used to create a violin plot where alpha pertain only to fill (not outline)
 # http://stackoverflow.com/questions/34754357/fill-transparency-with-geom-violin/34762360#34762360
+#' @export
 GeomPolygon2 <- ggproto("GeomPolygon2", Geom,
                         draw_panel = function(data, panel_scales, coord) {
                             n <- nrow(data)
@@ -365,6 +392,7 @@ GeomPolygon2 <- ggproto("GeomPolygon2", Geom,
                         draw_key = draw_key_polygon
 )
 
+#' @export
 GeomViolin2 <- ggproto("GeomViolin", Geom,
                        setup_data = function(data, params) {
                            data$width <- data$width %||%
@@ -409,6 +437,7 @@ GeomViolin2 <- ggproto("GeomViolin", Geom,
                        required_aes = c("x", "y")
 )
 
+#' @export
 geom_violin2 <- function(mapping = NULL, data = NULL, stat = "ydensity",
                          draw_quantiles = NULL, position = "dodge",
                          trim = TRUE, scale = "area",
@@ -432,11 +461,13 @@ geom_violin2 <- function(mapping = NULL, data = NULL, stat = "ydensity",
     )
 }
 
+#' @export
 find_cell <- function(table, row, col, name="core-fg") {
     l <- table$layout
     which(l$t == row & l$l == col & l$name == name)
 }
 
+#' @export
 change_cell <- function(table, row, col, name="core",
                         tnew=NA, bnew=NA, lnew=NA, rnew=NA, znew=TRUE) {
     l <- table$layout
@@ -470,6 +501,7 @@ change_cell <- function(table, row, col, name="core",
 
 ## Add secondary y-axis
 ## http://stackoverflow.com/a/36761846/2320823
+#' @export
 secondary_y_axis <- function(g_base, g_secondary) {
     require(grid)
     require(gtable)
@@ -534,6 +566,7 @@ secondary_y_axis <- function(g_base, g_secondary) {
                     clip = "off", name = "axis-t")
 }
 
+#' @export
 preprocess_vars <- function(test_data, xtrans) {
     prediction_features <- names(xtrans$mean)
 
@@ -559,6 +592,7 @@ preprocess_vars <- function(test_data, xtrans) {
     transformed[, !(colnames(transformed) %in% missing_features)]
 }
 
+#' @export
 cor.mtest <- function(mat, conf.level = 0.95){
     mat <- as.matrix(mat)
     n <- ncol(mat)
@@ -574,4 +608,77 @@ cor.mtest <- function(mat, conf.level = 0.95){
         }
     }
     return(list(p.mat, lowCI.mat, uppCI.mat))
+}
+
+#' @export
+prediction_fn <- function(test_data, xtrans, weights) {
+    require(data.table, quietly = TRUE)
+    # In case there were features that were not calculated,
+    # e.g. RNAss, add columns with NA for them
+    # Contribution will not be taken into account for score calculation
+    
+    # features we use for the ML
+    prediction_features <- names(weights)
+    
+    # features requested for the ML but not in the input dataset
+    # keep in mind setdiff gives the asymmetric difference
+    # (http://stat.ethz.ch/R-manual/R-patched/library/base/html/sets.html)
+    missing_features <- setdiff(prediction_features, colnames(test_data))
+    
+    for (x in missing_features) {
+        test_data[[x]] <- NA
+    }
+    
+    # keep only the columns we want for the ML (get rid of the extras)
+    test_data <- test_data[, prediction_features]
+    
+    # do the preprocessing (scaling and centering)
+    if (!is.null(xtrans)) {
+        library(caret)
+        test_data <- predict(xtrans, test_data)
+    }
+    
+    # remove features without a value
+    test_data[is.na(test_data)] <- 0
+    
+    # reorder vector
+    weights <- weights[colnames(test_data)]
+    for (i in seq_along(test_data))
+        set(test_data, j = i, value = test_data[[i]] * weights[[i]])
+    
+    # prediction
+    test_data %>% rowSums(na.rm = TRUE)
+}
+
+#' @export
+read_svmlight_model <- function(filename, feat_names) {
+    weights <- read_delim(filename, skip = 11, delim = " ", col_names = FALSE,
+                          col_types = cols(.default = col_character(),
+                                           X1 = col_integer())) %>%
+        select(-X1) %>%
+        gather(id, weight) %>%
+        filter(weight != "#") %>%
+        separate(weight, into = c("idx", "weight"), sep = ":") %>%
+        mutate(weight = as.numeric(weight)) %>%
+        select(-id, -idx) %>% unlist
+    names(weights) <- feat_names
+    weights
+}
+
+
+# Adapted from klaR
+# http://www.inside-r.org/packages/cran/klaR/docs/svmlight
+#' @export
+svmlight.file <- function(x, train = FALSE, ...)
+{
+    if (is.vector(x)) x <- t(x)
+    erg <- x
+    sn <- 1:nrow(x)
+    if (!train) erg[sn, 1] <- paste("1:", x[sn, 1], sep = "")
+    if (ncol(x) > 1) {
+        j <- 2:ncol(x)
+        erg[ , -1] <- matrix(paste(j - train, t(x[,j]), sep = ":"),
+                             ncol = ncol(x) - 1, byrow = TRUE)
+    }
+    return(erg)
 }
