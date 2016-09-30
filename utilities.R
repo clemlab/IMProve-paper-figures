@@ -1,5 +1,75 @@
 # A set of functions written to make data munging and preparation easier
 
+## Used for model training
+write_dataset <-
+    function(df_to_write, filename, outcome_col = "outcome", query_col = "qid",
+             csv = FALSE, feature_select = NULL, features_for_training = FALSE)
+    {
+        if (!is.null(feature_select) && features_for_training) {
+            columns <- data.frame(names = colnames(df_to_write))
+            columns <- columns[columns$names %in% as.character(feature_select),]
+            df_to_write <- subset(df_to_write, select = as.character(columns))
+        }
+        
+        if (!csv) {
+            save_cols <- df_to_write %>% select_(outcome_col, query_col)
+            df_to_write <- df_to_write %>%
+                select(-one_of(outcome_col, query_col)) %>%
+                as.matrix %>%
+                svmlight.file %>%
+                data.frame %>%
+                cbind(save_cols, .)
+        }
+        
+        if (!is.null(feature_select) && !features_for_training) {
+            columns <- data.frame(names = colnames(df_to_write))
+            columns <- columns[columns$names %in% as.character(feature_select),]
+            df_to_write <- subset(df_to_write, select = as.character(columns))
+        }
+        
+        if (csv) {
+            data_fn <- paste0(filename, '.csv')
+            write.csv(df_to_write, file = data_fn, row.names = FALSE, quote = FALSE)
+            data_fn
+        } else {
+            data_fn <- paste0(filename, '.svmlight')
+            write.table(df_to_write, file = data_fn, row.names = FALSE,
+                        col.names = FALSE, quote = FALSE)
+            system(paste("perl -p -i -e 's/ \\d+:NA//g'", data_fn))
+            system(paste("perl -p -i -e 's/ \\d+:NaN//g'", data_fn))
+            data_fn
+        }
+    }
+
+## Used for model training
+calc_performance <- function(df, score_col, outcome_col,
+                             subgrp_col, group_col) {
+    require(foreach)
+    require(reshape2)
+    require(dplyr)
+    require(magrittr)
+    
+    cor_df <- foreach(thisgrouping = unique(df[, subgrp_col] %>% unlist),
+                      .combine = bind_rows, .multicombine = TRUE) %dopar% {
+                          thisgroup <- filter(df, grouping == thisgrouping)
+                          pairs <- ConDis.matrix2(thisgroup[, score_col] %>% unlist,
+                                                  thisgroup[, outcome_col] %>% unlist)
+                          data.frame(subgrp_col = thisgrouping,
+                                     group_col = unique(thisgroup[, group_col] %>% unlist),
+                                     table(pairs))
+                      } %>%
+        dcast(group_col + subgrp_col ~ pairs, value.var = "Freq")
+    colnames(cor_df) <- c(group_col, subgrp_col, "disconcor", "invalid", "concor")
+    cor_df %>%
+        mutate(total = disconcor + concor) %>%
+        group_by_(group_col) %>%
+        summarize(concor = sum(concor, na.rm = TRUE),
+                  disconcor = sum(disconcor, na.rm = TRUE),
+                  total = sum(total, na.rm = TRUE),
+                  kendall = (concor - disconcor)/total)
+}
+
+# http://stackoverflow.com/a/12135122/2320823
 specify_decimal <- function(x, k) format(round(x, k), nsmall = k)
 
 substrRight <- function(x, n){
@@ -94,8 +164,8 @@ estimate_overlap <- function(A, B, method = 'locfit', n.grid = 2 ^ 13) {
 
     if (method == 'gss') {
         # fit each density independently, set extent with `domain`
-        fitA <- gss::ssden(~A, domain = data.frame(A=range_all))
-        fitB <- gss::ssden(~B, domain = data.frame(B=range_all))
+        fitA <- gss::ssden(~A, domain = data.frame(A = range_all))
+        fitB <- gss::ssden(~B, domain = data.frame(B = range_all))
 
         # calculate density at each grid point
         densityA <- gss::dssden(fitA, mesh)

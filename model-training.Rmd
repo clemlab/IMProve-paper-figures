@@ -1,0 +1,227 @@
+---
+title: "Model Training"
+author: "Shyam Saladi (saladi@calech.edu)"
+date: "September 25, 2016"
+output: html_document
+---
+
+Here I will train a single model based on ml20 (also referred to as ml21) with
+a recalculated set of windowed tAI features using a linear kernel
+preference-ranking SVM. The model will be trained on only the raw plate
+measurement data from the Daley, Rapp, et al., 2005 dataset for proteins with
+a positively determined C-terminal localization. The hyperparameter `C` will
+be tuned over a grid of $2^{-5 to 5}$. The final tuning parameter will selected
+by performance on the folded protein measurement from Fluman, et al., 2012.
+
+# load libraries
+```{r}
+library(magrittr)
+library(tidyverse)
+
+library(caret)
+
+library(foreach)
+library(doMC)
+registerDoMC(cores = 4L)
+
+write_out = FALSE
+```
+
+### load convenience functions
+```{r}
+source("utilities.R")
+source("predict.R")
+```
+
+### Read in Daley and Fluman outcomes
+```{r}
+daley_outcomes <- read_csv("training/AllPlates_161104_with_raw.csv") %>%
+    gather(measurement, outcome, Val1:OD600_Norm4) %>%
+    rename(id = ID) %>%
+    mutate(id = tolower(id),
+           grouping = paste(groupid, measurement, sep = "|"),
+           outcome = as.numeric(outcome)) %>%
+    filter(`Keep?` == 1L, !is.na(outcome))
+
+daley_outcomes_exp <- daley_outcomes %>%
+    # original model was trained using these three measurement categories
+    # omitting "Val3"
+    filter(measurement %in% c("Val1", "Val2", "Val4")) %>%
+    group_by(grouping) %>%
+    filter(n() > 1L) %>%
+    # original model didn't require unique count > 1
+    # filter(unique(outcome) %>% length > 1) %>%
+    ungroup
+
+fluman_folded <- read_csv("training/fluman_data_all.csv",
+                          col_types = cols(.default = col_double(),
+                                           name = col_character(),
+                                           `clone #` = col_integer(),
+                                           gi = col_integer())) %>%
+    gather(measurement, outcome,
+           `whole cell fluorescence`:`OD600 at harvest`) %>%
+    filter(!is.na(outcome), measurement %in% c("folded exp",
+                                               "folded exp_1",
+                                               "folded exp_2")) %>%
+    mutate(grouping = measurement,
+           id = tolower(name))
+
+# Concatenate together for model evaluation
+ecoli_training <- daley_outcomes_exp %>%
+    rename(cterm = Cterm_new) %>%
+    select(id, cterm, measurement, outcome, grouping) %>%
+    bind_rows(fluman_folded %>%
+                  mutate(cterm = "fluman") %>%
+                  select(id, cterm, measurement, outcome, grouping)) %>%
+    mutate(grouping = grouping %>% as.character %>% factor)
+```
+
+### Process sequence features for GFP and PhoA datasets
+```{r}
+feat_col_spec = cols(.default = col_double(), title = col_character())
+
+#read and preprocess the feature files
+daley_allstats <- bind_rows(
+    read_csv("training/Daley_phoa.fna.allstats.csv",
+             col_types = feat_col_spec),
+    read_csv("training/Daley_gfp.fna.allstats.csv",
+             col_types = feat_col_spec)) %>%
+    separate(title, c("id", "title"), extra = "drop") %>%
+    select(-title) %>%
+    mutate(id = tolower(id))
+    # error in feature calculation
+    # select(-tAI10Min, -tAI10Max, -tAI10q25, -tAI10q75) %>%
+    # Original model didn't cull these
+    # filter(numTMs > 0)
+
+# Find features with near zero variance
+near_zero_var_features <- nearZeroVar(daley_allstats, names = TRUE)
+
+# Remove sequence features with near zero variance
+daley_allstats[, near_zero_var_features] <- list(NULL)
+
+# Find highly correlating features
+highly_correlating_features <- daley_allstats %>% 
+    select(-id) %>%
+    cor(use = "pairwise.complete.obs") %>%
+    findCorrelation(cutoff = 0.95, names = TRUE)
+
+# Remove highly correlating features
+daley_allstats[, highly_correlating_features] <- list(NULL)
+
+# Find parameters to center and scale the training feature space
+daley_preprocess_params <- daley_allstats %>%
+    select(-id) %>%
+    preProcess(method = c("center", "scale"))
+
+# Transform input data
+daley_allstats_transformed <-
+    predict(daley_preprocess_params, daley_allstats)
+```
+
+### Join outcomes with features and write datasets in $SVM^{light}$ format
+```{r}
+daley_to_train <- daley_outcomes_exp %>%
+    mutate(qid = grouping %>% as.character %>% factor %>% as.numeric) %>%
+    arrange(qid) %>%
+    mutate(qid = paste0("qid:", qid)) %>%
+    select(id, outcome, qid) %>%
+    left_join(daley_allstats_transformed, by = "id") %>%
+    select(-id)
+
+
+daley_svmlight_fn <-
+    write_dataset(daley_to_train, "training/daley_gfp_phoa")
+```
+
+### Train linear SVM models against the raw Daley, Rapp, et al.
+data over a set of C values
+```{r train_models}
+tunegrid <- 2 ^ seq(-5L, 5L)
+
+binary <- "/ul/saladi/apps/svm_rank/svm_rank_learn"
+args <- paste("-c %PARAM% -t 0 -m 4000",
+              daley_svmlight_fn,
+              gsub(".svmlight", ".train.%PARAM%.model", daley_svmlight_fn))
+
+junk <- foreach(thisparam = tunegrid) %dopar% {
+    thisargs <- gsub("%PARAM%", thisparam, args)
+    system2(binary, thisargs, stdout = FALSE)
+}
+```
+
+### Test each model
+against the Training (Daley, Rapp, et al.) as well as Fluman, et al. datasets
+```{r test_models}
+feat_names <- daley_to_train %>% select(-outcome, -qid) %>% colnames
+
+model_template <- gsub(".svmlight", ".train.%PARAM%.model", daley_svmlight_fn)
+
+training_performance <-
+    foreach(thisparam = tunegrid,
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+                
+    filename <- gsub("%PARAM%", thisparam, model_template)
+    model <- read_svmlight_model(filename, feat_names)
+        
+    daley_allstats_transformed %>%
+        mutate(scores =
+                   prediction_fn(daley_allstats,
+                                 xtrans = daley_preprocess_params, model)) %>%
+        select(id, scores) %>%
+        right_join(ecoli_training, by = "id") %>% 
+        calc_performance(score_col = "scores",
+                         outcome_col = "outcome",
+                         subgrp_col = "grouping",
+                         group_col = "cterm") %>%
+        mutate(param = thisparam) %>%
+        left_join(model %>% as.list %>% data.frame %>%
+                      mutate(param = thisparam),
+                  id = "param")
+}
+```
+
+# Identify final model based on Fluman, et al., performance
+```{r choose_model}
+best_model <- training_performance %>%
+    filter(cterm == "fluman") %>%
+    arrange(desc(kendall)) %>%
+    head(1)
+
+svm_model <- best_model %>%
+    select(-cterm, -concor, -disconcor, -total, -kendall, -param) %>%
+    unlist
+
+svmpredict <- function(feature_df)
+    prediction_fn(feature_df, daley_preprocess_params, svm_model)
+
+training_performance %>%
+    filter(param == best_model$param) %>%
+    select(cterm, concor, disconcor, total, kendall, param)
+```
+
+> training_performance %>%
++     filter(param == best_model$param) %>%
++     select(cterm, concor, disconcor, total, kendall, param)
+# A tibble: 3 × 6
+   cterm concor disconcor total       kendall param
+   <chr>  <int>     <int> <int>         <dbl> <dbl>
+1 fluman   7384      4101 11485 0.28585111014     4
+2     in  21735     10245 31980 0.35928705441     4
+3    out   1655      1017  2672 0.23877245509     4
+
+## Remove temporary files and save session
+```{r session}
+file.remove(daley_svmlight_fn)
+Sys.glob(gsub("%PARAM%", "\\*", model_template)) %>%
+    file.remove() %>% all
+
+if (write_out) {
+    save(daley_outcomes, ecoli_training, daley_to_train, training_performance,
+         best_model, file = "training.RData", compression_level = 9L)
+    save(daley_preprocess_params, svm_model, file = "model.RData",
+         compression_level = 9L)
+}
+
+sessionInfo()
+```
