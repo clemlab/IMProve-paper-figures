@@ -24,13 +24,10 @@ library(foreach)
 library(doMC)
 registerDoMC(cores = 4L)
 
-write_out = FALSE
-```
+# devtools::install("myutils")
+library(myutils)
 
-### load convenience functions
-```{r}
-source("utilities.R")
-source("predict.R")
+write_out = TRUE
 ```
 
 ### Read in Daley and Fluman outcomes
@@ -200,6 +197,7 @@ training_performance %>%
     select(cterm, concor, disconcor, total, kendall, param)
 ```
 
+```
 > training_performance %>%
 +     filter(param == best_model$param) %>%
 +     select(cterm, concor, disconcor, total, kendall, param)
@@ -209,6 +207,7 @@ training_performance %>%
 1 fluman   7384      4101 11485 0.28585111014     4
 2     in  21735     10245 31980 0.35928705441     4
 3    out   1655      1017  2672 0.23877245509     4
+```
 
 ## Remove temporary files and save session
 ```{r session}
