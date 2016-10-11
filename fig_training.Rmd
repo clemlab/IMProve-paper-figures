@@ -9,13 +9,9 @@ output: html_document
 Load all libraries necessary for subsequent data munging and plotting.
 Some defaults are set here to make things easier throughout.
 ```{r libraries}
-# if TRUE, then data will be written to file
-write_out = FALSE
-
-library(reshape2)
-library(dplyr)
+library(tidyverse)
 library(dplyrExtras)
-library(tidyr)
+library(magrittr)
 
 # for CI for spearman correlation coefficients
 library(boot)
@@ -23,204 +19,90 @@ library(pROC)
 
 library(gridExtra)
 library(RColorBrewer)
-library(ggplot2)
+# `uconv` for unit conversion
+library(datamart)
 library(cowplot)
 theme_set(theme_cowplot(font_size = 7))
 
 library(foreach)
 library(doMC)
-registerDoMC(cores = 10)
+cores <- 4L
+registerDoMC(cores = cores)
+
+# devtools::install("myutils")
+library(myutils)
+
+# if TRUE, then data will be written to file
+write_out <- TRUE
+bs_count <- 5050L
 ```
 
-## Convenience functions
-Load another file with a number of helper functions to mechanize some tedious
-or repetitive tasks.
-```{r convenience_functions}
-source("preparation-convenience.R")
+### Load data from training process
+```{r}
+training_env <- new.env()
+load("training.RData", training_env)
 ```
 
-# Figure 1: Training outcomes
+### Load model data for prediction function
+```{r}
+model_env <- new.env()
+load("model.RData", model_env)
+svmpredict <- model_env$svmpredict
+```
 
 ## E. coli Training - Data Preparation
 This block prepares the data necesary for plotting the panels of Figure 1.
-```{r ecoli_training_munging, cache=TRUE}
-ecoli_outcomes_exp <- read.csv("training/ecoli_outcomes_exp.csv",
-                               header = TRUE, row.names = 1, as.is = TRUE)
-
-daley_outcomes <- ecoli_outcomes_exp %>%
-    filter(!(grouping %in% c('folded.exp','folded.exp.1','folded.exp.2'))) %>%
-    mutate(ml21 = read.table(
-        "training/daley_only_raw_exp_ml21.full.4.train.predictions",
-        header = FALSE)$V1) %>%
-    distinct(ID, ml21)
-
-daley_outcomes <-
-    read.csv("training/AllPlates_161104_with_raw.csv", header = TRUE) %>%
-    filter(Keep. == 1) %>% 
-    gather(measurement, value, Val1:OD600_Norm4) %>%
-    mutate(grouping = factor(paste(groupid, measurement, sep = "|")),
-           outcome = as.numeric(value),
-           ID = ID %>% as.character %>% tolower) %>%
-    filter(!is.na(outcome),
-           ID %in% daley_outcomes$ID,
-           measurement %in% 
-               c('ValNorm1', 'ValNorm2', 'ValNorm3', 'ValNorm4')) %>%
-    left_join(daley_outcomes, by = "ID") %>%
-    rename(cterm = Cterm_new)
-
-## Gather outcomes from Fluman data
-fluman_outcomes <- ecoli_outcomes_exp %>%
-    filter(grouping %in% c('folded.exp','folded.exp.1','folded.exp.2')) %>%
-    mutate(ml21 = read.table(
-        "training/daley_only_raw_exp_ml21.full.4.fluman.predictions",
-        header = FALSE)$V1) %>%
-    distinct(ID, ml21)
-
-## only keep those genes that were trained on
-fluman_outcomes <- read.csv("training/fluman_data_all.csv", header = TRUE) %>%
-    gather(measurement, outcome, whole.cell.fluorescence:OD600.at.harvest) %>%
-    filter(!is.na(outcome)) %>%
-    filter(tolower(name) %in% fluman_outcomes$ID) %>%
-    filter(measurement %in% c('folded.exp', 'folded.exp.1', 'folded.exp.2')) %>%
-    mutate(ID = name %>% as.character %>% tolower) %>% 
-    left_join(fluman_outcomes, by = "ID") %>%
-    mutate(cterm = "fluman",
-           grouping = measurement)
-
-## Gather both datasets into the same dataframe with matching columns
-ecoli_training <- bind_rows(
-    select(daley_outcomes, ID, cterm, measurement, outcome, ml21, grouping),
-    select(fluman_outcomes, ID, cterm, measurement, outcome, ml21, grouping)) %>%
-    mutate(grouping = grouping %>% as.character %>% factor)
-rm(daley_outcomes, fluman_outcomes) 
-
-# need to calculate AUCs for each activity value but within the "in" and "out" groupings
-ecoli_auc <- foreach(thiscterm = unique(ecoli_training$cterm),
-                     .combine = bind_rows, .multicombine = TRUE) %dopar% {
-    thisgroup <- filter(ecoli_training, cterm == thiscterm)
-
-    # within each grouping and go through each activity
-    foreach(thisthreshold = unique(rem_extrema(thisgroup$outcome)),
-            .combine = bind_rows, .multicombine = TRUE) %dopar% {
-        # take all activities greater than the current one as true
-        thisresponse <- thisgroup$outcome >= thisthreshold
-        data.frame(
-            cterm = thiscterm,
-            response_threshold = thisthreshold,
-            # proportion of positives/negatives at this activity
-            proportion = sum(thisresponse) / length(thisresponse),
-            ci = ci.auc(response = thisresponse, predictor = thisgroup$ml21,
-                        direction = "<", method = "delong"),
-            ci_labels = c("lower95", "auc", "upper95")
-        )
-    }
-} %>%
-    dcast(cterm + response_threshold + proportion ~ ci_labels,
-          value.var = "ci") %>%
-    group_by(cterm) %>%
-    mutate(response_threshold_percentile = perc.rank(response_threshold))
-
-ecoli_roc <- foreach(thiscterm = unique(ecoli_training$cterm),
-                     .combine = bind_rows, .multicombine = TRUE) %dopar% {
-    thisgroup <- filter(ecoli_training, cterm == thiscterm)
-    # within each grouping and go through each activity
-    foreach(thispercentile = c(0:99),
-            .combine = bind_rows, .multicombine = TRUE) %dopar% {
-        # take all activities greater than the current one as true
-        thisquantile <- quantile(thisgroup$outcome, probs = thispercentile/100,
-                                 na.rm = TRUE, names = FALSE)
-        thisresponse <- thisgroup$outcome > thisquantile
-        
-        thisci <- ci.auc(response = thisresponse, predictor = thisgroup$ml21,
-                         direction = "<")
-        
-        data.frame(
-            cterm = thiscterm,
-            quantile = thisquantile,
-            percentile = thispercentile,
-            lower95 = thisci[[1]], 
-            auc = thisci[[2]],
-            upper95 = thisci[[3]],
-            count = nrow(thisgroup),
-            pos_count = sum(thisresponse),
-            my_roc(response = thisresponse, predictor = thisgroup$ml21,
-                   direction = "<"))
-    }
-}
-
-ecoli_cor <- foreach(thisgrouping = unique(ecoli_training$grouping),
-                      .combine = bind_rows, .multicombine = TRUE) %dopar% {
-    thisgroup <- filter(ecoli_training, grouping == thisgrouping)
-    pairs <- ConDis.matrix2(thisgroup$ml21, thisgroup$outcome)
-    data.frame(group = thisgrouping,
-               cterm = unique(thisgroup$cterm),
-               table(pairs))
-} %>%
-    dcast(cterm + group ~ pairs, value.var = "Freq")
-colnames(ecoli_cor) <- c("cterm", "group", "disconcor", "invalid", "concor")
-ecoli_cor <- mutate(ecoli_cor, total = disconcor + concor) %>%
-    group_by(cterm) %>%
-    summarize(concor = sum(concor, na.rm = TRUE),
-              disconcor = sum(disconcor, na.rm = TRUE),
-              total = sum(total, na.rm = TRUE),
-              kendall = (concor - disconcor)/total)
-
-# correlation metrics
-ecoli_xy_cor <- ecoli_training %>%
-    group_by(cterm) %>%
-    summarize(count = length(outcome),
-              spearman = cor(outcome, ml21, method = "spearman"),
-              spearman = specify_decimal(spearman, k = 2),
-              x = min(ml21) + (max(ml21) - min(ml21))*(6/20), 
-              ylab = max(outcome)*(1 - 1/50),
-              y = ylab - max(outcome)*(1/20))
-
-ecoli_daley_fluman <- ecoli_training %>%
-    filter(cterm != "out") %>%
-    group_by(cterm, ID) %>% 
+```{r}
+ecoli_daley_fluman <- training_env$daley_outcomes %>%
+    filter(normalized) %>%
+    bind_rows(training_env$fluman_folded %>%
+                  mutate(cterm = "fluman") %>%
+                  select(id, cterm, measurement, outcome)) %>%
+    group_by(cterm, id) %>% 
     summarize(outcome_max = max(outcome, na.rm = TRUE),
               outcome_avg = mean(outcome, na.rm = TRUE),
-              outcome_min = min(outcome, na.rm = TRUE))
-ecoli_daley_fluman <- cbind(
-    dcast(ecoli_daley_fluman, ID ~ cterm, value.var = "outcome_min"),
-    dcast(ecoli_daley_fluman, ID ~ cterm, value.var = "outcome_avg"),
-    dcast(ecoli_daley_fluman, ID ~ cterm, value.var = "outcome_max"))
-colnames(ecoli_daley_fluman) <- c("id", "daley_min", "fluman_min",
-                                  "id2", "daley_avg", "fluman_avg",
-                                  "id3", "daley_max", "fluman_max")
+              outcome_min = min(outcome, na.rm = TRUE)) %>%
+    ungroup
+    
 ecoli_daley_fluman <- ecoli_daley_fluman %>%
-    filter(!is.na(fluman_min), !is.na(daley_min))
-
-ecoli_daley_fluman_cor <- cor(ecoli_daley_fluman$fluman_avg,
-                              ecoli_daley_fluman$daley_avg,
-                              method = "spearman")
+    filter(cterm == "in") %>%
+    inner_join(ecoli_daley_fluman %>%
+                   filter(cterm == "fluman"),
+               by = "id", suffix = c("_in", "_fluman")) %>%
+    select(-cterm_fluman, -cterm_in) %>%
+    rename(daley_min = outcome_min_in,
+           daley_avg = outcome_avg_in,
+           daley_max = outcome_max_in,
+           fluman_min = outcome_min_fluman,
+           fluman_avg = outcome_avg_fluman,
+           fluman_max = outcome_max_fluman)
 ```
 
-## Spearman correlation coefficent confidence intervals and significance
+## Perform bootstrap estimates if calculation has not been saved of
+Spearman correlation coefficent confidence intervals and significance
 To avoid making unnecessary assumptions about the spread of the data, use
 bootstrap resampling to calculate confidence intervals and shuffling to 
 calculate p-values. Since we calculate $10^6$ bootstraps/shuffles, this takes
-a couple hours on a 32-core machine. To avoid running this everytime, the code
-is saved in `training_bootstraps_with_bca_ci.R`. Below, a commented out line
-shows how the environment was passed and the results are simply loaded.
-```{r training_bootstraps, cache=TRUE}
-# save.image("training_bootstraps_with_bca_ci_envinput.RData")
-load("training_bootstraps_with_bca_ci_summary.RData")
-load("training_bootstraps_with_bca_ci.RData")
+a couple hours on a 32-core machine. To avoid running this everytime, the output
+is saved.
+```{r}
+daley_fluman_cor <- ecoli_daley_fluman %>%
+    boot_perm(x_col = "fluman_avg", y_col = "daley_avg",
+              fn_prefix = "training/daley_fluman", count = bs_count,
+              cores = cores)
 ```
 
 # Daley, et al. vs Fluman, et al. outcomes
 Plotting the agreement between whole cell fluorescence (Daley, et al.) and
 folded protein via in-gel fluorescence (Fluman, et al.). 
 ```{r daley_vs_fluman}
-ecoli_daley_fluman_cor_label <-
-    specify_decimal(c(ecoli_daley_fluman_cor, 
-                      ecoli_daley_fluman_boot_ci$bca[4],
-                      ecoli_daley_fluman_boot_ci$bca[5]), k = 2)
-ecoli_daley_fluman_cor_label <-
-    paste0("'", ecoli_daley_fluman_cor_label[1], "'~('",
-           ecoli_daley_fluman_cor_label[2], "'-'",
-           ecoli_daley_fluman_cor_label[3], "')")
+ecoli_daley_fluman_cor_label <- daley_fluman_cor %>%
+    mutate(t0 = specify_decimal(t0, k = 2L),
+           bca_low = specify_decimal(bca_low, k = 2L),
+           bca_high = specify_decimal(bca_high, k = 2L)) %>%
+    mutate_rows(perm_p < 0.01, t0 = t0 %>% paste0('**')) %>%
+    mutate(label = paste0("'", t0, "'~('", bca_low, "'-'", bca_high, "')")) %>%
+    select(label) %>% unlist
 
 p1_daley_fluman <- ggplot(ecoli_daley_fluman) + 
     geom_segment(aes(x = fluman_min, xend = fluman_max,
@@ -230,17 +112,17 @@ p1_daley_fluman <- ggplot(ecoli_daley_fluman) +
                      y = daley_min, yend = daley_max),
                  size = 0.3, alpha = 0.35) +
     geom_point(aes(x = fluman_avg, y = daley_avg), size = 0.25) +
-    annotate("text", x = 1, y = 7.45, label = ecoli_daley_fluman_cor_label,
+    annotate("text", x = 1L, y = 7.45, label = ecoli_daley_fluman_cor_label,
              size = 5*5/14, parse = TRUE) +
     scale_y_continuous(expand = c(0, 0)) +
     scale_x_continuous(expand = c(.01, 0)) + 
     ylab("Normalized GFP activity") +
     xlab("Normalized folded protein") + 
-    theme(axis.title.x = element_text(size = 7,
+    theme(axis.title.x = element_text(size = 7L,
                                       color = brewer.pal(3, "Dark2")[3]),
-              axis.title.y = element_text(size = 7,
+              axis.title.y = element_text(size = 7L,
                                           color = brewer.pal(3, "Dark2")[1]),
-              plot.margin = unit(c(0, 0, 0, .5), "mm"))
+              plot.margin = unit(c(0L, 0L, 0L, .5), "mm"))
 
 if (!write_out)
     p1_daley_fluman
@@ -250,88 +132,162 @@ if (!write_out)
 The following table displays metrics relating to the input data and training
 procedure.
 ```{r training_metrics}
-ecoli_stats <- ecoli_training %>% 
+ecoli_stats <- training_env$ecoli_training %>%
     group_by(cterm) %>%
     summarize(plates = length(unique(grouping)),
-              genes = length(unique(ID)),
-              observations = length(ID)) %>%
-    inner_join(ecoli_cor, by = c("cterm" = "cterm")) %>%
-    select(-disconcor, -concor) %>%
-    rename(total_pairs = total) %>% 
-    mutate(kendall = round(kendall, 3)) %>%
+              genes = length(unique(id)),
+              observations = n())
+    
+ecoli_stats <- training_env$best_performance %>%
+    select(cterm, total, kendall) %>%
+    inner_join(ecoli_stats, ., by = "cterm") %>%
+    mutate(kendall = specify_decimal(kendall, 3L)) %>%
     arrange(desc(plates)) %>%
-    data.frame
-
-rownames(ecoli_stats) <- ecoli_stats$cterm
-ecoli_stats <- ecoli_stats[, colnames(ecoli_stats) != "cterm"]
-
-colnames(ecoli_stats) <- c("Plates", "Genes", "Observations",
-                           "Total~Pairs", "Kendall's"~tau)
+    rename(`Plates` = plates,
+           `Genes` = genes,
+           `Observations` = observations,
+           `Total Pairs` = total,
+           `Kendall's~tau` = kendall) %>%
+    mutate_rows(cterm == "in", cterm = "C-terminal Cytoplasmic\n(GFP)") %>%
+    mutate_rows(cterm == "out", cterm = "C-terminal Periplasmic\n(PhoA)") %>%
+    mutate_rows(cterm == "fluman",
+                cterm = "C-terminal Cytoplasmic\n(GFP, folded protein)") %>%
+    as.data.frame %>%
+    column_to_rownames("cterm") %>%
+    t %>% 
+    as.data.frame
 
 table_theme <-  ttheme_default(
-    core = list(fg_params = list(fontsize = 6)),
-    colhead = list(fg_params = list(fontsize = 6, parse = TRUE)),
-    rowhead = list(fg_params = list(fontsize = 6, parse = TRUE)),
-    padding = unit(c(2, 3), "mm"))
+    core = list(fg_params = list(fontsize = 6L)),
+    colhead = list(fg_params = list(fontsize = 6L, parse = TRUE)),
+    rowhead = list(fg_params = list(fontsize = 6L, parse = TRUE)),
+    padding = unit(c(2L, 3L), "mm"))
 
-tab <- tableGrob(data.frame(t(ecoli_stats)), theme = table_theme, 
-                 cols = c("C-terminal Cytoplasmic\n(GFP)", 
-                          "C-terminal Periplasmic\n(PhoA)", 
-                          "C-terminal Cytoplasmic\n(GFP, folded protein)"))
-header <- tableGrob(data.frame(t(ecoli_stats))[1,1:2],
+tab <- tableGrob(ecoli_stats, theme = table_theme)
+header <- tableGrob(ecoli_stats[1L, 1:2],
                     theme = table_theme,
                     cols = c("Daley, Rapp, et al., 2005",
                              "Fluman, et al., 2014")) 
 
-p1_table <- gridExtra::combine(header[1,], tab, along = 2)
-p1_table$layout[1:6 , c("l", "r")] <- list(c(2, 4), c(3, 4))
+p1_table <- gridExtra::combine(header[1,], tab, along = 2L)
+p1_table$layout[1:6, c("l", "r")] <- list(c(2L, 4L), c(3L, 4L))
 
-ind <- find_cell(p1_table, 2, 2, "colhead-fg")
-p1_table$grobs[ind][[1]][["gp"]]$col <- brewer.pal(3, "Dark2")[[1]]
-ind <- find_cell(p1_table, 2, 3, "colhead-fg")
-p1_table$grobs[ind][[1]][["gp"]]$col <- brewer.pal(3, "Dark2")[[2]]
-ind <- find_cell(p1_table, 2, 4, "colhead-fg")
-p1_table$grobs[ind][[1]][["gp"]]$col <- brewer.pal(3, "Dark2")[[3]]
+# set colors
+ind <- find_cell(p1_table, 2L, 2L, "colhead-fg")
+p1_table$grobs[ind][[1L]][["gp"]]$col <- brewer.pal(3L, "Dark2")[[1L]]
+ind <- find_cell(p1_table, 2L, 3L, "colhead-fg")
+p1_table$grobs[ind][[1L]][["gp"]]$col <- brewer.pal(3L, "Dark2")[[2L]]
+ind <- find_cell(p1_table, 2L, 4L, "colhead-fg")
+p1_table$grobs[ind][[1L]][["gp"]]$col <- brewer.pal(3L, "Dark2")[[3L]]
+
+# remove italics
+ind <- find_cell(p1_table, 6L, 1L, "rowhead-fg")
+p1_table$grobs[ind][[1L]][["gp"]]$font <- 1L
+ind <- find_cell(p1_table, 7L, 1L, "rowhead-fg")
+p1_table$grobs[ind][[1L]][["gp"]]$font <- 1L
 
 if (!write_out)
     ggdraw(p1_table)
 ```
+
+
+# train a linear models for fun (might take this out for the publication)
+```
+lm_data <- ecoli_training_norm %>%
+    filter(cterm != "fluman") %>%
+    select(id, outcome) %>%
+    inner_join(daley_allstats_transformed, by = "id") %>%
+    select(-id)
+lm_data[is.na(lm_data)] <- 0
+lm_fit <- train(outcome ~ ., data = lm_data, 
+                 method = "lm")
+lm_data$scores <- predict(lm_fit, lm_data)
+cor(lm_data$outcome, lm_data$scores)
+
+fluman_data <- ecoli_training_norm %>%
+    filter(cterm == "fluman") %>%
+    select(id, outcome) %>%
+    inner_join(daley_allstats_transformed, by = "id") %>%
+    select(-id)
+fluman_data[is.na(fluman_data)] <- 0
+fluman_data$scores <- predict(lm_fit, fluman_data)
+cor(fluman_data$outcome, fluman_data$scores)
+```
+
+
+## Perform bootstrap estimates if calculation has not been saved of
+Spearman correlation coefficent confidence intervals and significance
+To avoid making unnecessary assumptions about the spread of the data, use
+bootstrap resampling to calculate confidence intervals and shuffling to 
+calculate p-values. Since we calculate $10^6$ bootstraps/shuffles, this takes
+a couple hours on a 32-core machine. To avoid running this everytime, the output
+is saved.
+```{r}
+ecoli_xy_cor <- training_env$ecoli_training %>%
+    filter(normalized, !is.na(score)) %>%
+    group_by(cterm) %>%
+    mutate(fn_prefix = paste0("training/ecoli_xy_boot_", cterm)) %>%
+    do(boot_perm(., fn_prefix = unique(.$fn_prefix),
+                 count = bs_count, cores = cores, force = TRUE))
+
+# need to calculate AUCs for each activity value
+# but within the "in" and "out" groupings
+ecoli_roc <- training_env$ecoli_training %>%
+    filter(normalized, !is.na(score)) %>%
+    group_by(cterm) %>%
+    do(calc_auc_roc(., grouping_col = "cterm", outcome_col = "outcome",
+                    score_col = "score", method = "roc"))
+ecoli_auc <- training_env$ecoli_training %>%
+    filter(normalized, !is.na(score)) %>%
+    group_by(cterm) %>%
+    do(calc_auc_roc(., grouping_col = "cterm", outcome_col = "outcome",
+                    score_col = "score", method = "auc"))
+```
+
 
 ## Normalized outcomes (from all plates) vs. the model's score
 This block plots the normalized experimental outcomes against the model's score.
 Additional text annotations shown on the published figure were added using
 Adobe Illustrator (after the fact).
 ```{r normalization_correlation}
-ecoli_xy_cor <- ecoli_xy_cor %>%
-    mutate_rows(cterm == "in",
-                lower95_boot = ecoli_xy_boot_in_ci$bca[4],
-                upper95_boot = ecoli_xy_boot_in_ci$bca[5]) %>%
-    mutate_rows(cterm == "out",
-                lower95_boot = ecoli_xy_boot_out_ci$bca[4],
-                upper95_boot = ecoli_xy_boot_out_ci$bca[5]) %>%
-    mutate_rows(cterm == "fluman",
-                lower95_boot = ecoli_xy_boot_fluman_ci$bca[4],
-                upper95_boot = ecoli_xy_boot_fluman_ci$bca[5]) %>%
-    mutate(lower95_boot = specify_decimal(lower95_boot, k = 2),
-           upper95_boot = specify_decimal(upper95_boot, k = 2),
-           ci_boot = paste0("'", spearman, "'~('",
-                            lower95_boot, "'-'", upper95_boot, "')"))
+ecoli_xy_cor_label <- training_env$ecoli_training %>%
+    filter(normalized, !is.na(score)) %>%
+    group_by(cterm) %>%
+    summarize(count = n(),
+              # label positions
+              x = min(score) + (max(score) - min(score))*(6/20),
+              y1 = max(outcome)*(1 - 1/50) - max(outcome)*(2/20),
+              y2 = y1 - max(outcome)*(2/20)) %>% 
+    inner_join(ecoli_xy_cor, by = "cterm") %>%
+    mutate(t0 = specify_decimal(t0, k = 2L),
+           bca_low = specify_decimal(bca_low, k = 2L),
+           bca_high = specify_decimal(bca_high, k = 2L)) %>%
+    mutate_rows(perm_p < 0.01, t0 = t0 %>% paste0('**')) %>%
+    mutate(label = paste0("'", t0, "'~('", bca_low, "'-'", bca_high, "')"),
+           cterm = factor(cterm, c("in", "out", "fluman"),
+                          ordered = TRUE)) 
 
-p1_ecoli_xy <- ggplot(ecoli_training,
-                      aes(x = ml21, y = outcome, color = cterm)) +
+p1_ecoli_xy <- training_env$ecoli_training %>%
+    filter(normalized, !is.na(score)) %>%
+    mutate(cterm = factor(cterm, c("in", "out", "fluman"),
+                  ordered = TRUE)) %>%
+    ggplot(aes(x = score, y = outcome, color = cterm)) +
     stat_summary(fun.ymin = min, fun.ymax = max, geom = "linerange",
                  size = 0.3, alpha = 0.35, color = "black") +
     stat_summary(fun.y = mean, geom = "point", size = .25, alpha = 0.7) +
-    geom_text(aes(x = -2, y = y, color = cterm, label = ci_boot),
-              size = 5*5/14, parse = TRUE, data = ecoli_xy_cor) +
-    scale_y_continuous(expand = c(.01, 0), breaks = c(0:3, 4, 6, 8)) +
+    geom_text(aes(x = -2, y = y1, label = count), color = "black",
+              size = 5*5/14, data = ecoli_xy_cor_label) +
+    geom_text(aes(x = -2, y = y2, color = cterm, label = label),
+              size = 5*5/14, parse = TRUE, data = ecoli_xy_cor_label) +
+    scale_y_continuous(expand = c(.01, 0), breaks = c(0:3, 4L, 6L, 8L)) +
+    expand_limits(ymin = 0) + 
     scale_x_continuous(expand = c(.01, 0.01)) +
     scale_color_manual(values = brewer.pal(3, "Dark2")) + 
     ylab("Mean Normalized Activity") +
     xlab(expression("SVM" ^ "rank"*~"score")) + 
     theme(legend.position = "None",
           strip.text = element_blank(),
-          plot.margin = unit(c(0, 0, 0, 0), "mm")) +
+          plot.margin = unit(c(0L, 0L, 0L, 0L), "mm")) +
     facet_wrap(~cterm, ncol = 1, scales = "free_y")
 
 p1_ecoli_xy <- ggplotGrob(p1_ecoli_xy)
@@ -350,44 +306,55 @@ any percentile can be plotted. the $50^{th}$ and $97^{th}$ seem to show an
 interesting behavior on the all-AUC plot (the following figure), but there
 potentially are many others that could be interesting!
 ```{r training_roc}
-ecoli_selected_auc <- filter(ecoli_roc, percentile %in% c(50, 97)) %>%
-    mutate(cterm = factor(cterm)) %>%
-    select(cterm, percentile, lower95, auc, upper95, pos_count, count) %>%
-    distinct() %>%
-    mutate(auc = specify_decimal(auc*100, k = 1),
-           lower95 = specify_decimal(lower95*100, k = 1),
-           upper95 = specify_decimal(upper95*100, k = 1),
-           ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')"))
+ecoli_selected_auc <- ecoli_auc %>% 
+    mutate(group = factor(group, levels = c("in", "out", "fluman"),
+                          ordered = TRUE)) %>%
+    group_by(group) %>%
+    filter(find_closest(outcome_percentile, c(25L, 75L))) %>%
+    mutate(outcome_percentile = outcome_percentile %>% round %>% as.integer,
+           auc = specify_decimal(auc*100),
+           lower95 = specify_decimal(lower95*100),
+           upper95 = specify_decimal(upper95*100),
+           ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')")) %>%
+    ungroup %>%
+    arrange(outcome_percentile, group)
 
 ecoli_selected_counts <- ecoli_selected_auc %>%
-    group_by(percentile) %>%
+    group_by(outcome_percentile) %>%
     summarize(count = paste(pos_count, collapse = ","))
 
-p1_ecoli_roc <- ggplot(filter(ecoli_roc, percentile %in% c(50, 97))) +
-    geom_abline(slope = 1, intercept = 0,
+p1_ecoli_roc <- ecoli_roc %>% 
+    mutate(group = factor(group, levels = c("in", "out", "fluman"),
+                          ordered = TRUE)) %>%
+    group_by(group) %>%
+    filter(find_closest(outcome_percentile, c(25L, 75L))) %>%
+    mutate(outcome_percentile =
+               outcome_percentile %>% round %>% as.integer) %>%
+    ggplot() +
+    geom_abline(slope = 1L, intercept = 0L,
                 linetype = "dashed", color = "darkgrey") +
-    geom_path(aes(x = 1 - specificities, y = sensitivities, color = cterm)) +
-    geom_text(aes(x = .75, y = .8*(.4 - as.numeric(cterm)/10) - .03,
-                  color = cterm, label = ci),
+    geom_path(aes(x = 1 - specificities, y = sensitivities, color = group)) +
+    geom_text(aes(x = .75, y = .8*(.4 - as.numeric(group)/10) - .03,
+                  color = group, label = ci),
               size = 5*5/14, parse = TRUE, data = ecoli_selected_auc) +
-    # geom_text(aes(x = .75, y = .29, label = counts),
-    #           size = 5*5/14, parse = FALSE, data = ecoli_selected_counts) +
-    scale_y_continuous(expand = c(0, 0), labels = function(x) x*100) +
-    scale_x_continuous(expand = c(0, 0), labels = function(x) x*100) +
+    geom_text(aes(x = .75, y = .29, label = count),
+              size = 5*5/14, parse = FALSE, data = ecoli_selected_counts) +
+    scale_y_continuous(expand = c(0L, 0L), labels = function(x) x*100) +
+    scale_x_continuous(expand = c(0L, 0L), labels = function(x) x*100) +
     xlab("False Positive Rate") +
     ylab("True Positive Rate") +
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
-    facet_wrap(~percentile, nrow = 1, scales = "free") +
+    scale_color_manual(values = brewer.pal(3L, "Dark2")) +
+    facet_wrap(~outcome_percentile, nrow = 1L, scales = "free") +
     theme(legend.position = "None",
-          aspect.ratio = 1,
-          plot.margin = unit(c(0, 0, 0, 0), "mm"),
+          aspect.ratio = 1L,
+          plot.margin = unit(c(0L, 0L, 0L, 0L), "mm"),
           strip.background = element_blank())
 
 p1_ecoli_roc <- ggplotGrob(p1_ecoli_roc)
-p1_ecoli_roc$grobs$strip_t1$grobs[[1]]$children[[2]]$children[[1]]$label <-
-    expression(50 ^ "th"*~"percentile")
-p1_ecoli_roc$grobs$strip_t2$grobs[[1]]$children[[2]]$children[[1]]$label <-
-    expression(97 ^ "th"*~"percentile")
+p1_ecoli_roc$grobs$strip_t1$grobs[[1L]]$children[[2L]]$children[[1L]]$label <-
+    expression(25L ^ "th"*~"percentile")
+p1_ecoli_roc$grobs$strip_t2$grobs[[1L]]$children[[2L]]$children[[1L]]$label <-
+    expression(75L ^ "th"*~"percentile")
 
 if (!write_out)
     ggdraw(p1_ecoli_roc)
@@ -399,17 +366,18 @@ defined via many different thresholds. To assess the degree of predictive
 performance, the AUC of the ROCs for each one of these cutoffs is plotted.
 ```{r training_auc}
 # all possible cutoffs with AUCs
-p1_ecoli_auc <-
-    ggplot(ecoli_auc, aes(x = response_threshold_percentile, color = cterm)) +
+p1_ecoli_auc <- ecoli_auc %>%
+    mutate(group = factor(group, levels = c("in", "out", "fluman"),
+                          ordered = TRUE)) %>%
+    ggplot(aes(x = outcome_percentile, color = group)) +
     geom_hline(aes(yintercept = .5), linetype = "dashed", color = "darkgrey") +
     geom_line(aes(y = auc)) +
-    scale_y_continuous(expand = c(0, 0), breaks = seq(0, 1, .1),
-                       limits = c(.48, .90), labels = function(x) x*100) +
-    scale_x_continuous(expand = c(0, 0), breaks = seq(0, 1, .25),
-                       limits = c(0, 1), labels = function(x) x*100) +
+    scale_y_continuous(expand = c(0L, 0L), breaks = seq(0, 1, .1),
+                       labels = function(x) x*100) +
+    scale_x_continuous(expand = c(0L, 0L), breaks = seq(0L, 100L, 25L)) +
     ylab("AUC") +
-    xlab("Activity Percentile") +
-    scale_color_manual(values = brewer.pal(3, "Dark2")) +
+    xlab("Activity Percentile Rank") +
+    scale_color_manual(values = brewer.pal(3L, "Dark2")) +
     theme(legend.position = "None")
 
 if (!write_out)
@@ -426,24 +394,24 @@ p1_main <- ggdraw() +
     draw_plot(p1_table, x = .21, y = 0.51, width = 1 - .47, height = 0.48) +
     draw_plot(p1_ecoli_xy, x = .75, y = 0, width = .24, height = .98) +
     draw_plot(plot_grid(p1_ecoli_roc, p1_ecoli_auc,
-                        nrow = 1, rel_widths = c(1, 1)),
+                        nrow = 1L, rel_widths = c(1L, 1L)),
               x = 0, y = 0, width = .75, height = .5) + 
     draw_plot_label(letters[1:5],
-                    c(0, 0.26, .75, 0, 0.38), c(1, 1, 1, 0.52, 0.52), size = 8)
+                    c(0, 0.26, .75, 0, 0.38), c(1, 1, 1, 0.52, 0.52), size = 8L)
 
 if (write_out) {
-    save_plot(filename = "plots/fig1_w_panels.pdf", 
+    save_plot(filename = "plots/fig1_w_panels.pdf",
               plot = p1_main,
-              base_width = uconv(183, "mm", "in", "Length"),
-              base_height = 3)
+              base_width = uconv(183L, "mm", "in", "Length"),
+              base_height = 3L)
 } else {
     p1_main
 }
 ```
 
 ## Save environment for future reference
+No variables need to be kept. Since bootstraps are recorded to file at the time
+they are calculated.
 ```{r session}
-if (write_out)
-    save.image("fig_training.Rdata")
 sessionInfo()
 ```
