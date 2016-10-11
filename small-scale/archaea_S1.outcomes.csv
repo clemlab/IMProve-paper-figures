@@ -1,0 +1,385 @@
+Protein,E. coli strain,Vector,Measurement,Outcome
+SSO2938,C43(DE3),pTTQ18,WB/Gel,0
+SSO2528,C43(DE3),pTTQ18,WB/Gel,1
+SSO2042,C43(DE3),pTTQ18,WB/Gel,5
+SSO1665,C43(DE3),pTTQ18,WB/Gel,0
+Saci2039,C43(DE3),pTTQ18,WB/Gel,0
+MA1518,C43(DE3),pTTQ18,WB/Gel,10
+MJ1319,C43(DE3),pTTQ18,WB/Gel,0
+Mevan1511,C43(DE3),pTTQ18,WB/Gel,5
+MMP0681,C43(DE3),pTTQ18,WB/Gel,5
+Hbor39700,C43(DE3),pTTQ18,WB/Gel,10
+AF2014,C43(DE3),pTTQ18,WB/Gel,0
+Ta0252,C43(DE3),pTTQ18,WB/Gel,n.c.
+Msed1117,C43(DE3),pTTQ18,WB/Gel,0
+pNG7043,C43(DE3),pTTQ18,WB/Gel,10
+Saci1848,C43(DE3),pTTQ18,WB/Gel,n.t.
+SSO2938,C43(DE3),pET52b(+),WB/Gel,0
+SSO2528,C43(DE3),pET52b(+),WB/Gel,1
+SSO2042,C43(DE3),pET52b(+),WB/Gel,5
+SSO1665,C43(DE3),pET52b(+),WB/Gel,1
+Saci2039,C43(DE3),pET52b(+),WB/Gel,1
+MA1518,C43(DE3),pET52b(+),WB/Gel,10
+MJ1319,C43(DE3),pET52b(+),WB/Gel,0
+Mevan1511,C43(DE3),pET52b(+),WB/Gel,5
+MMP0681,C43(DE3),pET52b(+),WB/Gel,5
+Hbor39700,C43(DE3),pET52b(+),WB/Gel,10
+AF2014,C43(DE3),pET52b(+),WB/Gel,0
+Ta0252,C43(DE3),pET52b(+),WB/Gel,1
+Msed1117,C43(DE3),pET52b(+),WB/Gel,0
+pNG7043,C43(DE3),pET52b(+),WB/Gel,n.c.
+Saci1848,C43(DE3),pET52b(+),WB/Gel,n.c.
+SSO2938,C43(DE3),pWarf(-),WB/Gel,0
+SSO2528,C43(DE3),pWarf(-),WB/Gel,0
+SSO2042,C43(DE3),pWarf(-),WB/Gel,0
+SSO1665,C43(DE3),pWarf(-),WB/Gel,0
+Saci2039,C43(DE3),pWarf(-),WB/Gel,0
+MA1518,C43(DE3),pWarf(-),WB/Gel,0
+MJ1319,C43(DE3),pWarf(-),WB/Gel,0
+Mevan1511,C43(DE3),pWarf(-),WB/Gel,0
+MMP0681,C43(DE3),pWarf(-),WB/Gel,0
+Hbor39700,C43(DE3),pWarf(-),WB/Gel,0
+AF2014,C43(DE3),pWarf(-),WB/Gel,0
+Ta0252,C43(DE3),pWarf(-),WB/Gel,0
+Msed1117,C43(DE3),pWarf(-),WB/Gel,n.c.
+pNG7043,C43(DE3),pWarf(-),WB/Gel,0
+Saci1848,C43(DE3),pWarf(-),WB/Gel,n.c.
+SSO2938,BL21 Star,pTTQ18,WB/Gel,0
+SSO2528,BL21 Star,pTTQ18,WB/Gel,1
+SSO2042,BL21 Star,pTTQ18,WB/Gel,5
+SSO1665,BL21 Star,pTTQ18,WB/Gel,0
+Saci2039,BL21 Star,pTTQ18,WB/Gel,0
+MA1518,BL21 Star,pTTQ18,WB/Gel,10
+MJ1319,BL21 Star,pTTQ18,WB/Gel,0
+Mevan1511,BL21 Star,pTTQ18,WB/Gel,5
+MMP0681,BL21 Star,pTTQ18,WB/Gel,5
+Hbor39700,BL21 Star,pTTQ18,WB/Gel,10
+AF2014,BL21 Star,pTTQ18,WB/Gel,0
+Ta0252,BL21 Star,pTTQ18,WB/Gel,n.c.
+Msed1117,BL21 Star,pTTQ18,WB/Gel,0
+pNG7043,BL21 Star,pTTQ18,WB/Gel,10
+Saci1848,BL21 Star,pTTQ18,WB/Gel,1
+SSO2938,BL21 Star,pET52b(+),WB/Gel,5
+SSO2528,BL21 Star,pET52b(+),WB/Gel,1
+SSO2042,BL21 Star,pET52b(+),WB/Gel,5
+SSO1665,BL21 Star,pET52b(+),WB/Gel,0
+Saci2039,BL21 Star,pET52b(+),WB/Gel,1
+MA1518,BL21 Star,pET52b(+),WB/Gel,10
+MJ1319,BL21 Star,pET52b(+),WB/Gel,0
+Mevan1511,BL21 Star,pET52b(+),WB/Gel,5
+MMP0681,BL21 Star,pET52b(+),WB/Gel,1
+Hbor39700,BL21 Star,pET52b(+),WB/Gel,10
+AF2014,BL21 Star,pET52b(+),WB/Gel,0
+Ta0252,BL21 Star,pET52b(+),WB/Gel,1
+Msed1117,BL21 Star,pET52b(+),WB/Gel,1
+pNG7043,BL21 Star,pET52b(+),WB/Gel,n.c.
+Saci1848,BL21 Star,pET52b(+),WB/Gel,n.c.
+SSO2938,BL21 Star,pWarf(-),WB/Gel,0
+SSO2528,BL21 Star,pWarf(-),WB/Gel,0
+SSO2042,BL21 Star,pWarf(-),WB/Gel,0
+SSO1665,BL21 Star,pWarf(-),WB/Gel,0
+Saci2039,BL21 Star,pWarf(-),WB/Gel,1
+MA1518,BL21 Star,pWarf(-),WB/Gel,0
+MJ1319,BL21 Star,pWarf(-),WB/Gel,0
+Mevan1511,BL21 Star,pWarf(-),WB/Gel,1
+MMP0681,BL21 Star,pWarf(-),WB/Gel,1
+Hbor39700,BL21 Star,pWarf(-),WB/Gel,10
+AF2014,BL21 Star,pWarf(-),WB/Gel,0
+Ta0252,BL21 Star,pWarf(-),WB/Gel,0
+Msed1117,BL21 Star,pWarf(-),WB/Gel,n.c.
+pNG7043,BL21 Star,pWarf(-),WB/Gel,10
+Saci1848,BL21 Star,pWarf(-),WB/Gel,n.c.
+SSO2042,C43(DE3),pTTQ18,Scanning Densitometry of SDS-PAGE (%),2
+Mevan1511,C43(DE3),pET52b(+),Scanning Densitometry of SDS-PAGE (%),2
+MMP0681,C43(DE3),pET52b(+),Scanning Densitometry of SDS-PAGE (%),2
+MMP0681,C43(DE3),pTTQ18,Scanning Densitometry of SDS-PAGE (%),3
+SSO2042,C43(DE3),pET52b(+),Scanning Densitometry of SDS-PAGE (%),3
+SSO2042,BL21 Star,pTTQ18,Scanning Densitometry of SDS-PAGE (%),3
+SSO2042,BL21 Star,pET52b(+),Scanning Densitometry of SDS-PAGE (%),3
+Mevan1511,BL21 Star,pET52b(+),Scanning Densitometry of SDS-PAGE (%),3
+MMP0681,BL21 Star,pTTQ18,Scanning Densitometry of SDS-PAGE (%),4
+Mevan1511,BL21 Star,pTTQ18,Scanning Densitometry of SDS-PAGE (%),5
+Mevan1511,C43(DE3),pTTQ18,Scanning Densitometry of SDS-PAGE (%),6
+SSO2938,BL21 Star,pET52b(+),Scanning Densitometry of SDS-PAGE (%),7
+Hbor39700,BL21 Star,pWarf(-),Scanning Densitometry of SDS-PAGE (%),10
+Hbor39700,C43(DE3),pET52b(+),Scanning Densitometry of SDS-PAGE (%),12
+Hbor39700,BL21 Star,pTTQ18,Scanning Densitometry of SDS-PAGE (%),12
+pNG7043,BL21 Star,pTTQ18,Scanning Densitometry of SDS-PAGE (%),15
+Hbor39700,BL21 Star,pET52b(+),Scanning Densitometry of SDS-PAGE (%),15
+Hbor39700,C43(DE3),pTTQ18,Scanning Densitometry of SDS-PAGE (%),16
+pNG7043,BL21 Star,pWarf(-),Scanning Densitometry of SDS-PAGE (%),21
+MA1518,BL21 Star,pTTQ18,Scanning Densitometry of SDS-PAGE (%),29
+pNG7043,C43(DE3),pTTQ18,Scanning Densitometry of SDS-PAGE (%),30
+MA1518,BL21 Star,pET52b(+),Scanning Densitometry of SDS-PAGE (%),31
+MA1518,C43(DE3),pET52b(+),Scanning Densitometry of SDS-PAGE (%),34
+MA1518,C43(DE3),pTTQ18,Scanning Densitometry of SDS-PAGE (%),35
+SSO2938,C43(DE3),pTTQ18,Induction OD,0.592
+SSO2938,C43(DE3),pET52b(+),Induction OD,0.435
+SSO2938,C43(DE3),pWarf(-),Induction OD,0.616
+SSO2528,C43(DE3),pTTQ18,Induction OD,0.45
+SSO2528,C43(DE3),pET52b(+),Induction OD,0.485
+SSO2528,C43(DE3),pWarf(-),Induction OD,0.42
+SSO2042,C43(DE3),pTTQ18,Induction OD,0.59
+SSO2042,C43(DE3),pET52b(+),Induction OD,0.665
+SSO2042,C43(DE3),pWarf(-),Induction OD,0.615
+SSO1665,C43(DE3),pTTQ18,Induction OD,0.524
+SSO1665,C43(DE3),pET52b(+),Induction OD,0.6
+SSO1665,C43(DE3),pWarf(-),Induction OD,0.572
+Saci2039,C43(DE3),pTTQ18,Induction OD,0.415
+Saci2039,C43(DE3),pET52b(+),Induction OD,0.455
+Saci2039,C43(DE3),pWarf(-),Induction OD,0.43
+MA1518,C43(DE3),pTTQ18,Induction OD,0.668
+MA1518,C43(DE3),pET52b(+),Induction OD,0.52
+MA1518,C43(DE3),pWarf(-),Induction OD,0.596
+MJ1319,C43(DE3),pTTQ18,Induction OD,0.556
+MJ1319,C43(DE3),pET52b(+),Induction OD,0.716
+MJ1319,C43(DE3),pWarf(-),Induction OD,0.612
+Mevan1511,C43(DE3),pTTQ18,Induction OD,0.47
+Mevan1511,C43(DE3),pET52b(+),Induction OD,0.49
+Mevan1511,C43(DE3),pWarf(-),Induction OD,0.505
+MMP0681,C43(DE3),pTTQ18,Induction OD,0.505
+MMP0681,C43(DE3),pET52b(+),Induction OD,0.52
+MMP0681,C43(DE3),pWarf(-),Induction OD,0.645
+Hbor39700,C43(DE3),pTTQ18,Induction OD,0.6
+Hbor39700,C43(DE3),pET52b(+),Induction OD,0.795
+Hbor39700,C43(DE3),pWarf(-),Induction OD,0.48
+AF2014,C43(DE3),pTTQ18,Induction OD,0.605
+AF2014,C43(DE3),pET52b(+),Induction OD,0.605
+AF2014,C43(DE3),pWarf(-),Induction OD,0.62
+Ta0252,C43(DE3),pTTQ18,Induction OD,n.c.
+Ta0252,C43(DE3),pET52b(+),Induction OD,0.588
+Ta0252,C43(DE3),pWarf(-),Induction OD,0.516
+Msed1117,C43(DE3),pTTQ18,Induction OD,0.65
+Msed1117,C43(DE3),pET52b(+),Induction OD,0.6
+Msed1117,C43(DE3),pWarf(-),Induction OD,n.c.
+pNG7043,C43(DE3),pTTQ18,Induction OD,0.5
+pNG7043,C43(DE3),pET52b(+),Induction OD,n.c.
+pNG7043,C43(DE3),pWarf(-),Induction OD,0.612
+Saci1848,C43(DE3),pTTQ18,Induction OD,n.c.
+Saci1848,C43(DE3),pET52b(+),Induction OD,n.c.
+Saci1848,C43(DE3),pWarf(-),Induction OD,n.c.
+SSO2938,C43(DE3),pTTQ18,Harvesting OD,1.648
+SSO2938,C43(DE3),pET52b(+),Harvesting OD,2.125
+SSO2938,C43(DE3),pWarf(-),Harvesting OD,1.764
+SSO2528,C43(DE3),pTTQ18,Harvesting OD,0.59
+SSO2528,C43(DE3),pET52b(+),Harvesting OD,2.09
+SSO2528,C43(DE3),pWarf(-),Harvesting OD,1.3
+SSO2042,C43(DE3),pTTQ18,Harvesting OD,1.215
+SSO2042,C43(DE3),pET52b(+),Harvesting OD,1.82
+SSO2042,C43(DE3),pWarf(-),Harvesting OD,2.135
+SSO1665,C43(DE3),pTTQ18,Harvesting OD,1.012
+SSO1665,C43(DE3),pET52b(+),Harvesting OD,1.988
+SSO1665,C43(DE3),pWarf(-),Harvesting OD,1.932
+Saci2039,C43(DE3),pTTQ18,Harvesting OD,0.49
+Saci2039,C43(DE3),pET52b(+),Harvesting OD,2.2
+Saci2039,C43(DE3),pWarf(-),Harvesting OD,2.165
+MA1518,C43(DE3),pTTQ18,Harvesting OD,1.696
+MA1518,C43(DE3),pET52b(+),Harvesting OD,1.429
+MA1518,C43(DE3),pWarf(-),Harvesting OD,2.128
+MJ1319,C43(DE3),pTTQ18,Harvesting OD,0.8
+MJ1319,C43(DE3),pET52b(+),Harvesting OD,1.992
+MJ1319,C43(DE3),pWarf(-),Harvesting OD,1.742
+Mevan1511,C43(DE3),pTTQ18,Harvesting OD,0.9
+Mevan1511,C43(DE3),pET52b(+),Harvesting OD,1.155
+Mevan1511,C43(DE3),pWarf(-),Harvesting OD,1.225
+MMP0681,C43(DE3),pTTQ18,Harvesting OD,0.89
+MMP0681,C43(DE3),pET52b(+),Harvesting OD,1.3
+MMP0681,C43(DE3),pWarf(-),Harvesting OD,2.295
+Hbor39700,C43(DE3),pTTQ18,Harvesting OD,2.05
+Hbor39700,C43(DE3),pET52b(+),Harvesting OD,2.415
+Hbor39700,C43(DE3),pWarf(-),Harvesting OD,1.27
+AF2014,C43(DE3),pTTQ18,Harvesting OD,2.335
+AF2014,C43(DE3),pET52b(+),Harvesting OD,2.755
+AF2014,C43(DE3),pWarf(-),Harvesting OD,2.24
+Ta0252,C43(DE3),pTTQ18,Harvesting OD,n.c.
+Ta0252,C43(DE3),pET52b(+),Harvesting OD,2.008
+Ta0252,C43(DE3),pWarf(-),Harvesting OD,1.636
+Msed1117,C43(DE3),pTTQ18,Harvesting OD,1.8
+Msed1117,C43(DE3),pET52b(+),Harvesting OD,2.55
+Msed1117,C43(DE3),pWarf(-),Harvesting OD,n.c.
+pNG7043,C43(DE3),pTTQ18,Harvesting OD,1.788
+pNG7043,C43(DE3),pET52b(+),Harvesting OD,n.c.
+pNG7043,C43(DE3),pWarf(-),Harvesting OD,2.232
+Saci1848,C43(DE3),pTTQ18,Harvesting OD,n.c.
+Saci1848,C43(DE3),pET52b(+),Harvesting OD,n.c.
+Saci1848,C43(DE3),pWarf(-),Harvesting OD,n.c.
+SSO2938,C43(DE3),pTTQ18,dOD600,2.783783784
+SSO2938,C43(DE3),pET52b(+),dOD600,4.885057471
+SSO2938,C43(DE3),pWarf(-),dOD600,2.863636364
+SSO2528,C43(DE3),pTTQ18,dOD600,1.311111111
+SSO2528,C43(DE3),pET52b(+),dOD600,4.309278351
+SSO2528,C43(DE3),pWarf(-),dOD600,3.095238095
+SSO2042,C43(DE3),pTTQ18,dOD600,2.059322034
+SSO2042,C43(DE3),pET52b(+),dOD600,2.736842105
+SSO2042,C43(DE3),pWarf(-),dOD600,3.471544715
+SSO1665,C43(DE3),pTTQ18,dOD600,1.93129771
+SSO1665,C43(DE3),pET52b(+),dOD600,3.313333333
+SSO1665,C43(DE3),pWarf(-),dOD600,3.377622378
+Saci2039,C43(DE3),pTTQ18,dOD600,1.180722892
+Saci2039,C43(DE3),pET52b(+),dOD600,4.835164835
+Saci2039,C43(DE3),pWarf(-),dOD600,5.034883721
+MA1518,C43(DE3),pTTQ18,dOD600,2.538922156
+MA1518,C43(DE3),pET52b(+),dOD600,2.748076923
+MA1518,C43(DE3),pWarf(-),dOD600,3.570469799
+MJ1319,C43(DE3),pTTQ18,dOD600,1.438848921
+MJ1319,C43(DE3),pET52b(+),dOD600,2.782122905
+MJ1319,C43(DE3),pWarf(-),dOD600,2.846405229
+Mevan1511,C43(DE3),pTTQ18,dOD600,1.914893617
+Mevan1511,C43(DE3),pET52b(+),dOD600,2.357142857
+Mevan1511,C43(DE3),pWarf(-),dOD600,2.425742574
+MMP0681,C43(DE3),pTTQ18,dOD600,1.762376238
+MMP0681,C43(DE3),pET52b(+),dOD600,2.5
+MMP0681,C43(DE3),pWarf(-),dOD600,3.558139535
+Hbor39700,C43(DE3),pTTQ18,dOD600,3.416666667
+Hbor39700,C43(DE3),pET52b(+),dOD600,3.037735849
+Hbor39700,C43(DE3),pWarf(-),dOD600,2.645833333
+AF2014,C43(DE3),pTTQ18,dOD600,3.859504132
+AF2014,C43(DE3),pET52b(+),dOD600,4.553719008
+AF2014,C43(DE3),pWarf(-),dOD600,3.612903226
+Ta0252,C43(DE3),pTTQ18,dOD600,n.c.
+Ta0252,C43(DE3),pET52b(+),dOD600,3.414965986
+Ta0252,C43(DE3),pWarf(-),dOD600,3.170542636
+Msed1117,C43(DE3),pTTQ18,dOD600,2.769230769
+Msed1117,C43(DE3),pET52b(+),dOD600,4.25
+Msed1117,C43(DE3),pWarf(-),dOD600,n.c.
+pNG7043,C43(DE3),pTTQ18,dOD600,3.576
+pNG7043,C43(DE3),pET52b(+),dOD600,n.c.
+pNG7043,C43(DE3),pWarf(-),dOD600,3.647058824
+Saci1848,C43(DE3),pTTQ18,dOD600,n.c.
+Saci1848,C43(DE3),pET52b(+),dOD600,n.c.
+Saci1848,C43(DE3),pWarf(-),dOD600,n.c.
+SSO2938,BL21 Star,pTTQ18,Induction OD,0.668
+SSO2938,BL21 Star,pET52b(+),Induction OD,0.584
+SSO2938,BL21 Star,pWarf(-),Induction OD,0.716
+SSO2528,BL21 Star,pTTQ18,Induction OD,0.585
+SSO2528,BL21 Star,pET52b(+),Induction OD,0.72
+SSO2528,BL21 Star,pWarf(-),Induction OD,0.535
+SSO2042,BL21 Star,pTTQ18,Induction OD,0.58
+SSO2042,BL21 Star,pET52b(+),Induction OD,0.605
+SSO2042,BL21 Star,pWarf(-),Induction OD,0.64
+SSO1665,BL21 Star,pTTQ18,Induction OD,0.72
+SSO1665,BL21 Star,pET52b(+),Induction OD,0.716
+SSO1665,BL21 Star,pWarf(-),Induction OD,0.636
+Saci2039,BL21 Star,pTTQ18,Induction OD,0.425
+Saci2039,BL21 Star,pET52b(+),Induction OD,0.435
+Saci2039,BL21 Star,pWarf(-),Induction OD,0.43
+MA1518,BL21 Star,pTTQ18,Induction OD,0.556
+MA1518,BL21 Star,pET52b(+),Induction OD,0.504
+MA1518,BL21 Star,pWarf(-),Induction OD,0.752
+MJ1319,BL21 Star,pTTQ18,Induction OD,0.588
+MJ1319,BL21 Star,pET52b(+),Induction OD,0.56
+MJ1319,BL21 Star,pWarf(-),Induction OD,0.804
+Mevan1511,BL21 Star,pTTQ18,Induction OD,0.475
+Mevan1511,BL21 Star,pET52b(+),Induction OD,0.62
+Mevan1511,BL21 Star,pWarf(-),Induction OD,0.625
+MMP0681,BL21 Star,pTTQ18,Induction OD,0.72
+MMP0681,BL21 Star,pET52b(+),Induction OD,0.535
+MMP0681,BL21 Star,pWarf(-),Induction OD,0.48
+Hbor39700,BL21 Star,pTTQ18,Induction OD,0.44
+Hbor39700,BL21 Star,pET52b(+),Induction OD,0.53
+Hbor39700,BL21 Star,pWarf(-),Induction OD,0.5
+AF2014,BL21 Star,pTTQ18,Induction OD,0.635
+AF2014,BL21 Star,pET52b(+),Induction OD,0.605
+AF2014,BL21 Star,pWarf(-),Induction OD,0.59
+Ta0252,BL21 Star,pTTQ18,Induction OD,n.c.
+Ta0252,BL21 Star,pET52b(+),Induction OD,0.728
+Ta0252,BL21 Star,pWarf(-),Induction OD,0.616
+Msed1117,BL21 Star,pTTQ18,Induction OD,0.7
+Msed1117,BL21 Star,pET52b(+),Induction OD,0.6
+Msed1117,BL21 Star,pWarf(-),Induction OD,n.c.
+pNG7043,BL21 Star,pTTQ18,Induction OD,0.528
+pNG7043,BL21 Star,pET52b(+),Induction OD,n.c.
+pNG7043,BL21 Star,pWarf(-),Induction OD,0.604
+Saci1848,BL21 Star,pTTQ18,Induction OD,0.8
+Saci1848,BL21 Star,pET52b(+),Induction OD,n.c.
+Saci1848,BL21 Star,pWarf(-),Induction OD,n.c.
+SSO2938,BL21 Star,pTTQ18,Harvesting OD,0.68
+SSO2938,BL21 Star,pET52b(+),Harvesting OD,1.008
+SSO2938,BL21 Star,pWarf(-),Harvesting OD,0.788
+SSO2528,BL21 Star,pTTQ18,Harvesting OD,0.73
+SSO2528,BL21 Star,pET52b(+),Harvesting OD,0.91
+SSO2528,BL21 Star,pWarf(-),Harvesting OD,0.45
+SSO2042,BL21 Star,pTTQ18,Harvesting OD,1.19
+SSO2042,BL21 Star,pET52b(+),Harvesting OD,0.62
+SSO2042,BL21 Star,pWarf(-),Harvesting OD,0.595
+SSO1665,BL21 Star,pTTQ18,Harvesting OD,2.024
+SSO1665,BL21 Star,pET52b(+),Harvesting OD,2.196
+SSO1665,BL21 Star,pWarf(-),Harvesting OD,2.196
+Saci2039,BL21 Star,pTTQ18,Harvesting OD,0.465
+Saci2039,BL21 Star,pET52b(+),Harvesting OD,0.64
+Saci2039,BL21 Star,pWarf(-),Harvesting OD,0.435
+MA1518,BL21 Star,pTTQ18,Harvesting OD,1.312
+MA1518,BL21 Star,pET52b(+),Harvesting OD,1.212
+MA1518,BL21 Star,pWarf(-),Harvesting OD,1.52
+MJ1319,BL21 Star,pTTQ18,Harvesting OD,0.736
+MJ1319,BL21 Star,pET52b(+),Harvesting OD,0.66
+MJ1319,BL21 Star,pWarf(-),Harvesting OD,1.656
+Mevan1511,BL21 Star,pTTQ18,Harvesting OD,1.085
+Mevan1511,BL21 Star,pET52b(+),Harvesting OD,1.025
+Mevan1511,BL21 Star,pWarf(-),Harvesting OD,1.035
+MMP0681,BL21 Star,pTTQ18,Harvesting OD,1.17
+MMP0681,BL21 Star,pET52b(+),Harvesting OD,0.975
+MMP0681,BL21 Star,pWarf(-),Harvesting OD,0.675
+Hbor39700,BL21 Star,pTTQ18,Harvesting OD,1.81
+Hbor39700,BL21 Star,pET52b(+),Harvesting OD,1.415
+Hbor39700,BL21 Star,pWarf(-),Harvesting OD,1.16
+AF2014,BL21 Star,pTTQ18,Harvesting OD,2.09
+AF2014,BL21 Star,pET52b(+),Harvesting OD,1.045
+AF2014,BL21 Star,pWarf(-),Harvesting OD,0.63
+Ta0252,BL21 Star,pTTQ18,Harvesting OD,n.c.
+Ta0252,BL21 Star,pET52b(+),Harvesting OD,1.304
+Ta0252,BL21 Star,pWarf(-),Harvesting OD,0.708
+Msed1117,BL21 Star,pTTQ18,Harvesting OD,1.45
+Msed1117,BL21 Star,pET52b(+),Harvesting OD,1
+Msed1117,BL21 Star,pWarf(-),Harvesting OD,n.c.
+pNG7043,BL21 Star,pTTQ18,Harvesting OD,1.444
+pNG7043,BL21 Star,pET52b(+),Harvesting OD,n.c.
+pNG7043,BL21 Star,pWarf(-),Harvesting OD,1.04
+Saci1848,BL21 Star,pTTQ18,Harvesting OD,0.8
+Saci1848,BL21 Star,pET52b(+),Harvesting OD,n.c.
+Saci1848,BL21 Star,pWarf(-),Harvesting OD,n.c.
+SSO2938,BL21 Star,pTTQ18,dOD600,1.017964072
+SSO2938,BL21 Star,pET52b(+),dOD600,1.726027397
+SSO2938,BL21 Star,pWarf(-),dOD600,1.100558659
+SSO2528,BL21 Star,pTTQ18,dOD600,1.247863248
+SSO2528,BL21 Star,pET52b(+),dOD600,1.263888889
+SSO2528,BL21 Star,pWarf(-),dOD600,0.841121495
+SSO2042,BL21 Star,pTTQ18,dOD600,2.051724138
+SSO2042,BL21 Star,pET52b(+),dOD600,1.024793388
+SSO2042,BL21 Star,pWarf(-),dOD600,0.9296875
+SSO1665,BL21 Star,pTTQ18,dOD600,2.811111111
+SSO1665,BL21 Star,pET52b(+),dOD600,3.067039106
+SSO1665,BL21 Star,pWarf(-),dOD600,3.452830189
+Saci2039,BL21 Star,pTTQ18,dOD600,1.094117647
+Saci2039,BL21 Star,pET52b(+),dOD600,1.471264368
+Saci2039,BL21 Star,pWarf(-),dOD600,1.011627907
+MA1518,BL21 Star,pTTQ18,dOD600,2.35971223
+MA1518,BL21 Star,pET52b(+),dOD600,2.404761905
+MA1518,BL21 Star,pWarf(-),dOD600,2.021276596
+MJ1319,BL21 Star,pTTQ18,dOD600,1.25170068
+MJ1319,BL21 Star,pET52b(+),dOD600,1.178571429
+MJ1319,BL21 Star,pWarf(-),dOD600,2.059701493
+Mevan1511,BL21 Star,pTTQ18,dOD600,2.284210526
+Mevan1511,BL21 Star,pET52b(+),dOD600,1.653225807
+Mevan1511,BL21 Star,pWarf(-),dOD600,1.656
+MMP0681,BL21 Star,pTTQ18,dOD600,1.625
+MMP0681,BL21 Star,pET52b(+),dOD600,1.822429907
+MMP0681,BL21 Star,pWarf(-),dOD600,1.40625
+Hbor39700,BL21 Star,pTTQ18,dOD600,4.113636364
+Hbor39700,BL21 Star,pET52b(+),dOD600,2.669811321
+Hbor39700,BL21 Star,pWarf(-),dOD600,2.32
+AF2014,BL21 Star,pTTQ18,dOD600,3.291338583
+AF2014,BL21 Star,pET52b(+),dOD600,1.727272727
+AF2014,BL21 Star,pWarf(-),dOD600,1.06779661
+Ta0252,BL21 Star,pTTQ18,dOD600,n.c.
+Ta0252,BL21 Star,pET52b(+),dOD600,1.791208791
+Ta0252,BL21 Star,pWarf(-),dOD600,1.149350649
+Msed1117,BL21 Star,pTTQ18,dOD600,2.071428571
+Msed1117,BL21 Star,pET52b(+),dOD600,1.666666667
+Msed1117,BL21 Star,pWarf(-),dOD600,n.c.
+pNG7043,BL21 Star,pTTQ18,dOD600,2.734848485
+pNG7043,BL21 Star,pET52b(+),dOD600,n.c.
+pNG7043,BL21 Star,pWarf(-),dOD600,1.721854305
+Saci1848,BL21 Star,pTTQ18,dOD600,1
+Saci1848,BL21 Star,pET52b(+),dOD600,n.c.
+Saci1848,BL21 Star,pWarf(-),dOD600,n.c.
