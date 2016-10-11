@@ -48,7 +48,10 @@ svmpredict <- function(feature_df)
 
 ## archaea
 ```{r archaea_data_prep, cache=TRUE}
-archaea_outcomes <- read_csv("small-scale/archaea.fna.allstats.csv") %>%
+feat_col_spec = cols(.default = col_double(), title = col_character())
+
+archaea_outcomes <- read_csv("small-scale/archaea.fna.allstats.csv",
+                             col_types = feat_col_spec) %>%
     separate(title, c("Protein"), convert = TRUE)
 
 archaea_outcomes$score <- svmpredict(archaea_outcomes)
@@ -214,7 +217,8 @@ p3_archaea_roc
 
 ### M. TUBERCULOSIS OUTCOMES AND SCORES (FROM TIM CROSS'S FIRST PAPER)
 ```{r mt_data_prep, cache = TRUE}
-tcross_outcomes <- read_csv("small-scale/tcross.fna.allstats.csv") %>%
+tcross_outcomes <- read_csv("small-scale/tcross.fna.allstats.csv",
+                             col_types = feat_col_spec) %>%
     separate(title, c("ORF"))
 
 tcross_outcomes$score <- svmpredict(tcross_outcomes)
@@ -345,7 +349,8 @@ p3_mt_roc
 ## GPCRs
 ```{r gpcr_data_prep, cache=TRUE}
 lundstrom_outcomes <-
-    read_csv("small-scale/lundstrom1.fna.allstats.csv")
+    read_csv("small-scale/lundstrom1.fna.allstats.csv",
+             col_types = feat_col_spec)
 
 lundstrom_outcomes$score <- svmpredict(lundstrom_outcomes)
 
@@ -528,7 +533,8 @@ p3_main
 
 ## hpylori
 ```{r hpylori_data_prep, cache = TRUE}
-hpylori_outcomes <- read_csv("small-scale/hpylori_psakis.ffn.allstats.csv")
+hpylori_outcomes <- read_csv("small-scale/hpylori_psakis.ffn.allstats.csv",
+                             col_types = feat_col_spec)
 
 hpylori_outcomes$score <- svmpredict(hpylori_outcomes)
 
@@ -646,7 +652,8 @@ p3_hpylori_auc
 ## t maritima Koth
 ```{r koth_data_prep, cache=TRUE}
 tmaritima_outcomes <-
-    read_csv("small-scale/koth_tmaritima.ffn.allstats.csv") %>% 
+    read_csv("small-scale/koth_tmaritima.ffn.allstats.csv",
+             col_types = feat_col_spec) %>% 
     separate(title, c("Gene"))
 
 tmaritima_outcomes$score <- svmpredict(tmaritima_outcomes)
@@ -726,7 +733,8 @@ p3_tmaritima_roc
 
 ## surade
 ```{r surade_data_prep, cache=TRUE}
-surade_outcomes <- read_csv("small-scale/surade.fna.allstats.csv") %>%
+surade_outcomes <- read_csv("small-scale/surade.fna.allstats.csv",
+                             col_types = feat_col_spec) %>%
     separate(title, c("GI number"))
 
 surade_outcomes$score <- svmpredict(surade_outcomes)
@@ -826,7 +834,7 @@ p3_surade_roc
 p3_extended <- ggdraw() +
     draw_plot(
         plot_grid(p3_hpylori, p3_tmaritima, p3_surade,
-                  labels = c("a","c","e"), label_size = 8,
+                  labels = c("a", "c", "e"), label_size = 8,
                   ncol = 1, align = "v", rel_heights = c(5, 2.5, 2.5)),
         x = 0, y = 0, width = .8, height = 1) +
     draw_label("Expression Score", x = .03, y = .755, angle = 90, size = 7) + 
