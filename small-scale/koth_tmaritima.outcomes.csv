@@ -1,0 +1,78 @@
+Target,Swissprot,Gene,GI,short description,AA,MW,TM,Expressed,Purified,len diff,weight diff
+204,Q9WYJ2,TM0357,4980860,hypothetical protein,68,7711,2,0,0,0,0.1641
+205,Q9WZN1,TM0773,4981301,hypothetical protein,73,8423,2,0,0,0,0.4987
+206,Q9X254,TM1732,4982309,conserved hypothetical protein,98,11166,2,0,0,0,0.2963
+207,Q9WYS7,TM0965,4981503,phosphoribosylaminoimidazole carboxylase-related  protein,251,27296,2,1,1,0,0.2785
+208,Q9WZ31,TM0561,4981077,divalent cation transport-related protein,351,41446,2,1,1,0,-0.3073
+209,Q9X011,TM0909,4981445,flagellar biosynthesis protein FlhB,374,43012,2,1,0,0,-0.2086
+210,Q9X1E2,TM1428,4981993,methyl-accepting chemotaxis protein,566,63041,2,1,1,0,-0.5883
+211,Q9X0T3,TM1206,4981759,hypothetical protein,82,9090,3,1,0,0,-0.1489
+212,Q9X0W6,TM1239,4981793,hypothetical protein,122,13467,3,0,0,0,-0.0394
+213,Q9X132,TM1306,4981865,conserved hypothetical protein,144,16347,3,0,0,0,0.3389
+214,Q9WYT4,TM0463,4980979,lipoprotein signal peptidase,186,20865,3,1,0,0,0.2389
+215,Q9X0J3,TM1109,4981654,hypothetical protein,240,27806,3,0,0,0,-0.0758
+216,Q9WXU9,TM0094,4980584,"general secretion pathway protein F, putative",399,44536,3,1,0,0,-0.2593
+217,Q9WXQ0,TM0043,4980528,"ABC transporter, ATP-binding protein",581,66324,3,0,0,0,-0.2505
+218,Q9WXM8,TM0020,4980504,protein crcB homolog,127,13763,4,1,0,0,0.1036
+219,Q9X0A8,TM1016,4981556,hypothetical protein,139,15467,4,1,0,0,-0.4851
+220,Q9X2D8,TM1818,4982400,"chromate transport protein, putative",166,17717,4,0,0,0,0.2741
+221,Q9WYN8,TM0407,4980912,"diacylglycerol kinase, putative",160,18266,4,1,0,0,0.2364
+222,Q9X2H5,TM1861,4982446,CDP-diacylglycerol-glycerol-3-phosphate 3-phosphatidyltransferase,178,20005,4,1,0,0,-0.3878
+223,Q9WZ61,TM0592,4981111,"amino acid ABC transporter, permease protein",216,23740,4,1,1,0,0.0451
+224,Q9WZE3,TM0676,4981199,motility protein A,262,28609,4,0,0,0,0.333
+225,Q9WZA0,TM0632,4981153,extracellular polysaccharide biosynthesis-related protein,408,48096,4,0,0,0,0.3224
+226,Q9WZG2,TM0698,4981221,flagellar biosynthesis protein FliP,249,28168,5,0,0,0,-0.4412
+227,Q9X0K6,TM1122,4981668,TM1429,276,31378,5,0,0,0,-0.4772
+228,Q9X0S4,TM1197,4981748,"oligopeptide ABC transporter, permease protein",291,32875,5,0,0,0,-0.0452
+229,Q9X144,TM1319,4981878,"ABC transporter, ATP-binding protein",564,63837,5,0,0,0,-0.3233
+230,Q9X151,TM1328,4981887,"ABC transporter, ATP-binding protein",571,65400,5,0,0,0,-0.6088
+231,Q9WYC4,TM0288,4980786,"ABC transporter, ATP-binding protein",598,67708,5,0,0,0,-0.7198
+232,Q9X0J4,TM1110,4981655,hypothetical protein,200,22728,6,0,0,0,-0.0173
+233,Q9X0M5,TM1141,4981688,"cytochrome C-type biogenesis protein, putative",216,23483,6,0,0,0,0.1843
+234,Q9X1E3,TM1429,4981994,glycerol uptake facilitator protein,243,24863,6,0,0,-9,0.0839
+235,Q9X0H3,TM1087,4981632,"hypothetical protein, rhomboid-like",222,25929,6,1,1,0,-0.493
+236,Q9X0T6,TM1209,4981762,hypothetical protein,254,27591,6,0,0,0,-0.0381
+237,Q9X0Z0,TM1263,4981818,"phosphate ABC transporter, permease protein",275,29508,6,0,0,0,-0.363
+238,Q9X0Y9,TM1262,4981817,"phosphate ABC transporter, permease protein",276,29618,6,0,0,0,-0.016
+239,Q9X197,TM1377,4981938,"spermidine/putrescine ABC transporter, permease protein",262,29659,6,0,0,0,0.2911
+240,Q9WZ08,TM0538,4981052,cation efflux system protein,284,32205,6,1,0,0,-0.4319
+241,Q9WZW5,TM0861,4981395,"protein-export membrane protein SecF, putative",293,32716,6,0,0,0,-0.0567
+242,Q9X2G9,TM1854,4982438,"sugar ABC transporter, permease protein",290,33482,6,0,0,0,-0.3571
+243,Q9X0K5,TM1121,4981667,"glycerol-3-phosphate ABC transporter, permease protein",302,34526,6,0,0,0,-0.0934
+244,Q9WYX2,TM0502,4981013,"oligopeptide ABC transporter, permease protein",313,34746,6,0,0,0,0.0565
+245,Q9WZ02,TM0532,4981045,"oligopeptide ABC transporter, permease protein",321,36200,6,0,0,0,-0.1955
+246,Q9X0F6,TM1066,4981607,"oligopeptide ABC transporter, permease protein",327,36732,6,0,0,0,0.3509
+247,Q9X0U9,TM1222,4981775,"oligopeptide ABC transporter, permease protein",329,37507,6,0,0,0,0.1473
+248,Q9WXN7,TM0030,15642805,"oligopeptide ABC transporter, permease protein",338,37909,6,0,0,0,-0.2744
+249,Q9X269,TM1747,4982325,"oligopeptide ABC transporter, permease protein",341,37977,6,0,0,0,-0.0867
+250,Q9WYX3,TM0503,4981014,"oligopeptide ABC transporter, permease protein",345,38929,6,0,0,0,-0.1308
+251,Q9WXR5,TM0059,4980545,"oligopeptide ABC transporter, permease protein",362,41332,6,0,0,0,0.2785
+252,Q9X0F5,TM1065,4981606,"oligopeptide ABC transporter, permease protein",367,42127,6,0,0,0,0.1796
+253,Q9WZ13,TM0543,4981057,conserved hypothetical protein,412,45292,6,0,0,0,-0.4771
+254,Q9WZW4,TM0860,4981394,"protein-export membrane protein SecD, putative",465,50931,6,0,0,0,0.1587
+255,Q9X0Y3,TM1256,4981820,"ABC transporter, ATP-binding protein",577,65813,6,0,0,0,-0.6309
+256,Q9X2F5,TM1836,4982419,"maltose ABC transporter, permease protein",833,94861,6,0,0,0,0.1328
+257,Q9X198,TM1378,4981939,"spermidine/putrescine ABC transporter, permease protein",156,29090,7,0,0,100,0.4054
+258,Q9WYP8,TM0417,4980923,hypothetical protein,273,30855,7,0,0,0,0.2857
+259,Q9WXN6,TM0029,4980513,"oligopeptide ABC transporter, permease protein",280,31206,7,0,0,0,-0.144
+260,Q9X0M0,TM1136,4981683,"branched chain amino acid ABC transporter, permease protein",299,32109,7,0,0,0,-0.0938
+261,Q9WY05,TM0158,4980652,prolipoprotein diacylglyceryl transferase,293,34001,7,0,0,0,-0.028
+262,Q9WYF3,TM0317,4980818,"cation-transporting ATPase, P-type",726,79389,7,1,0,0,-0.544
+263,Q9X1B7,TM1397,4981960,phosphatidate cytidylyltransferase,270,30098,8,1,0,0,0.1637
+264,Q9WXX9,TM0125,4980617,probable metal transport system membrane protein,282,30768,8,1,0,0,0.1771
+265,Q9X1L4,TM1528,4982095,"1,4-dihydroxy-2-naphthoate  octaprenyltransferase,  6putative",289,31677,8,0,0,0,-0.4931
+266,Q9X050,TM0955,4981492,"ribose ABC transporter, permease protein",331,35066,8,0,0,0,0.2991
+267,Q9X0T0,TM1203,4981755,"maltose ABC transporter, permease protein",577,65768,8,0,0,0,0.1433
+268,Q9WXQ8,TM0051,15642826,iron(II) transport protein B,669,75140,8,0,0,0,-0.4799
+269,Q9X2A7,TM1787,4982366,hypothetical protein,273,29827,9,0,0,0,-0.3316
+270,Q9WXW7,TM0112,4980603,"sugar ABC transporter, permease protein",317,33475,9,1,0,0,-0.2122
+271,Q9WXT4,TM0079,4980567,"iron(III) ABC transporter, permease protein",322,34972,9,0,0,0,-0.4661
+272,Q9WY33,TM0190,4980686,"iron(III) ABC transporter, permease protein, putative",344,36982,9,0,0,0,-0.3628
+273,Q9X0M1,TM1137,4981684,"branched chain amino acid ABC transporter, permease protein",359,39878,9,0,0,0,0.0578
+274,Q9WZY2,TM0880,4981414,"oxaloacetate decarboxylase, beta subunit",384,41116,9,0,0,0,-0.1386
+275,Q9WY77,TM0235,4980733,phospho-N-acetylmuramoyl-pentapeptide-transferase,302,33814,10,0,0,0,-0.0118
+276,Q9WY99,TM0261,4980757,"phosphate permease, putative",402,42694,10,0,0,0,-0.5155
+277,Q9WYN3,TM0402,4980907,ammonium transporter,435,46427,10,1,0,0,-0.2352
+278,Q9X1I9,TM1480,4982044,preprotein translocase SecY subunit,431,48170,10,0,0,0,-0.4267
+279,Q9X0H4,TM1089,4981633,TRK system potassium uptake protein TrkH,495,54747,10,0,0,0,-0.6284
+280,Q9WZS6,TM0819,4981350,uracil permease,399,41845,12,0,0,0,-0.291
