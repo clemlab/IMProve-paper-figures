@@ -1,0 +1,90 @@
+prot_nuc,category,program,old_name,feature
+Nucleotide,Codon statistics,codonW 1.4.2,CAI,CAI
+Nucleotide,Codon statistics,codonW 1.4.2,Nc,Nc
+Nucleotide,Codon statistics,codonW 1.4.2,GC3s,GC3s
+Nucleotide,Codon statistics,codonW 1.4.2,CpG,CpG
+Nucleotide,tRNA adaptation index,codonR,tAI,tAI
+Nucleotide,Codon Pair Score,"Code from Coleman, et al., 2008",CPS,CPS
+Nucleotide,Codon Pair Score,"Code from Coleman, et al., 2008",CPSpL,CPSpL
+Nucleotide,RNA structure,RNAfold 2.1.10,freqens,freqens
+Nucleotide,RNA structure,RNAfold 2.1.10,X40deltaG,X40deltaG
+Nucleotide,RNA structure,RNAfold 2.1.10,X40freqens,X40freqens
+Protein,Disorder prediction,DisEMBL 1.4,hotloops,hotloops
+Protein,Disorder prediction,RONN 3.1,avgRONN,avgRONN
+Protein,Disorder prediction,RONN 3.1,q25RONN,q25RONN
+Protein,Disorder prediction,RONN 3.1,q75RONN,q75RONN
+Protein,Disorder prediction,RONN 3.1,avgRONNloop,avgRONNloop
+Protein,Disorder prediction,RONN 3.1,avgRONNextloop,avgRONNextloop
+Protein,Disorder prediction,RONN 3.1,avgRONNcytloop,avgRONNcytloop
+Protein,Disorder prediction,RONN 3.1,avgRONNNterm,avgRONNNterm
+Protein,Disorder prediction,RONN 3.1,avgRONNCterm,avgRONNCterm
+Protein,Disorder prediction,RONN 3.1,avgRONNTM,avgRONNTM
+Protein,Disorder prediction,RONN 3.1,RONNlongestloop,avgRONNTM1_2
+Protein,Disorder prediction,RONN 3.1,avgRONNTM1_2,RONNlongestloop
+Protein,Membrane Content,Phobius/Biopython,avgTMlen,avgTMlen
+Protein,Membrane Content,Phobius/Biopython,membrCont,membrCont
+Protein,Membrane Content,Phobius/Biopython,membrContNorm,membrContNorm
+Protein,Length of the N-terminal loop,Phobius/Biopython,lenNtermNorm,lenNtermNorm
+Protein,Hydrophobicity,Custom,avgHydroGES,avgHydroGES
+Protein,Hydrophobicity,Custom,minhyd_19GES,minhyd_19GES
+Protein,Hydrophobicity,Custom,minhyd_41GES,minhyd_41GES
+Protein,Hydrophobicity,Custom,maxhyd_41GES,maxhyd_41GES
+Protein,Hydrophobicity,Custom,loop1_avghydOCT,loop1_avghydOCT
+Protein,Hydrophobicity,Custom,loop1_minhyd_OCT19,loop1_minhyd_OCT19
+Protein,Hydrophobicity,Custom,loop1_maxhyd_OCT19,loop1_maxhyd_OCT19
+Protein,Hydrophobicity,Custom,HYD1stTM,HYD1stTM
+Protein,Hydrophobicity,Custom,HYDallTMs,HYDallTMs
+Protein,_G of insertion,"T. Hessa, et al., 2007",delG1stTM,delG1stTM
+Protein,_G of insertion,"T. Hessa, et al., 2007",delGallTMs,delGallTMs
+Protein,Hydrophobicity,Custom,nterm_hydGES,nterm_hydOCT
+Nucleotide,Codon Usage,Biopython,avgCU,avgCU
+Nucleotide,Codon Usage,Biopython,avgCU_first40,avgCU_first40
+Nucleotide,Codon Usage,Biopython,avgCU_first20,avgCU_first20
+Nucleotide,Codon Usage,Biopython,minCU_win5,avgCU_first5
+Nucleotide,Codon Usage,Biopython,minCU_win10,avgCU_first10
+Protein,Loop charge parameters,Phobius,numPosCyt,numPosCyt
+Protein,Loop charge parameters,Phobius,numPosNormCyt,numPosNormCyt
+Protein,Loop charge parameters,Phobius,numNegCyt,numNegCyt
+Protein,Loop charge parameters,Phobius,numNegNormCyt,numNegNormCyt
+Protein,Loop charge parameters,Phobius,numPosExt,numPosExt
+Protein,Loop charge parameters,Phobius,numPosNormExt,numPosNormExt
+Protein,Loop charge parameters,Phobius,numNegExt,numNegExt
+Protein,Loop charge parameters,Phobius,numNegNormExt,numNegNormExt
+Protein,Loop charge parameters,Phobius,numPos_LongestCytLoop,numPos_LongestCytLoop
+Protein,Loop charge parameters,Phobius,nterm_neg,nterm_neg
+Protein,Loop length parameters,Phobius,len1_2loop,len1_2loop
+Protein,Loop length parameters,Phobius,longestCytLoopNorm,longestCytLoopNorm
+Protein,Loop length parameters,Phobius,longestExtLoop,longestExtLoop
+Protein,Loop length parameters,Phobius,longestExtLoopNorm,longestExtLoopNorm
+Protein,Basic Protein Parameters,Biopython (ProtParam),seqLen,seqLen
+Protein,Basic Protein Parameters,Biopython (ProtParam),pI,pI
+Protein,Basic Protein Parameters,Biopython (ProtParam),aromatacityNorm,aromatacityNorm
+Protein,Basic Protein Parameters,Biopython (ProtParam),GPcount,GPcount
+Nucleotide,RNA structure,NUPACK,plus10valRNAss,plus10valRNAss
+Nucleotide,RNA structure,NUPACK,zeroto38avgRNAss,zeroto38avgRNAss
+Nucleotide,RNA structure,NUPACK,zeroto38minRNAss,zeroto38minRNAss
+Nucleotide,RNA structure,NUPACK,zeroto38q25RNAss,zeroto38q25RNAss
+Nucleotide,RNA structure,NUPACK,zeroto38q75RNAss,zeroto38q75RNAss
+Nucleotide,RNA structure,NUPACK,zeroto38maxRNAss,zeroto38maxRNAss
+Nucleotide,RNA structure,NUPACK,avgRNAss,avgRNAss
+Nucleotide,RNA structure,NUPACK,minRNAss,minRNAss
+Nucleotide,RNA structure,NUPACK,q25RNAss,q25RNAss
+Nucleotide,RNA structure,NUPACK,q75RNAss,q75RNAss
+Nucleotide,RNA structure,NUPACK,maxRNAss,maxRNAss
+Nucleotide,SD-like sites,RNAfold 2.1.9,totalSDsites,totalSDsites
+Nucleotide,SD-like sites,RNAfold 2.1.9,relareaSD,relareaSD
+Nucleotide,SD-like sites,RNAfold 2.1.9,codon16_36SD,codon16_36SD
+Nucleotide,SD-like sites,RNAfold 2.1.9,codon16_36relareaSD,codon16_36relareaSD
+Nucleotide,SD-like sites,RNAfold 2.1.9,codon40_60SD,codon40_60SD
+Nucleotide,SD-like sites,RNAfold 2.1.9,codon40_60relareaSD,codon40_60relareaSD
+Nucleotide,SD-like sites,RNAfold 2.1.9,minus5_plus2TM2SD,minus5_plus2TM2SD
+Nucleotide,SD-like sites,RNAfold 2.1.9,minus5_plus2TM2relareaSD,minus5_plus2TM2relareaSD
+Nucleotide,tRNA adaptation index,codonR,tAI10Min,tAI10Min
+Nucleotide,tRNA adaptation index,codonR,tAI10Max,tAI10Max
+Nucleotide,tRNA adaptation index,codonR,tAI10q25,tAI10q25
+Nucleotide,tRNA adaptation index,codonR,tAI10q75,tAI10q75
+Nucleotide,GC content,Custom,GC,GC
+Nucleotide,GC content,Custom,GC10min,GC10min
+Nucleotide,GC content,Custom,GC10q25,GC10q25
+Nucleotide,GC content,Custom,GC10q75,GC10q75
+Nucleotide,GC content,Custom,GC10max,GC10max
