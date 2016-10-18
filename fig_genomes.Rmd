@@ -91,7 +91,10 @@ forward_preds <- read_delim("forward-genomes/microbial_query.tsv.gz",
     select(-genus)
 
 forward_preds$score <- svmpredict(forward_preds)
+```
 
+# prepare data for plotting
+```{r}
 my_boxplot <- function(x) {
     # 1.5 corresponds to the criteria for the whiskers of a Tukey boxplot
     out <- boxplot.stats(x, coef = 1.5, do.conf = TRUE, do.out = TRUE)$stats
@@ -112,10 +115,7 @@ forward_tufte_boxplots <- forward_preds %>%
 forward_ec_thresholds <-
     filter(forward_tufte_boxplots, species == "Escherichia coli") %>% 
     select(-group, -species, -count, -species_count) %>% unlist
-```
 
-## forward plotting
-```{r forward_plotting}
 forward_preds_order <- c(
     "Vibrio cholerae",
     "Helicobacter pylori",
@@ -657,5 +657,7 @@ p4_main
 ```
 
 ```{r session}
+if (write_out)
+    save(forward_preds, file = "genomes.RData")
 sessionInfo()
 ```
