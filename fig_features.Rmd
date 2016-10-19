@@ -12,8 +12,7 @@ Some defaults are set here to make things easier throughout.
 # if TRUE, then data will be written to file
 write_out = FALSE
 
-library(dendextend)
-
+library(iterators)
 library(magrittr)
 library(tidyverse)
 library(dplyrExtras)
@@ -22,18 +21,29 @@ library(caret)
 library(pROC)
 
 library(datamart) # `uconv` for unit conversion
-library(ggdendro)
 library(cowplot)
 library(corrplot)
+library(RColorBrewer)
 library(viridis)
 theme_set(theme_cowplot(font_size = 7))
 
+library(parallel)
+# currently provisioned resources
+cl <- c("brnode05", "brnode07", "brnode08") %>%
+    rep(20) %>%
+    c(rep("brnode11", 44)) %>%
+    makeCluster()
+
 library(foreach)
-library(doMC)
-registerDoMC(cores = 4L)
+# library(doMC)
+# registerDoMC(cores = 4L)
+
+library(doParallel)
+registerDoParallel(cl)
 
 # devtools::install("myutils")
 library(myutils)
+## ggcorr modified from ggcorr package
 ```
 
 ### Load data from training process
@@ -53,6 +63,13 @@ svmpredict <- model_env$svmpredict
 ```{r}
 nycomps_env <- new.env()
 load("large-scale.Rdata", nycomps_env)
+```
+
+### Define auc function for the subsequent calculations
+```{r}
+auc_w_ci <- partial(ci.auc, direction = "<",
+                    method = "bootstrap", boot.n = 1000,
+                    progress = "none", parallel = TRUE)
 ```
 
 ## Load SVM weights and calculate correlations
@@ -90,7 +107,7 @@ nycomps_cor <- nycomps_env$nycomps_features %>%
 
 # significance test for correlation matrix
 # from corrplot::corplot-intro vignette
-nycomps_cor_mtest <- nycomps_cor
+nycomps_cor_mtest <- nycomps_cor %>%
     cor.mtest
 
 nycomps_cor %<>%
@@ -217,10 +234,8 @@ p_weight_protnuc
 
 ## plot AUC within NYCOMPS with subsets of features
 ```{r nycomps_subsets}
-calc_auc_feat_subsets <-
-    function(use_feat_col, order_fun, order_name,
-             ref_feat, ref_eval, weights = svmweights) {
-    # transform features
+transform_features <- function(ref_feat, weights) {
+    # scale and center features
     feat_weights <- setNames(weights$weight, as.character(weights$old_name))
     trans_feat <- preprocess_vars(ref_feat, model_env$daley_preprocess_params)
     # reorder vector
@@ -229,24 +244,41 @@ calc_auc_feat_subsets <-
         set(trans_feat, j = i, value = trans_feat[[i]] * feat_weights[i])
 
     trans_feat[is.na(trans_feat)] <- 0
+    
+    trans_feat
+}
 
-    foreach(thisiter = unique(weights[, use_feat_col] %>% unlist(use.names = FALSE)),
-            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+calc_auc_feat_subsets <-
+    function(use_feat_col, order_name, ref_feat, ref_eval, weights) {
+        order_fun <- switch(order_name,
+                            desc = great_eq,
+                            incr = less_eq,
+                            eq = eq_fun,
+                            ne = ne_fun)
+    trans_feat <- transform_features(ref_feat, weights)
+
+    foreach(thisiter = weights %>%
+                distinct_(use_feat_col) %>%
+                unlist(use.names = FALSE),
+            .combine = bind_rows, .multicombine = TRUE,
+            .packages = c("pROC", "tidyverse"),
+            .export = c("auc_w_ci", "trans_feat", "weights", "use_feat_col",
+                        "order_fun", "ref_eval", "order_name"),
+            .verbose = FALSE) %do% {
                 # specify those features to use
                 # can't seem to work out NSE, so this clumsy way right now
                 use_feats <-
-                    weights[order_fun(weights[,use_feat_col], thisiter),] %>%
+                    weights[order_fun(thisiter, weights[,use_feat_col]),] %>%
                     select(old_name) %>%
-                    unlist(use.names = FALSE) %>% as.character
+                    unlist(use.names = FALSE) %>%
+                    as.character
 
                 # prediction
                 preds <- trans_feat[, use_feats, drop = FALSE] %>% rowSums
 
                 # calculate auc
-                data_frame(score = ci.auc(response = ref_eval,
-                                         predictor = preds,
-                                         direction = "<",
-                                         method = "bootstrap", boot.n = 100),
+                data_frame(score = auc_w_ci(response = ref_eval,
+                                            predictor = preds),
                            ci_labels = c("lower95", "auc", "upper95"),
                            iter = as.character(thisiter),
                            feat_count = length(use_feats))
@@ -255,65 +287,15 @@ calc_auc_feat_subsets <-
         mutate(order_name = order_name,
                use_feat_col = use_feat_col)
 }
+```
 
-great_eq <- function(a, b) {
-    if (is.na(a)) {
-        is.na(b)
-    } else {
-        a >= b
-    }
-}
-less_eq <- function(a, b) {
-    if (is.na(a)) {
-        is.na(b)
-    } else {
-        a <= b
-    }
-}
-eq_fun <- function(a, b) {
-    if (is.na(a)) {
-        is.na(b)
-    } else {
-        a == b
-    }
-}
-ne_fun <- function(a, b) {
-    if (any(is.na(a)) | any(is.na(b))) {
-        stop("NA handling not implemented")
-    }
-    a != b
-}
-
-
-calc_auc_feat_subsets_wrapper <- function(combos, ...) {
-    foreach(row = iter(feat_subset_combos, by = 'row'),
-            .combine = bind_rows, .multicombine = TRUE) %do% {
-                    if (row$order_name == 'desc') {
-                        calc_auc_feat_subsets(use_feat_col = row$use_feat_col,
-                                              order_fun = great_eq,
-                                              order_name = row$order_name,
-                                              ...)
-                    } else if (row$order_name == 'incr') {
-                        calc_auc_feat_subsets(use_feat_col = row$use_feat_col,
-                                              order_fun = less_eq,
-                                              order_name = row$order_name,
-                                              ...)
-                    } else if (row$order_name == 'eq') {
-                        calc_auc_feat_subsets(use_feat_col = row$use_feat_col,
-                                              order_fun = eq_fun,
-                                              order_name = row$order_name,
-                                              ...)
-                    } else if (row$order_name == 'ne') {
-                        calc_auc_feat_subsets(use_feat_col = row$use_feat_col,
-                                              order_fun = ne_fun,
-                                              order_name = row$order_name,
-                                              ...)
-                    }
-            }
-}
+# correlations between feature groups after adding by feature weights
+```{r}
+transform_features
 ```
 
 ```{r}
+# auc combinations to test
 feat_subset_combos <- 
     # expand.grid(
     # use_feat_col = c("abs_weight", "hclust_weight", "man_weight"),
@@ -326,36 +308,54 @@ feat_subset_combos <-
     )) %>%
     bind_rows(data_frame(use_feat_col = 'prot_nuc', order_name = "eq"))
 
-feat_subset_auc <- calc_auc_feat_subsets_wrapper(
-    combos = feat_subset_combos,
-    ref_feat = nycomps_env$nycomps_gene_outcomes %>% 
-        left_join(nycomps_env$nycomps_features, by = "id"),
-    ref_eval = nycomps_env$nycomps_gene_outcomes$posmix_outcome) %>%
+# gene level outcomes
+feat_subset_auc <- feat_subset_combos %>%
+    rowwise() %>%
+    do({
+        calc_auc_feat_subsets(
+            use_feat_col = .$use_feat_col,
+            order_name = .$order_name,
+            ref_feat = nycomps_env$nycomps_gene_outcomes %>%
+                left_join(nycomps_env$nycomps_features, by = "id"),
+            ref_eval = nycomps_env$nycomps_gene_outcomes$posmix_outcome,
+            weights = svmweights)
+        }) %>%
     mutate(dataset = "posmix")
+```
 
-feat_subset_auc <-
-    calc_auc_feat_subsets_wrapper(
-        combos = feat_subset_combos,
-        ref_feat = nycomps_env$nycomps_all_outcomes %>%
-            left_join(nycomps_env$nycomps_features, by = "id"),
-        ref_eval =
-            nycomps_env$nycomps_all_outcomes$plasmid_outcome == 1) %>%
-        mutate(dataset = "vectors") %>%
+```{r}
+# all outcomes
+feat_subset_auc <- feat_subset_combos %>%
+    rowwise() %>%
+    do({
+        calc_auc_feat_subsets(
+            use_feat_col = .$use_feat_col,
+            order_name = .$order_name,
+            ref_feat = nycomps_env$nycomps_all_outcomes %>%
+                left_join(nycomps_env$nycomps_features, by = "id"),
+            ref_eval = nycomps_env$nycomps_all_outcomes$plasmid_outcome == 1,
+            weights = svmweights)
+        }) %>%
+    mutate(dataset = "vectors") %>%
     bind_rows(feat_subset_auc, .)
 
-vectors_wrap <- function(df) {
-    calc_auc_feat_subsets_wrapper(
-        combos = feat_subset_combos,
-        ref_feat = df %>%
-            left_join(nycomps_env$nycomps_features, by = "id"),
-        ref_eval = df$plasmid_outcome == 1) %>%
-        data.frame
-    }
-
+# by vector
 feat_subset_auc <- nycomps_env$nycomps_all_outcomes %>%
     rename(dataset = plasmid_name) %>%
     group_by(dataset) %>%
-    do(vectors_wrap(.)) %>%
+    do({
+        df_feat <- left_join(., nycomps_env$nycomps_features, by = "id")
+        feat_subset_combos %>%
+            rowwise() %>%
+            do({
+                calc_auc_feat_subsets(
+                    use_feat_col = .$use_feat_col,
+                    order_name = .$order_name,
+                    ref_feat = df_feat,
+                    ref_eval = df_feat$plasmid_outcome == 1,
+                    weights = svmweights)
+                })
+        }) %>%
     bind_rows(feat_subset_auc, .)
 ```
 
@@ -366,21 +366,21 @@ nycomps_env$nycomps_all_outcomes %>%
     arrange(desc(count))
 ```
 
-
-## indiv weights 
+## capture model's AUC
 ```{r}
-# capture model's AUC
 model_auc <- nycomps_env$nycomps_all_outcomes %>%
     rename(dataset = plasmid_name) %>%
     group_by(dataset) %>%
     do({
-        ci.auc(.$plasmid_outcome == 1, .$score, method = "bootstrap", boot.n = 100) %>%
+        auc_w_ci(response = .$plasmid_outcome == 1,
+                 predictor = .$score) %>%
             data_frame(score = .,
                        ci_labels = c("lower95", "auc", "upper95"))
     })
     
 model_auc <- nycomps_env$nycomps_gene_outcomes %$%
-    ci.auc(posmix_outcome, score, method = "bootstrap", boot.n = 100) %>%
+    auc_w_ci(response = posmix_outcome,
+             predictor = score) %>%
     data_frame(score = .,
                ci_labels = c("lower95", "auc", "upper95")) %>%
     mutate(dataset = "posmix") %>%
@@ -388,7 +388,7 @@ model_auc <- nycomps_env$nycomps_gene_outcomes %$%
     spread(ci_labels, score)
 ```
 
-
+## indiv weights
 ```{r}
 feature_order <- feat_subset_auc %>%
     filter(order_name == "eq", dataset == "posmix", 
@@ -434,247 +434,75 @@ feat_subset_auc %>%
 feature_order <- feat_subset_auc %>%
     filter(order_name == "eq", dataset == "posmix", 
            use_feat_col == "category") %>%
-    arrange(desc(as.numeric(auc))) %$%
-    unlist(iter, use.names = FALSE) %>%
+    left_join(svmweights %>% distinct(category, prot_nuc, man_weight),
+              by = c("iter" = "category")) %>%
+    arrange(prot_nuc, desc(as.numeric(man_weight)))
+
+feature_color <- feature_order %>%
+    mutate_rows(prot_nuc == "Nucleotide",
+                prot_nuc = brewer.pal(5, "Dark2")[[5]]) %>%
+    mutate_rows(prot_nuc == "Protein",
+                prot_nuc = brewer.pal(7, "Dark2")[[7]]) %$%
+    unlist(prot_nuc, use.names = FALSE) %>%
+    c("#000000", .)
+
+feature_order %<>%
+    unlist(.$iter, use.names = FALSE) %>%
     c("SVMrank Score", .) %>%
     factor(., ., ordered = TRUE)
 
-feat_subset_auc %>%
-    filter(use_feat_col == "category",
-           dataset != "posmix", dataset != "vectors") %>%
- #   bind_rows(model_auc %>% mutate(iter = "SVMrank Score")) %>%
-    mutate(iter = factor(iter, feature_order, ordered = TRUE)) %>%
-    ggplot() +
-    geom_hline(yintercept = 0.5, linetype = "dashed") +
-    geom_pointrange(aes(x = "SVMrank Score",
-                        y = auc, ymin = lower95, ymax = upper95),
-                    color = "lightgray", size = 0.5, fatten = 0.5,
-                    data = model_auc %>% filter(dataset != "posmix")) +
-    geom_pointrange(aes(x = "SVMrank Score",
-                        y = auc, ymin = lower95, ymax = upper95),
-                    color = "#A10F1C", size = 1, fatten = 1,
-                    data = model_auc %>% filter(dataset == "posmix")) +
-    geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
-                    color = "lightgray", size = 0.5, fatten = 0.5) +
-    geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
-                    color = "#A10F1C", size = 0.5, fatten = 0.5,
-               data = feat_subset_auc %>%
-                   filter(use_feat_col == "category",
-                          dataset == "posmix")) +
-    ylab("AUC") +
-    scale_x_discrete(limits = feature_order) +
-    scale_y_continuous(expand = c(0,0), labels = function(x) x*100) +
-    theme(legend.position = "none",
-          axis.text.x = element_text(angle = 25,  hjust = 1),
-          axis.title.x = element_blank()) +
-    facet_wrap(~order_name, ncol = 1)
+make_category_plot <- function(feat_subset_auc, feature_order)
+    feat_subset_auc %>%
+        filter(dataset != "posmix", dataset != "vectors") %>%
+        mutate(iter = factor(iter, feature_order, ordered = TRUE)) %>%
+        ggplot() +
+        geom_hline(yintercept = 0.5, linetype = "dashed") +
+        geom_pointrange(aes(x = "SVMrank Score",
+                            y = auc, ymin = lower95, ymax = upper95),
+                        color = "lightgray", size = 0.5, fatten = 0.5,
+                        data = model_auc %>% filter(dataset != "posmix")) +
+        geom_pointrange(aes(x = "SVMrank Score",
+                            y = auc, ymin = lower95, ymax = upper95),
+                        color = "#A10F1C", size = 1, fatten = 1,
+                        data = model_auc %>% filter(dataset == "posmix")) +
+        geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
+                        color = "lightgray", size = 0.5, fatten = 0.5) +
+        geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
+                        color = "#A10F1C", size = 0.5, fatten = 0.5,
+                   data = feat_subset_auc %>%
+                       filter(dataset == "posmix")) +
+        ylab("AUC") +
+        scale_y_continuous(expand = c(0,0), limits = c(.17, .86),
+                           labels = function(x) x*100) +
+        scale_x_discrete(limits = feature_order) +
+        theme(legend.position = "none",
+              axis.text.x = element_text(angle = 25,  hjust = 1),
+              axis.title.x = element_blank())
+
+p_category_incl <- feat_subset_auc %>%
+    filter(use_feat_col == "category", order_name == "eq") %>%
+    make_category_plot(feature_order) +
+    ggtitle("Only Single Category") +
+    theme(axis.text.x = element_text(color = feature_color))
+
+p_category_excl <-  feat_subset_auc %>%
+    filter(use_feat_col == "category", order_name == "eq") %>%
+    make_category_plot(feature_order) +
+    ggtitle("Excluding Single Category") +
+    theme(axis.text.x = element_text(color = feature_color))
+
+p_category_incl
+p_category_excl
 ```
 
 ```{r}
-feature_order <- feat_subset_auc %>%
-    filter(order_name == "eq", #dataset == "posmix", 
-           use_feat_col == "prot_nuc") %>% View
-    arrange(desc(as.numeric(auc))) %$%
-    unlist(iter, use.names = FALSE) %>%
-    c("SVMrank Score", .) %>%
-    factor(., ., ordered = TRUE)
+p_category_excl <- feat_subset_auc %>%
+    filter(use_feat_col == "prot_nuc", order_name == "eq") %>% 
+    make_category_plot(c("SVMrank Score", "Nucleotide", "Protein")) +
+    theme(axis.text.x = element_text(
+        colour = c("#000000", brewer.pal(7, "Dark2")[c(5, 7)])))
 
-feat_subset_auc %>%
-    filter(use_feat_col == "category",
-           dataset != "posmix", dataset != "vectors") %>%
- #   bind_rows(model_auc %>% mutate(iter = "SVMrank Score")) %>%
-    mutate(iter = factor(iter, feature_order, ordered = TRUE)) %>%
-    ggplot() +
-    geom_hline(yintercept = 0.5, linetype = "dashed") +
-    geom_pointrange(aes(x = "SVMrank Score",
-                        y = auc, ymin = lower95, ymax = upper95),
-                    color = "lightgray", size = 0.5, fatten = 0.5,
-                    data = model_auc %>% filter(dataset != "posmix")) +
-    geom_pointrange(aes(x = "SVMrank Score",
-                        y = auc, ymin = lower95, ymax = upper95),
-                    color = "#A10F1C", size = 1, fatten = 1,
-                    data = model_auc %>% filter(dataset == "posmix")) +
-    geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
-                    color = "lightgray", size = 0.5, fatten = 0.5) +
-    geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
-                    color = "#A10F1C", size = 0.5, fatten = 0.5,
-               data = feat_subset_auc %>%
-                   filter(use_feat_col == "category",
-                          dataset == "posmix")) +
-    ylab("AUC") +
-    scale_x_discrete(limits = feature_order) +
-    scale_y_continuous(expand = c(0,0), labels = function(x) x*100) +
-    theme(legend.position = "none",
-          axis.text.x = element_text(angle = 25,  hjust = 1),
-          axis.title.x = element_blank()) +
-    facet_wrap(~order_name, ncol = 1)
-```
-
-```{r}
-feat_subset_auc %>%
-    filter(order_name == "ne", use_feat_col != "hclust_roman", dataset == "vectors") %>%
-    # get weights for each group
-    left_join(svmweights %>%
-                  gather(use_feat_col, iter, category, hclust_roman, feature),
-              by = c("use_feat_col", "iter")) %>%
-    mutate_rows(use_feat_col == "hclust_roman", weight = hclust_weight) %>%
-    mutate_rows(use_feat_col == "category", weight = man_weight) %>%
-    select(order_name, plasmid_name, use_feat_col, iter, feat_count,
-           weight, auc, lower95, upper95) %>%
-    filter(use_feat_col != "prot_nuc") %>%
-    ungroup %>%
-    mutate(plasmid_name = factor(plasmid_name, rev(vector_order))) %>%
-    ggplot(aes(x = weight, y = auc, label = iter)) +
-    # geom_hline(aes(yintercept = auc), color = "gray", linetype = "dashed",
-    #            data = overall_auc) +
-    geom_hline(yintercept = 0.5, color = "gray", linetype = "dashed") + 
-    geom_point() +
-    geom_text(size = 5*5/14, nudge_y = .005) +
-    xlab(expression("Weight")) + 
-    facet_grid(plasmid_name~use_feat_col, scales = "free")
-```
-
-## all but indiv weights
-```{r}
-overall_auc <- feat_subset_auc %>%
-    filter(feat_count == 89) %>%
-    distinct(dataset, auc, lower95, upper95)
-
-p_feat_auc <- feat_subset_auc %>%
-    filter(order_name == "ne") %>%
-    # get weights for each group
-    left_join(svmweights %>%
-                  gather(use_feat_col, iter, category, hclust_roman, feature),
-              by = c("use_feat_col", "iter")) %>%
-    mutate_rows(use_feat_col == "hclust_roman", weight = hclust_weight) %>%
-    mutate_rows(use_feat_col == "category", weight = man_weight) %>%
-    select(order_name, dataset, use_feat_col, iter, feat_count,
-           weight, auc, lower95, upper95) %>%
-    filter(use_feat_col != "prot_nuc") %>%
-    ggplot(aes(x = weight, y = auc, label = iter)) +
-    # geom_hline(aes(yintercept = auc), color = "gray", linetype = "dashed",
-    #            data = overall_auc) +
-    geom_point() +
-    geom_text(size = 5*5/14, nudge_y = .005) +
-    xlab(expression("Weight")) +
-    facet_grid(dataset~use_feat_col, scales = "free_x")
-
-p_feat_auc
-```
-
-```{r panel_indiv_feat_desc}
-get_weight <- function(x, match_col, out_col, dataset) {
-    foreach(thisx = x, .combine = c) %do% {
-        # dplyr way of doing this sucks
-        dataset[dataset[, match_col] == thisx, ] %>%
-            select_(out_col) %>% unlist %>% as.numeric
-    } %>% specify_decimal(k = 2)
-}
-
-p4_temp <- feat_subset_posmix_auc %>%
-    filter(order_name == "desc", use_feat_col == "abs_weight")
-
-p4_base <- ggplot(p4_temp, aes(feat_count, auc)) +
-    geom_hline(yintercept = 0.5, linetype = "longdash", color = "gray") + 
-    geom_ribbon(aes(ymin = lower95, ymax = upper95), fill = "#A4A5A5") +
-    geom_line() +
-    xlab("Number of Features (decreasing in weight)") +
-    ylab("AUC") +
-    scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(15, 81, 15), 89)) +
-    scale_y_continuous(expand = c(0, 0), limits = c(0.46, 0.62),
-                       breaks = seq(0.48, 0.62, 0.04),
-                       labels = function(x) x*100) +
-    theme(plot.margin = unit(c(0, 0, 0, 0), "in"))
-
-get_indiv_weight <- function(x)
-    get_weight(x, match_col = "feat_count",
-               out_col = "iter", dataset = p4_temp)
-
-p4_weights <- 
-    ggplot(p4_temp, aes(feat_count, auc)) +
-    geom_line() +
-    xlab("Feature Magnitude") +
-    scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(15, 81, 15), 89),
-                       labels = get_indiv_weight)
-
-p4_feat_imp_all <- secondary_y_axis(p4_base, p4_weights)
-rm(p4_temp, p4_base, p4_weights)
-```
-
-## manually curated groups
-```{r plot_manually_curated_groups}
-p4_temp <- feat_subset_posmix_auc %>%
-    filter(order_name == "desc", use_feat_col == "man_weight") %>%
-    left_join(svmweights %>% distinct(man_weight, man_rank, man_alpha),
-              by = c("iter" = "man_weight"))
-
-p4_base <- ggplot(p4_temp, aes(man_rank, auc)) +
-    geom_hline(yintercept = 0.5, linetype = "longdash", color = "gray") + 
-    geom_ribbon(aes(ymin = lower95, ymax = upper95), fill = "#A4A5A5") +
-    geom_line() +
-    geom_text(aes(y = auc + .003, label = man_alpha), size = 5*5/14) +
-    xlab("Number of Feature Categories (decreasing in weight)") +
-    ylab("AUC") +
-    scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(3, 15, 3))) +
-    scale_y_continuous(expand = c(0, 0), limits = c(0.46, 0.62),
-                       breaks = seq(0.48, 0.62, 0.04),
-                       labels = function(x) x*100) +
-    theme(plot.margin = unit(c(0, 0, 0, 0), "in"))
-
-get_man_weight <- function(x)
-    get_weight(x, match_col = "man_rank", out_col = "iter", dataset = p4_temp)
-
-p4_weights <- ggplot(p4_temp, aes(man_rank, auc)) +
-    geom_line() +
-    xlab("Group Magnitude") +
-    scale_x_continuous(expand = c(0, 0),
-                       breaks = c(1, seq(3, 15, 3)),
-                       labels = get_man_weight)
-
-p4_feat_imp_man <- secondary_y_axis(p4_base, p4_weights)
-rm(p4_temp, p4_base, p4_weights)
-
-if (!write_out)
-    ggdraw(p4_feat_imp_man)
-```
-
-## hclust groups
-```{r}
-p4_temp <- feat_subset_posmix_auc %>%
-    filter(order_name == "desc", use_feat_col == "hclust_weight") %>%
-    left_join(svmweights %>% distinct(hclust_weight, hclust_rank, hclust_roman),
-              by = c("iter" = "hclust_weight"))
-
-p4_base <-
-    ggplot(p4_temp, aes(hclust_rank, auc)) +
-    geom_hline(yintercept = 0.5, linetype = "longdash", color = "gray") + 
-    geom_ribbon(aes(ymin = lower95, ymax = upper95), fill = "#A4A5A5") +
-    geom_line() +
-    geom_text(aes(y = auc + 0.003,label = as.character(hclust_roman)),
-              size = 5*5/14) +
-    xlab("Number of Feature Categories (decreasing in weight)") +
-    ylab("AUC") +
-    scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(2, 12, 2))) +
-    scale_y_continuous(expand = c(0, 0), limits = c(0.46, 0.62),
-                       breaks = seq(0.48, 0.62, 0.04),
-                       labels = function(x) x*100) +
-    theme(plot.margin = unit(c(0, 0, 0, 0), "in"))
-
-get_hclust_weight <- function(x)
-    get_weight(x, match_col = "hclust_rank", out_col = "iter", dataset = p4_temp)
-
-p4_weights <- ggplot(p4_temp, aes(hclust_rank, auc)) +
-    geom_line() +
-    xlab("Group Magnitude") +
-    scale_x_continuous(expand = c(0, 0),
-                       breaks = c(1, seq(2, 12, 2)),
-                       labels = get_hclust_weight)
-
-p4_feat_imp_hclust <- secondary_y_axis(p4_base, p4_weights)
-rm(p4_temp, p4_base, p4_weights)
-
-if (!write_out)
-    ggdraw(p4_feat_imp_hclust)
+p_category_excl
 ```
 
 ## Figure importance plot
