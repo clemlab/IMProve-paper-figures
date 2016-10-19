@@ -19,7 +19,6 @@ library(dplyrExtras)
 
 library(caret)
 library(pROC)
-
 library(datamart) # `uconv` for unit conversion
 library(cowplot)
 library(corrplot)
@@ -113,11 +112,6 @@ nycomps_cor_mtest <- nycomps_cor %>%
 nycomps_cor %<>%
     cor(use = "pairwise.complete.obs")
 
-# box/grouping memberships
-# adapted from corrplot::corrRect.hclust, the underlying code to generate
-nycomps_dendro <- as.dist(1 - nycomps_cor) %>%
-    hclust(method = "complete")
-
 # boxes for groupings/orderings
 svmweights <- nycomps_dendro %>%
     cutree(k = 11) %>%
@@ -128,7 +122,7 @@ svmweights <- nycomps_dendro %>%
             feature = "rowname")
 
 # Add feature groupings back to feature weights dataframe
-# with hclust cluster/manual category summary information (i.e. number of
+# with manual category summary information (i.e. number of
 # features that compose the grouping).
 svmweights <- svmweights %>%
     group_by(category) %>%
@@ -137,43 +131,6 @@ svmweights <- svmweights %>%
     right_join(svmweights, by = c("category")) %>%
     mutate(man_rank = dense_rank(-man_weight),
            man_alpha = LETTERS[man_rank])
-
-svmweights <- svmweights %>%
-    group_by(cluster) %>%
-    summarize(hclust_weight = sum(abs(weight)),
-              hclust_count = n()) %>%
-    right_join(svmweights, by = c("cluster")) %>%
-    mutate(hclust_rank = dense_rank(-hclust_weight),
-           hclust_roman = as.character(as.roman(hclust_rank)))
-```
-
-## plot summary of weights based on groupings
-```{r weight_summary}
-p_hclust_dendro_data <- svmweights %>%
-    filter(!(feature %in% c('minRNAss', 'q25RNAss', 'avgRNAss',
-                            'q75RNAss', 'maxRNAss'))) %>%
-    group_by(hclust_roman) %>%
-    do({data_frame(
-        feature = .$feature,
-        keep = seq_along(.$feature))}) %>%
-    ungroup %>%
-    filter(keep != 1) %>%
-    select(feature) %>% 
-    unlist(use.names = FALSE) %>%
-    prune(nycomps_dendro %>% as.dendrogram, .) %>%
-    dendro_data
-
-# we don't eventually display labels,
-# but change them so they can be visually confirmed
-p_hclust_dendro_data$labels %<>%
-    left_join(svmweights, by = c("label" = "feature")) %>%
-    transmute(x, y, label = hclust_roman)
-
-p_hclust_dendro <-
-    ggdendrogram(p_hclust_dendro_data, size = 2, rotate = TRUE) +
-    scale_y_reverse(expand = c(0, 0))
-
-p_hclust_dendro
 ```
 
 ```{r summary}
@@ -193,24 +150,6 @@ p_weight_man_sum <- svmweights %>%
     coord_flip() +
     theme(axis.title.y = element_blank())
 
-hclust_labels <- p_hclust_dendro_data$labels$label
-
-p_weight_hclust_sum <- svmweights %>%
-    distinct(hclust_roman, hclust_weight, hclust_count) %>%
-    mutate(hclust_roman = hclust_roman %>%
-               factor(., hclust_labels, ordered = TRUE)) %>%
-    ggplot(aes(x = hclust_roman)) +
-    geom_bar(aes(y = hclust_weight), stat = "identity") +
-    geom_text(aes(y = hclust_weight + 0.03, label = hclust_count),
-              size = 5*5/14) +
-    xlab("Cluster ID") +
-    ylab("Total Weight Magnitude") +
-    ggtitle("Hierarchical-clustered groups") +
-    scale_x_discrete(expand = c(0, 0)) +
-    scale_y_continuous(expand = c(0, 0)) +
-    theme(axis.title.y = element_blank()) +
-    coord_flip()
-
 p_weight_protnuc <- svmweights %>%
     group_by(prot_nuc) %>%
     summarize(
@@ -228,7 +167,6 @@ p_weight_protnuc <- svmweights %>%
     coord_flip()
 
 p_weight_man_sum
-p_weight_hclust_sum
 p_weight_protnuc
 ```
 
@@ -298,10 +236,10 @@ transform_features
 # auc combinations to test
 feat_subset_combos <- 
     # expand.grid(
-    # use_feat_col = c("abs_weight", "hclust_weight", "man_weight"),
+    # use_feat_col = c("abs_weight", "man_weight"),
     # order_name = c('desc', 'incr', 'eq')) %>%
     bind_rows(expand.grid(
-        use_feat_col = c('category', # 'hclust_roman',
+        use_feat_col = c('category',
                          'feature'),
         order_name = c('eq', 'ne'),
         stringsAsFactors = FALSE
@@ -579,7 +517,7 @@ if (write_out)
 forward_cor_clust <-
     corrplot(forward_cor, col = viridis(100),
              method = "square", plotCI = "n",
-             order = "hclust", hclust.method = "complete", addrect = 11,
+             order = "hclust", hclust.method = "complete",
              p.mat = forward_cor_mtest[[1]], sig.level = 0.05, insig = "blank",
              lowCI.mat = forward_cor_mtest[[2]],
              uppCI.mat = forward_cor_mtest[[3]],
