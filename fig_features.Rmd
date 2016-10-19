@@ -465,45 +465,6 @@ if (write_out) {
 }
 ```
 
-# all weights plotting
-```{r fig_feats_all_combos}
-feat_subset_posmix_auc %>%
-    mutate(dataset = "posmix") %>%
-    bind_rows(feat_subset_vectors_auc %>%
-                  mutate(dataset = "vectors")) %>%
-    mutate(order_name = factor(order_name,
-                               levels = c("desc", "incr"),
-                               labels = c("Decreasing\nWeight",
-                                          "Increasing\nWeight")),
-           use_feat_col = factor(use_feat_col,
-                                 levels = c("abs_weight", "man_weight",
-                                            "hclust_weight"),
-                                 labels = c("Individual Features",
-                                            "Manually Curated Groups",
-                                            "Hierarchially Clustered Groups")),
-           dataset = factor(dataset,
-                            levels = c("posmix", "vectors"),
-                            labels = c("By Gene", "By Expression Trial"))) %>%
-    ggplot(aes(feat_count, auc)) +
-    geom_hline(yintercept = 0.5, linetype = "longdash", color = "gray") + 
-    geom_ribbon(aes(ymin = lower95, ymax = upper95, fill = order_name),
-                alpha = 0.5) +
-    geom_line(aes(color = order_name)) +
-    xlab("Number of Features") +
-    ylab("AUC") +
-    scale_color_viridis(discrete = TRUE, end = 0.5,
-                        guide = guide_legend(title = "Order of Features",
-                                             nrow = 1)) +
-    scale_fill_viridis(discrete = TRUE, end = 0.5,
-                        guide = guide_legend(title = "Order of Features")) +
-    scale_x_continuous(expand = c(0, 0), breaks = c(1, seq(0, 81, 15), 89),
-                       limits = c(1,89))  +
-    scale_y_continuous(expand = c(0, 0), labels = function(x) x*100) +
-    theme(plot.margin = unit(c(0, 0, 0, 0), "in"),
-          legend.position = c(0.85, 0.07)) +
-    facet_grid(dataset~use_feat_col, scales = "free_x")
-```
-
 ## clustering of entire forward genomes
  `corrplot` is used to generate plot the correlation matrix becuase it more
 feature-rich than equvilient ggplot-compatible packages. As a result, the panel
