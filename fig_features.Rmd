@@ -152,6 +152,9 @@ p_weight_man_sum <- svmweights %>%
     coord_flip() +
     theme(axis.title.y = element_blank())
 
+p_weight_man_sum %<>% ggplot_build %>% ggplot_gtable
+p_weight_man_sum$layout$clip <- "off"
+
 p_weight_protnuc <- svmweights %>%
     group_by(prot_nuc) %>%
     summarize(
@@ -168,8 +171,11 @@ p_weight_protnuc <- svmweights %>%
     theme(axis.title.y = element_blank()) +
     coord_flip()
 
-p_weight_man_sum
-p_weight_protnuc
+p_weight_protnuc %<>% ggplot_build %>% ggplot_gtable
+p_weight_protnuc$layout$clip <- "off"
+
+ggdraw(p_weight_man_sum)
+ggdraw(p_weight_protnuc)
 ```
 
 ## plot AUC within NYCOMPS with subsets of features
@@ -428,63 +434,86 @@ feature_order %<>%
     c("SVMrank Score", .) %>%
     factor(., ., ordered = TRUE)
 
-make_category_plot <- function(feat_subset_auc, feature_order)
-    feat_subset_auc %>%
-        filter(dataset != "posmix", dataset != "vectors") %>%
-        mutate(iter = factor(iter, feature_order, ordered = TRUE)) %>%
-        ggplot() +
-        geom_hline(yintercept = 0.5, linetype = "dashed") +
-        geom_pointrange(aes(x = "SVMrank Score",
-                            y = auc, ymin = lower95, ymax = upper95),
-                        color = "lightgray", size = 0.5, fatten = 0.5,
-                        data = model_auc %>% filter(dataset != "posmix")) +
-        geom_pointrange(aes(x = "SVMrank Score",
-                            y = auc, ymin = lower95, ymax = upper95),
-                        color = "#A10F1C", size = 1, fatten = 1,
-                        data = model_auc %>% filter(dataset == "posmix")) +
-        geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
-                        color = "lightgray", size = 0.5, fatten = 0.5) +
-        geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
-                        color = "#A10F1C", size = 0.5, fatten = 0.5,
-                   data = feat_subset_auc %>%
-                       filter(dataset == "posmix")) +
-        ylab("AUC") +
-        scale_y_continuous(expand = c(0,0), limits = c(.16, .86),
-                           labels = function(x) x*100) +
-        scale_x_discrete(limits = feature_order) +
-        theme(legend.position = "none",
-              axis.text.x = element_text(angle = 25,  hjust = 1),
-              axis.title.x = element_blank())
-
-p_category_incl <- feat_subset_auc %>%
-    filter(use_feat_col == "category", order_name == "eq") %>%
-    make_category_plot(feature_order) +
-    ggtitle("Only Single Category") +
-    theme(axis.text.x = element_text(color = feature_color))
-
-p_category_excl <-  feat_subset_auc %>%
-    filter(use_feat_col == "category", order_name == "ne") %>%
-    make_category_plot(feature_order) +
-    ggtitle("Excluding Single Category") +
-    theme(axis.text.x = element_text(color = feature_color))
-
-p_category_incl 
-p_category_excl
+p_category_incl_excl <- feat_subset_auc %>%
+    filter(use_feat_col == "category", order_name %in% c("eq", "ne"),
+           dataset != "posmix", dataset != "vectors") %>%
+    mutate(iter = factor(iter, feature_order, ordered = TRUE)) %>%
+    ggplot() +
+    geom_hline(yintercept = 0.5, linetype = "dashed") +
+    geom_pointrange(aes(x = "SVMrank Score",
+                        y = auc, ymin = lower95, ymax = upper95),
+                    color = "lightgray", size = 0.5, fatten = 0.5,
+                    data = model_auc %>% filter(dataset != "posmix")) +
+    geom_pointrange(aes(x = "SVMrank Score",
+                        y = auc, ymin = lower95, ymax = upper95),
+                    color = "#A10F1C", size = 1, fatten = 1,
+                    data = model_auc %>% filter(dataset == "posmix")) +
+    geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
+                    color = "lightgray", size = 0.5, fatten = 0.5) +
+    geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
+                    color = "#A10F1C", size = 0.5, fatten = 0.5,
+               data = feat_subset_auc %>%
+                   filter(use_feat_col == "category",
+                          dataset == "posmix", order_name %in% c("eq", "ne"))) +
+    ylab("AUC") +
+    scale_y_continuous(expand = c(0,0), limits = c(.16, .86),
+                       labels = function(x) x*100) +
+    scale_x_discrete(limits = feature_order) +
+    theme(legend.position = "none",
+          axis.text.x = element_text(angle = 25,  hjust = 1,
+                                     color = feature_color),
+          axis.title.x = element_blank(),
+          strip.text = element_text(face = "bold"),
+          strip.background = element_blank()) +
+    facet_wrap(~order_name, ncol = 1,
+               labeller = c(`eq` = "Only Single Category",
+                            `ne` = "Excluding Single Category") %>%
+                   as_labeller)
 ```
 
 # protein or nucleotide auc plot
 ```{r}
-p_protnuc <- feat_subset_auc %>%
+p_auc_protnuc <- feat_subset_auc %>%
     filter(use_feat_col == "prot_nuc", order_name == "eq") %>%
     mutate_rows(iter == "Nucleotide",
                 iter = "Nucleotide Only") %>%
     mutate_rows(iter == "Protein",
-                iter = "Protein Only") %>%
-    make_category_plot(c("SVMrank Score", "Nucleotide Only", "Protein Only")) +
+                iter = "Protein Only")
+    
+p_auc_protnuc <- p_auc_protnuc %>%
+    filter(dataset != 'vectors', dataset != 'posmix') %>%
+    ggplot() +
+    geom_hline(yintercept = 0.5, linetype = "dashed") +
+    geom_pointrange(aes(x = "SVMrank Score",
+                        y = auc, ymin = lower95, ymax = upper95,
+                        group = dataset),
+                    position = position_dodge(width = 0.25),
+                    color = "lightgray", size = 0.5, fatten = 0.5,
+                    data = model_auc %>% filter(dataset != "posmix")) +
+    geom_pointrange(aes(x = "SVMrank Score",
+                        y = auc, ymin = lower95, ymax = upper95),
+                    color = "#A10F1C", size = 1, fatten = 1,
+                    data = model_auc %>% filter(dataset == "posmix")) +
+    geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95,
+                        group = dataset),
+                    position = position_dodge(width = 0.25),
+                    color = "lightgray", size = 0.5, fatten = 0.5) +
+    geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
+                    color = "#A10F1C", size = 0.5, fatten = 0.5,
+                    data = p_auc_protnuc %>% filter(dataset == "posmix")) +
+    ylab("AUC") +
+    scale_y_continuous(expand = c(0,0), limits = c(.16, .86),
+                       labels = function(x) x*100) +
+    scale_x_discrete(limits = c("SVMrank Score",
+                                "Protein Only", "Nucleotide Only")) +
+    theme(legend.position = "none",
+          axis.text.x = element_text(angle = 25,  hjust = 1,
+                                     color = feature_color),
+          axis.title.x = element_blank()) +
     theme(axis.text.x = element_text(
-        colour = c("#000000", brewer.pal(7, "Dark2")[c(5, 7)])))
+        colour = c("#000000", brewer.pal(7, "Dark2")[c(7, 5)])))
 
-p_protnuc
+p_auc_protnuc
 ```
 
 ## Figure importance plot
@@ -492,13 +521,11 @@ This block plots the entire figure relating to feature importances.
 ```{r plot_feature_importances}
 p5_weight_importance <- plot_grid(
     plot_grid(p_weight_man_sum, p_feat_category_corr, nrow = 1),
-    plot_grid(p_category_incl +
-                  theme(axis.text.x = element_blank()),
-              p_category_excl,
-              ncol = 1, align = "hv"),
-    plot_grid(p_protnuc, p_weight_protnuc,
+    p_category_incl_excl,
+    plot_grid(p_auc_protnuc, p_weight_protnuc,
               nrow = 1, align = "hv",
               labels = letters[1:2]),
+    rel_heights = c(1, 2, 1),
     ncol = 1,
     label_size = 8)
 
