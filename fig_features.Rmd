@@ -28,17 +28,17 @@ theme_set(theme_cowplot(font_size = 7))
 
 library(parallel)
 # currently provisioned resources
-cl <- c("brnode05", "brnode07", "brnode08") %>%
-    rep(20) %>%
-    c(rep("brnode11", 44)) %>%
-    makeCluster()
+# cl <- c("brnode05", "brnode07", "brnode08") %>%
+#     rep(20) %>%
+#     c(rep("brnode11", 44)) %>%
+#     makeCluster()
 
 library(foreach)
-# library(doMC)
-# registerDoMC(cores = 4L)
-
-library(doParallel)
-registerDoParallel(cl)
+library(doMC)
+registerDoMC(cores = 20L)
+# 
+# library(doParallel)
+# registerDoParallel(cl)
 
 # devtools::install("myutils")
 library(myutils)
@@ -67,8 +67,11 @@ load("large-scale.Rdata", nycomps_env)
 ### Define auc function for the subsequent calculations
 ```{r}
 auc_w_ci <- partial(ci.auc, direction = "<",
-                    method = "bootstrap", boot.n = 1000,
-                    progress = "none", parallel = TRUE)
+                    method = "delong"#,
+                    # boot.n = 1000,
+                    # progress = "none",
+                    # parallel = TRUE
+                    )
 ```
 
 ## Load SVM weights and calculate correlations
@@ -137,14 +140,13 @@ svmweights <- svmweights %>%
 p_weight_man_sum <- svmweights %>%
     distinct(category, man_rank, man_alpha, man_weight, man_count) %>%
     arrange(man_weight) %>%
-    mutate(man_label = paste0(man_alpha, ".") %>% paste(category),
-           man_label =
-               factor(man_label, levels = man_label, ordered = TRUE)) %>%
+    mutate(man_label =
+               factor(category, levels = category, ordered = TRUE)) %>%
     ggplot(aes(x = man_label)) +
     geom_bar(aes(y = man_weight), stat = "identity") +
     geom_text(aes(y = man_weight + 0.03, label = man_count), size = 5*5/14) +
     ylab("Total Weight Magnitude") +
-    ggtitle("Manually-curated groups") +
+    #ggtitle("Manually-curated groups") +
     scale_x_discrete(expand = c(0, 0)) +
     scale_y_continuous(expand = c(0, 0)) +
     coord_flip() +
@@ -160,7 +162,7 @@ p_weight_protnuc <- svmweights %>%
     geom_text(aes(y = weight + 0.03, label = count),
               size = 5*5/14) +
     ylab("Total Weight Magnitude") +
-    ggtitle("Protein or Nucleotide Features") +
+    #ggtitle("Protein or Nucleotide Features") +
     scale_x_discrete(expand = c(0, 0)) +
     scale_y_continuous(expand = c(0, 0)) +
     theme(axis.title.y = element_blank()) +
@@ -202,7 +204,7 @@ calc_auc_feat_subsets <-
             .packages = c("pROC", "tidyverse"),
             .export = c("auc_w_ci", "trans_feat", "weights", "use_feat_col",
                         "order_fun", "ref_eval", "order_name"),
-            .verbose = FALSE) %do% {
+            .verbose = FALSE) %dopar% {
                 # specify those features to use
                 # can't seem to work out NSE, so this clumsy way right now
                 use_feats <-
@@ -229,7 +231,44 @@ calc_auc_feat_subsets <-
 
 # correlations between feature groups after adding by feature weights
 ```{r}
-transform_features
+p_feat_category_corr <- nycomps_env$nycomps_features %>%
+    semi_join(nycomps_env$nycomps_gene_outcomes, "id")
+
+p_feat_category_corr <- p_feat_category_corr %>%
+    transform_features(svmweights) %>%
+    bind_cols(p_feat_category_corr %>% select(id)) %>%
+    gather(feature, value, -id) %>%
+    left_join(svmweights %>% select(category, old_name),
+              by = c("feature" = "old_name")) %>%
+    group_by(id, category) %>%
+    summarize(value = sum(value, na.omit = TRUE)) %>%
+    spread(category, value) %>%
+    ungroup %>%
+    select(-id) %>%
+    ggcorr(method = c("pairwise.complete.obs", "pearson"),
+           hjust = 1, size = 2,
+           legend.position = c(.15, .85),
+           diagColors = svmweights %>%
+           distinct(prot_nuc, category) %>%
+           rename(feature = category,
+                  colorgrp = prot_nuc) %>%
+           data.frame
+           ) +
+    scale_color_manual(values = setNames(brewer.pal(7, "Dark2")[c(5, 7)],
+                                         c("Nucleotide", "Protein")),
+                       guide = FALSE) +
+    scale_fill_viridis(breaks = c(-1, 0, 1), limits = c(-1, 1),
+                       guide = guide_colourbar(title = "Pearson's r",
+                                               title.position = "top",
+                                               title.hjust = 0.5,
+                                               nbin = 50,
+                                               raster = FALSE,
+                                               direction = "horizontal"))
+
+p_feat_category_corr %<>% ggplot_build %>% ggplot_gtable
+p_feat_category_corr$layout$clip <- "off"
+
+ggdraw(p_feat_category_corr)
 ```
 
 ```{r}
@@ -374,15 +413,15 @@ feature_order <- feat_subset_auc %>%
            use_feat_col == "category") %>%
     left_join(svmweights %>% distinct(category, prot_nuc, man_weight),
               by = c("iter" = "category")) %>%
-    arrange(prot_nuc, desc(as.numeric(man_weight)))
+    arrange(desc(man_weight))
 
 feature_color <- feature_order %>%
     mutate_rows(prot_nuc == "Nucleotide",
                 prot_nuc = brewer.pal(5, "Dark2")[[5]]) %>%
     mutate_rows(prot_nuc == "Protein",
-                prot_nuc = brewer.pal(7, "Dark2")[[7]]) %$%
-    unlist(prot_nuc, use.names = FALSE) %>%
-    c("#000000", .)
+                prot_nuc = brewer.pal(7, "Dark2")[[7]]) %>%
+    add_row(prot_nuc = "#000000", iter = "SVMrank Score", .before = 1) %$%
+    setNames(prot_nuc, iter)
 
 feature_order %<>%
     unlist(.$iter, use.names = FALSE) %>%
@@ -410,7 +449,7 @@ make_category_plot <- function(feat_subset_auc, feature_order)
                    data = feat_subset_auc %>%
                        filter(dataset == "posmix")) +
         ylab("AUC") +
-        scale_y_continuous(expand = c(0,0), limits = c(.17, .86),
+        scale_y_continuous(expand = c(0,0), limits = c(.16, .86),
                            labels = function(x) x*100) +
         scale_x_discrete(limits = feature_order) +
         theme(legend.position = "none",
@@ -424,45 +463,51 @@ p_category_incl <- feat_subset_auc %>%
     theme(axis.text.x = element_text(color = feature_color))
 
 p_category_excl <-  feat_subset_auc %>%
-    filter(use_feat_col == "category", order_name == "eq") %>%
+    filter(use_feat_col == "category", order_name == "ne") %>%
     make_category_plot(feature_order) +
     ggtitle("Excluding Single Category") +
     theme(axis.text.x = element_text(color = feature_color))
 
-p_category_incl
+p_category_incl 
 p_category_excl
 ```
 
+# protein or nucleotide auc plot
 ```{r}
-p_category_excl <- feat_subset_auc %>%
-    filter(use_feat_col == "prot_nuc", order_name == "eq") %>% 
-    make_category_plot(c("SVMrank Score", "Nucleotide", "Protein")) +
+p_protnuc <- feat_subset_auc %>%
+    filter(use_feat_col == "prot_nuc", order_name == "eq") %>%
+    mutate_rows(iter == "Nucleotide",
+                iter = "Nucleotide Only") %>%
+    mutate_rows(iter == "Protein",
+                iter = "Protein Only") %>%
+    make_category_plot(c("SVMrank Score", "Nucleotide Only", "Protein Only")) +
     theme(axis.text.x = element_text(
         colour = c("#000000", brewer.pal(7, "Dark2")[c(5, 7)])))
 
-p_category_excl
+p_protnuc
 ```
 
 ## Figure importance plot
 This block plots the entire figure relating to feature importances.
 ```{r plot_feature_importances}
 p5_weight_importance <- plot_grid(
-    plot_grid(p_weight_man_sum, p_weight_hclust_sum,
-              ncol = 1, align = "hv",
-              labels = letters[1:2], label_size = 8),
-    plot_grid(p4_feat_imp_all, p4_feat_imp_man, p4_feat_imp_hclust,
-              ncol = 1, align = "hv",
-              labels = letters[3:5], label_size = 8),
-    nrow = 1) +
-    draw_label("Cluster ID", x = 0.13, y = 0.25, angle = 90, size = 7)
+    plot_grid(p_weight_man_sum, p_feat_category_corr, nrow = 1),
+    plot_grid(p_category_incl +
+                  theme(axis.text.x = element_blank()),
+              p_category_excl,
+              ncol = 1, align = "hv"),
+    plot_grid(p_protnuc, p_weight_protnuc,
+              nrow = 1, align = "hv",
+              labels = letters[1:2]),
+    ncol = 1,
+    label_size = 8)
 
-if (write_out) {
-    save_plot(filename = "plots/p5_weights.pdf", plot = p5_weight_importance,
+#if (write_out) {
+    save_plot(filename = "plots/p5_feat2.pdf", plot = p5_weight_importance,
           base_width = uconv(183, "mm", "in", "Length"),
           base_height = 5.5)
-} else {
-    p5_weight_importance
-}
+#}
+p5_weight_importance
 ```
 
 ## clustering of entire forward genomes
