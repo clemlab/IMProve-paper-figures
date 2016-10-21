@@ -21,7 +21,7 @@ theme_set(theme_cowplot(font_size = 7))
 # devtools::install("myutils")
 library(myutils)
 library(doMC)
-registerDoMC(cores = 4L)
+registerDoMC(cores = 20L)
 
 # if TRUE, then data will be written to file
 write_out = TRUE
@@ -363,6 +363,77 @@ if (write_out)
     ggdraw(p2_auc_table)
 ```
 
+```{r}
+p_nycomps_cterm <- nycomps_auc %>%
+    filter(group != "posmix") %>%
+    mutate(
+        group = factor(group,
+               levels = c("all",
+                          "N", "C",
+                          "C_LDAO", "MSGC.24",
+                          "MSGC.28", "MSGC.7",
+                          "MSGC.9", "MSGC.9_LDAO"),
+               labels = c("All\nConditions",
+                          "His-FLAG-\nTEV-(N)", "-TEV-His\n(C)",
+                          "-TEV-His\n(C,LDAO)", "His-GST-\nTEV-(24)",
+                          "-TEV-His\n(28)", "His-TEV-\n(7)",
+                          "His-MBP-\nTEV-(9)", "His-MBP-\nTEV-(9, LDAO)")))
+
+fmt_cnt <- function(pos, all)
+    paste0(round(pos/all*100), '%/', all)
+
+p_nycomps_cterm <- p_nycomps_cterm %>%
+    filter(cterm != "all") %>%
+    ggplot() +
+    geom_hline(yintercept = 0.50, linetype = "dashed") +
+    geom_text(aes(x = group, y = .378, label = fmt_cnt(pos_count, count)),
+              size = 5*5/14,
+              data = p_nycomps_cterm %>%
+                  filter(cterm == "all")) +
+    geom_text(aes(x = group, y = .41 + .032*(cterm == "CYTOPLASMIC."),
+                  color = cterm, label = fmt_cnt(pos_count, count)),
+              size = 5*5/14) +
+    geom_pointrange(aes(x = group, ymin = upper95, y = auc, ymax = lower95,
+                        group = cterm, color = cterm),
+                    fatten = 0.5,
+                    position = position_dodge(width = 0.5)) +
+    geom_pointrange(aes(x = group, ymin = upper95, y = auc, ymax = lower95),
+                    fatten = 0.5,
+                    data = p_nycomps_cterm %>%
+                         filter(cterm == "all")) +
+    ylab("AUC") +
+    scale_color_manual(
+        values = setNames(brewer.pal(5, "Dark2"),
+                          c("CYTOPLASMIC.", "NON-CYTOPLASMIC.")),
+                       labels = c(`CYTOPLASMIC.` = "Cytoplasmic",
+                                  `NON-CYTOPLASMIC.` = "Periplasmic")) +
+    labs(color = "C-terminus") +
+    scale_x_discrete(limits = p_nycomps_cterm %>%
+                         filter(cterm == "all") %>%
+                         arrange(desc(count)) %$% unlist(group)) +
+    scale_y_continuous(labels = function(x) x*100) +
+    theme(legend.position = c(.04, .8),
+          legend.title.align = 1,
+          legend.title = element_text(face = "bold", size = 6),
+          legend.text = element_text(color = brewer.pal(3, "Dark2")),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 5))#, angle = 35,
+                                     #hjust = 0.5, vjust = 0.5))
+
+p_nycomps_cterm %<>%
+    ggplot_build %>% ggplot_gtable
+
+# hide key
+for (idx in c(4L, 5L, 7L, 8L)) 
+    p_nycomps_cterm$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
+
+# fix color of periplasmic text
+p_nycomps_cterm$grobs[[8L]]$grobs[[1L]]$grobs[[10L]]$gp$col <-
+    brewer.pal(3, "Dark2")[[2]]
+
+ggdraw(p_nycomps_cterm)
+```
+
 ## Compile all panels into full figure 2
 A diagram with arrows showing a summary of the outcomes (with the three arrows)
 was added in Adobe Illustrator after the fact.
@@ -387,15 +458,15 @@ p2_main <- ggdraw() +
                   labels = c("b", "c"), label_size = 8,
                   ncol = 1, align = "v"),
         x = 1/3, y = .355, width = 2/3, height = 1 - .355) +
-    draw_plot(p2_trial_counts, x = 0, y = .35, width = .33, height = .35) + 
-    draw_plot(p2_posmix_roc, x = -.1, y = 0, width = .5, height = .35) + 
-    draw_plot(p2_auc_table, x = .32, y = 0, width = 2/3, height = .35) + 
+    draw_plot(p2_trial_counts, x = 0, y = .37, width = .33, height = .35) + 
+    draw_plot(p2_posmix_roc, x = -.12, y = 0, width = .5, height = .35) + 
+    draw_plot(p_nycomps_cterm, x = .27, y = 0, width = .735, height = .38) + 
     draw_plot_label(label = c("a", "d", "e"),
-                    x = c(0, 0, 1/3),
-                    y = c(1, .35, .35), size = 8)
+                    x = c(0, 0, .272),
+                    y = c(1, .385, .385), size = 8)
 
 if (write_out == TRUE) {
-    save_plot(filename = "plots/fig2_updated.pdf",
+    save_plot(filename = "plots/fig2_newE.pdf",
               plot = p2_main,
               base_width = uconv(136, "mm", "in", "Length"))
 } else {
