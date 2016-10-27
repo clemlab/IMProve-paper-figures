@@ -30,7 +30,7 @@ theme_set(theme_cowplot(font_size = 7))
 library(myutils)
 
 library(doMC)
-registerDoMC(cores = 4L)
+registerDoMC(cores = 20L)
 ```
 
 ### Load data from training process
@@ -169,10 +169,18 @@ p4_all_violin <- ggplot(forward_preds) +
               axis.text.y = element_blank(),
               axis.line.y = element_blank())
 
-p4_all_violin
+p4_all_violin %<>% ggplotGrob
+p4_all_violin$layout %<>%
+    mutate_rows(name == "panel", clip = "off")
+
+ggdraw(p4_all_violin)
 ```
 
 ```{r}
+thermophile_species <- c("Aquifex aeolicus",
+                         "Spirochaeta thermophila",
+                         "Thermus thermophilus")
+
 selected_violin_genomes <- c("Plasmodium falciparum",
                              "Aquifex aeolicus",
                              "Thermus thermophilus",
@@ -190,7 +198,8 @@ p4_selected_violin <- forward_preds %>%
     geom_point(aes(x = species, y = median), color = "darkgrey",
                data = forward_tufte_boxplots %>%
                    filter(species %in% selected_violin_genomes)) +
-    geom_text(aes(x = species, y = -6, label = species_count),
+    geom_text(aes(x = species, y = -6, label = species_count,
+                  color = species %in% thermophile_species),
               vjust = 2, fontface = "italic", size = 7*5/14,
               data = forward_tufte_boxplots %>%
                   filter(species %in% selected_violin_genomes)) + 
@@ -205,16 +214,23 @@ p4_selected_violin <- forward_preds %>%
     geom_violin2(aes(y = score, x = species),
                  color = "black", adjust = 0.3, alpha = 0) + 
     coord_flip(ylim = nycomps_env$nycomps_xscale) +
-    ylab(expression("SVM" ^ "rank"*~"score")) + 
+    ylab(expression("SVM" ^ "rank"*~"score")) +
+    scale_color_manual(values = c("TRUE" = "#ff6600",
+                                  "FALSE" = "black")) + 
     scale_x_discrete(limits = selected_violin_genomes,
                      breaks = selected_violin_genomes) +
     scale_y_continuous(expand = c(0, 0), breaks = nycomps_env$nycomps_breaks) +
-    theme(axis.ticks.y = element_blank(),
-              axis.title.y = element_blank(),
-              axis.text.y = element_blank(),
-              axis.line.y = element_blank())
+    theme(legend.position = "none",
+          axis.ticks.y = element_blank(),
+          axis.title.y = element_blank(),
+          axis.text.y = element_blank(),
+          axis.line.y = element_blank())
 
-p4_selected_violin
+p4_selected_violin %<>% ggplotGrob
+p4_selected_violin$layout %<>%
+    mutate_rows(name == "panel", clip = "off")
+
+ggdraw(p4_selected_violin)
 ```
 
 ```{r fig4_nycomps_nvector_ppv}
@@ -283,18 +299,14 @@ test_that("correct number of distinct features", {
                    nrow, 84)
 })
 
-thermophile_species <- c("Aquifex aeolicus",
-                 "Spirochaeta thermophila",
-                 "Thermus thermophilus")
-
 overlap_wrap <- function(.data, x, labelx, ref, labelref) {
     data_frame(
         labelx = labelx,
         labelref = labelref,
         overlap = estimate_overlap(
             # can't figure out how to implement this with NSE
-            .data[x,] %>% select(value) %>% unlist,
-            .data[ref,] %>% select(value) %>% unlist)
+            .data[x,] %$% unlist(value, use.names = FALSE),
+            .data[ref,] %$% unlist(value, use.names = FALSE))
         )
 }
 
