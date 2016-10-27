@@ -12,174 +12,281 @@ Some defaults are set here to make things easier throughout.
 # if TRUE, then data will be written to file
 write_out = FALSE
 
-library(tibble)
-library(dplyr)
+library(magrittr)
+library(tidyverse)
 library(dplyrExtras)
-library(tidyr)
 
-library(caret)
-
-library(ggplot2)
+library(pROC)
+library(datamart) # `uconv` for unit conversion
 library(cowplot)
-library(corrplot)
-library(viridis)
+library(RColorBrewer)
 theme_set(theme_cowplot(font_size = 7))
+
+library(parallel)
+# currently provisioned resources
+# cl <- c("brnode05", "brnode07", "brnode08") %>%
+#     rep(20) %>%
+#     c(rep("brnode11", 44)) %>%
+#     makeCluster()
 
 library(foreach)
 library(doMC)
-registerDoMC(cores = 10)
+registerDoMC(cores = 20L)
+# 
+# library(doParallel)
+# registerDoParallel(cl)
+
+# devtools::install("myutils")
+library(myutils)
 ```
 
-## Convenience functions
-Load another file with a number of helper functions to mechanize some tedious
-or repetitive tasks.
+### Load NYCOMPS data for prediction function
 ```{r}
-source("preparation-convenience.R")
-source("predict.R")
+nycomps_env <- new.env()
+load("large-scale.Rdata", nycomps_env)
 ```
 
-```{r forward_preds_pca}
-source("https://bioconductor.org/biocLite.R")
-library(pcaMethods)
-
-# replace NaN with NA
-forward_trans <- preprocess_vars(forward_features,
-                                 daley_allstats_exp_xtrans_params) %>%
-    as.matrix(forward_trans)
-forward_trans[is.nan(forward_trans)] <- NA
-forward_trans <- data.frame(forward_trans)
-
-forward_nipals <- pca(forward_trans, center = TRUE, scale = "uv",
-                      method = "nlpca", nPcs = 20, completeObs = FALSE)
+### Define auc function for the subsequent calculations
+```{r}
+auc_w_ci <- partial(ci.auc, direction = "<",
+                    method = "delong"#,
+                    # boot.n = 1000,
+                    # progress = "none",
+                    # parallel = TRUE
+                    )
 ```
 
 # Calculate Pfam overlap between E. coli and NYCOMPS
 ```{r pfam_nycomps_overlap}
-ecoli_pfam <- bind_rows(
-    read.table("../ml-datasets/ecoli-daley-fluman/precalc/Daley_gfp.fna.faa.pfamA",
-               comment.char = '#', as.is = TRUE),
-    read.table("../ml-datasets/ecoli-daley-fluman/precalc/Daley_phoa.fna.faa.pfamA",
-               comment.char = '#', as.is = TRUE))
-
-colnames(ecoli_pfam) <- c('seq_id', 'alignment_start', 'alignment_end',
+ecoli_pfam <- c("training/Daley_gfp.fna.faa.pfamA",
+                "training/Daley_phoa.fna.faa.pfamA") %>%
+    lapply(read.table, comment.char = '#', as.is = TRUE) %>%
+    bind_rows
+colnames(ecoli_pfam) <- c('id', 'alignment_start', 'alignment_end',
                           'envelope_start', 'envelope_end', 'hmm_acc',
                           'hmm_name', 'type', 'hmm_start', 'hmm_end',
                           'hmm_length', 'bit_score', 'E-value',
                           'significance', 'clan')
+ecoli_pfam %<>%
+    separate(id, "id")
 
-nycomps_pfam <- bind_rows(
-    read.table("../ml-datasets/nycomps/nycomps_only_pos.fna.faa.pfamA",
-               comment.char = '#', as.is = TRUE),
-    read.table("../ml-datasets/nycomps/nycomps_only_neg.fna.faa.pfamA",
-               comment.char = '#', as.is = TRUE),
-    read.table("../ml-datasets/nycomps/nycomps_mixed.fna.faa.pfamA",
-               comment.char = '#', as.is = TRUE))
-nycomps_pfam$id <- getname(nycomps_pfam$seq_id, token = 3) %>% as.numeric
+ecoli_pfam_summary <- ecoli_pfam %>%
+    group_by(id) %>%
+    arrange(id, envelope_start) %>% 
+    summarize(hmm_arch = paste(hmm_acc, collapse = " "),
+              clan_arch = paste(clan, collapse = " "))
+
+nycomps_pfam <- c("large-scale/nycomps_only_pos.fna.faa.pfamA",
+                  "large-scale/nycomps_only_neg.fna.faa.pfamA",
+                  "large-scale/nycomps_mixed.fna.faa.pfamA") %>%
+    lapply(read.table, comment.char = '#', as.is = TRUE) %>%
+    bind_rows
 colnames(nycomps_pfam) <- colnames(ecoli_pfam)
 
-nycomps_pfam$hmm_training <- nycomps_pfam$hmm_acc %in% ecoli_pfam$hmm_acc
-nycomps_pfam$clan_training <- nycomps_pfam$clan %in% ecoli_pfam$clan
+nycomps_pfam %<>%
+    separate(id, c("temp", "id"), convert = TRUE) %>%
+    select(-temp) %>%
+    mutate(hmm_training = hmm_acc %in% ecoli_pfam$hmm_acc,
+           clan_training = clan %in% ecoli_pfam$clan) %>%
+    mutate_rows(clan == "No_clan", clan_training = NA, clan = NA)
 
-nycomps_vectors$hmm_training <- 
-    nycomps_vectors$id %in% nycomps_pfam[nycomps_pfam$hmm_training,]$id
-nycomps_vectors$clan_training <- 
-    nycomps_vectors$id %in% nycomps_pfam[nycomps_pfam$clan_training,]$id
+nycomps_pfam_outcomes <- nycomps_env$nycomps_all_outcomes %>%
+    mutate(outcome = plasmid_outcome == 1) %>%
+    rename(grp = plasmid_name)
 
-nycomps_auc_hmm_training <-
-    foreach(thisplasmid = unique(nycomps_vectors$plasmid_name),
-            .combine = bind_rows, .multicombine = TRUE) %dopar% {
-    thisdata <- filter(nycomps_vectors,
-                       plasmid_name == thisplasmid, hmm_training)
-    thisdata <- transmute(thisdata,
-                          thisresponse = plasmid_outcome == 1,
-                          ml21 = ml21)
-    df1 <- data.frame(
-        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
-                      direction = "<", method = "delong"),
-        group = thisplasmid,
-        type = "plasmid",
-        cterm = "all",
-        ci_labels = c("lower95", "auc", "upper95"),
-        count = nrow(thisdata),
-        pos_count = sum(thisdata$thisresponse)
-        )
-    
-    df2 <- foreach(thiscterm = unique(nycomps_vectors$cterm),
-                   .combine = bind_rows, .multicombine = TRUE) %dopar% {
-        thisdata <- nycomps_vectors %>%
-            filter(plasmid_name == thisplasmid,cterm == thiscterm) %>%
-            transmute(thisresponse = plasmid_outcome == 1,
-                      ml21 = ml21)
-        data.frame(
-            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
-                          direction = "<", method = "delong"),
-            group = thisplasmid,
-            type = "plasmid",
-            cterm = thiscterm,
-            ci_labels = c("lower95", "auc", "upper95"),
-            count = nrow(thisdata),
-            pos_count = sum(thisdata$thisresponse)
-            )
+nycomps_pfam_outcomes <- nycomps_env$nycomps_gene_outcomes %>%
+    mutate(grp = "genes") %>%
+    rename(outcome = posmix_outcome) %>%
+    bind_rows(nycomps_pfam_outcomes) %>%
+    mutate(grp = factor(grp,
+               levels = c("genes",
+                          "N", "C",
+                          "C_LDAO", "MSGC.24",
+                          "MSGC.28", "MSGC.7",
+                          "MSGC.9", "MSGC.9_LDAO"),
+               labels = c("All\nGenes",
+                          "His-FLAG-\nTEV-(N)", "-TEV-His\n(C)",
+                          "-TEV-His\n(C, LDAO)", "His-GST-\nTEV-(24)",
+                          "-TEV-His\n(28)", "His-TEV-\n(7)",
+                          "His-MBP-\nTEV-(9)", "His-MBP-\nTEV-(9, LDAO)"))) %>%
+    select(grp, id, outcome, score)
+
+# need to do it in this convoluted way to get proper NA handling
+# don't want multiple NA's for genes with multiple Pfam hits without clans
+# lack of a clan should be treated the same way as not having a Pfam hit
+# at all
+nycomps_pfam_outcomes <- nycomps_pfam %>%
+    distinct(id, hmm_acc, hmm_training) %>%
+    left_join(nycomps_pfam_outcomes, ., by = "id") %>%
+    gather(attribute, attr_value, hmm_acc, hmm_training) %>%
+    bind_rows(nycomps_pfam %>%
+                  distinct(id, clan, clan_training) %>%
+                  left_join(nycomps_pfam_outcomes, ., by = "id") %>%
+                  gather(attribute, attr_value, clan, clan_training))
+
+count_uniq <- function(x)
+    length(unique(x))
+
+nycomps_pfam_outcomes %>%
+    group_by(grp, attribute) %>%
+    summarize(count = n(),
+              countna = sum(is.na(attr_value)))
+```
+
+# calculate AUC for subsets
+```{r}
+auc_wrapper <- function(df) {
+    if (sum(df$outcome) > 1 & sum(!df$outcome) > 1) {
+        out <- data_frame(score = auc_w_ci(response = df$outcome,
+                                        predictor = df$score),
+                          ci_labels = c("lower95", "auc", "upper95"))
+    } else {
+        out <- data_frame(score = c(NA, auc(response = df$outcome,
+                                            predictor = df$score,
+                                            direction = "<"),
+                                    NA),
+                          ci_labels = c("lower95", "auc", "upper95"))
     }
-    
-    bind_rows(df1, df2)
-} %>% mutate(hmm = TRUE)
+    out %>%
+        mutate(count = nrow(df),
+               pos_count = sum(df$outcome),
+               neg_count = sum(!df$outcome))
+}
 
-nycomps_auc_hmm_training <-
-    foreach(thisplasmid = unique(nycomps_vectors$plasmid_name),
-            .combine = bind_rows, .multicombine = TRUE) %dopar% {
-    thisdata <- filter(nycomps_vectors, plasmid_name == thisplasmid, !hmm_training)
-    thisdata <- transmute(thisdata, 
-                          thisresponse = plasmid_outcome == 1, ml21 = ml21)
-    df1 <- data.frame(
-        ml21 = ci.auc(thisresponse ~ ml21, data = thisdata, direction = "<", method = "delong"),
-        group = thisplasmid,
-        type = "plasmid",
-        cterm = "all",
-        ci_labels = c("lower95", "auc", "upper95"),
-        count = nrow(thisdata),
-        pos_count = sum(thisdata$thisresponse)
-        )
-    
-    df2 <- foreach(thiscterm = unique(nycomps_vectors$cterm),
-            .combine = bind_rows, .multicombine = TRUE) %dopar% {
-        thisdata <- filter(nycomps_vectors,
-                           plasmid_name == thisplasmid, cterm == thiscterm)
-        thisdata <- transmute(thisdata, 
-                              thisresponse = plasmid_outcome == 1,
-                              ml21 = ml21)
-        data.frame(
-            ml21 = ci.auc(thisresponse ~ ml21, data = thisdata,
-                          direction = "<", method = "delong"),
-            group = thisplasmid,
-            type = "plasmid",
-            cterm = thiscterm,
-            ci_labels = c("lower95", "auc", "upper95"),
-            count = nrow(thisdata),
-            pos_count = sum(thisdata$thisresponse)
-            )
-    }
-    
-    bind_rows(df1, df2)
-} %>% mutate(hmm = FALSE) %>% bind_rows(nycomps_auc_hmm_training)
+#overall for each group
+nycomps_auc <- nycomps_pfam_outcomes %>%
+    group_by(grp) %>%
+    filter(n() > 1, count_uniq(outcome) > 1, count_uniq(score) > 1) %>%
+    do(auc_wrapper(.)) %>%
+    spread(ci_labels, score)
 
-nycomps_auc_hmm_training <- 
-    dcast(nycomps_auc_hmm_training,
-          group + type + cterm + count + pos_count + hmm ~ ci_labels,
-          value.var = "ml21")
+# split by category
+nycomps_pfam_auc <- nycomps_pfam_outcomes %>%
+    group_by(grp, attribute, attr_value) %>%
+    filter(n() > 1, count_uniq(outcome) > 1, count_uniq(score) > 1) %>%
+#    filter(grp == "-TEV-His\n(C,LDAO)") %>%
+    filter(attribute %in% c("hmm_training", "hmm_acc"), attr_value %>% is.na) %$%
+    table(grp)
 
-ggplot(nycomps_auc_hmm_training %>% filter(cterm == "all")) +
-    geom_errorbar(aes(x = group,
-                   ymin = upper95,
-                   ymax = lower95),
-              width = 0.25) + 
-    geom_point(aes(x = group, y = auc, color = hmm))
-    # geom_segment(aes(x = parent_score,
-    #                xend = mutant_score,
-    #                y = parent_expression,
-    #                yend = mutant_expression,
-    #                color = parent), 
-    #            arrow = arrow(length = unit(0.02, "npc"), type = "closed"))
+    do(auc_wrapper(.)) %>%
+    spread(ci_labels, score)
+
+nycomps_pfam_auc %>%
+    mutate(pos_perct = pos_count / count) %>%
+    filter(attribute == "clan") %>% #, count > 50) %>%
+    arrange(attr_value, desc(auc)) %>% View
+    filter(attr_value == "CL0181")
+
+```
+
+# plot outcomes across families
+```{r}
+plot_auc_pfam <- function(df, legend_title)
+    df %>%
+    ungroup %>%
+    # if ci was not computed, no way to draw CIs, but the point is still valid:
+    mutate_rows(is.na(lower95), upper95 = auc, lower95 = auc) %>%
+    mutate(attr_value = factor(attr_value,
+                               c('TRUE', 'FALSE'),
+                               c("In training", "Not in training"),
+                               ordered = TRUE)) %>% 
+    ggplot() +
+    geom_hline(yintercept = 0.50, linetype = "dashed") +
+    geom_pointrange(aes(x = grp, ymin = upper95, y = auc, ymax = lower95,
+                        group = attr_value, color = attr_value),
+              position = position_dodge(width = 0.5)) +
+    ylab("AUC") +
+    scale_color_manual(values = brewer.pal(5, "Dark2"), na.value = "gray") +
+    labs(color = legend_title) +
+    scale_x_discrete(expand = c(0, 0),
+                     limits = nycomps_auc %>%
+                         arrange(desc(count)) %$%
+                         unlist(grp)) +
+    scale_y_continuous(expand = c(0, 0),
+                       breaks = seq(0,1,.1),
+                       labels = function(x) x*100) +
+    theme(legend.position = c(.10, .95),
+          legend.title.align = 1,
+          legend.title = element_text(face = "bold", size = 6),
+          legend.text = element_text(color = brewer.pal(3, "Dark2")),
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(size = 5))#, angle = 35,
+                                     #hjust = 0.5, vjust = 0.5))
+
+p_hmm_acc <- nycomps_pfam_auc %>%
+    filter(attribute == "hmm_training") %>%
+    plot_auc_pfam(legend_title = "hmm_training") +
+    ggtitle("Pfam")
+p_hmm_acc %<>% ggplotGrob()
+p_hmm_acc$layout$clip <- "off"
+
+p_clan_acc <- nycomps_pfam_auc %>%
+    filter(attribute == "clan_training") %>%
+    plot_auc_pfam(legend_title = "clan_training") +
+    plot_auc_pfam +
+    ggtitle("Clan")
+p_clan_acc %<>% ggplotGrob()
+p_clan_acc$layout$clip <- "off"
+
+ggdraw(p_hmm_acc)
+ggdraw(p_clan_acc)
+```
+
+# auc by group
+# to calcuate an AUC for a group, you need a couple things
+1. within each group, there must be at least 2 observations
+2. there must be a positive and negative outcome observed (otherwise AUC
+is meaningless)
+This means for some groups there is no NA bar becuase of either 1 or 2
+```{r}
+p_nycomps_pfam_grps <-
+    nycomps_pfam_auc %>%
+    ungroup %>%
+    mutate(in_training =
+               attr_value %in% c(ecoli_pfam$clan, ecoli_pfam$hmm_acc)) %>%
+    # for domains that come up with a clan
+    mutate_rows(is.na(attr_value), in_training = NA) %>%
+    filter(attribute %in% c("hmm_acc", "clan")) %>%
+    mutate(in_training = factor(in_training,
+                               c('TRUE', 'FALSE'),
+                               c("In training", "Not in training"),
+                               ordered = TRUE))
+
+p_nycomps_pfam_grps %>%
+    group_by(attribute, grp, in_training) %>%
+    summarize(motif_count = n(),
+              pos_count = sum(pos_count),
+              exp_count = sum(count))
+
+p_nycomps_pfam_grps <- p_nycomps_pfam_grps %>%
+    # only plot if there are at least 5 outcomes for that specific pfam/vector group
+    #filter(count > 5) %>%
+    ggplot() +
+    geom_hline(yintercept = 0.50, linetype = "dashed") +
+    geom_boxplot(aes(grp, auc, color = in_training),
+                 width = 0.4, position = position_dodge(0.5)) +
+    ylab("AUC") +
+    scale_color_manual(values = brewer.pal(5, "Dark2"),
+                       na.value = "gray") +
+    scale_x_discrete(limits = nycomps_auc %>%
+                         arrange(desc(count)) %$% unlist(grp)) +
+    scale_y_continuous(labels = function(x) x*100) +
+    theme(legend.position = "bottom",
+          legend.title = element_blank(),
+          axis.title.x = element_blank(),
+          strip.background = element_blank()) + 
+    facet_wrap(~attribute, ncol = 1)
+
+p_nycomps_pfam_grps
+```
+
+```{r}
+f_features <- plot_grid(p_hmm_acc,
+                        p_clan_acc,
+                        rel_heights = c(1,1,2),
+                        p_nycomps_pfam_grps, ncol = 1)
+
+f_features
 ```
 
 ```{r session}
