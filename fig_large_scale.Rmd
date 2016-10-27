@@ -215,11 +215,25 @@ p2_posmix_ppv <- ggplot(p2_posmix_ppv_prep) +
 
 if (write_out)
     p2_posmix_ppv
+
+p2_posmix_ppv_prep %>%
+    filter(find_closest(threshold_percentiles, 0.75),
+           type == "ppv") %>%
+    distinct(threshold_percentiles, ppv, min_ppv) %>%
+    transmute(`Enrichment at 75th percentile` = ppv - min_ppv)
+
+p2_posmix_ppv_prep %>%
+    filter(find_closest(thresholds, 0.5),
+           type == "ppv") %>%
+    distinct(thresholds, ppv, min_ppv) %>%
+    mutate(additional_expressed =
+               (ppv - min_ppv) * nrow(nycomps_gene_outcomes))
 ```
 
 ```{r nycomps_posmix_histogram}
 p2_posmix_histogram <- ggplot(nycomps_gene_outcomes) + 
-    geom_histogram(aes(x = score, fill = posmix_outcome), 
+    geom_histogram(aes(x = score, fill = posmix_outcome,
+                       order = -as.numeric(posmix_outcome)), 
                    binwidth = fd_bw(nycomps_gene_outcomes$score),
                    alpha = 1, position = "identity") +
     geom_vline(xintercept = nycomps_gene_outcomes$score %>%
@@ -235,10 +249,15 @@ p2_posmix_histogram <- ggplot(nycomps_gene_outcomes) +
     theme(legend.key = element_blank(),
           legend.key.size = unit(0.25, "cm"),
           legend.title = element_blank(),
-          legend.position = c(0.2, 0.8),
+          legend.position = c(0.08, 0.85),
           plot.margin = unit(c(0, 0, 0, 0), "in"))
 
-p2_posmix_histogram <- ggplotGrob(p2_posmix_histogram)
+p2_posmix_histogram %<>% ggplotGrob
+
+# legend - remove keystones and change label colors
+for (idx in 4:6)
+    p2_posmix_histogram$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
+
 p2_posmix_histogram$grobs[[8L]]$grobs[[1L]][[1L]][[7L]]$gp$col <- "#A4A5A5"
 p2_posmix_histogram$grobs[[8L]]$grobs[[1L]][[1L]][[8L]]$gp$col <- "#A10F1C"
 
@@ -383,52 +402,54 @@ fmt_cnt <- function(pos, all)
     paste0(round(pos/all*100), '%/', all)
 
 p_nycomps_cterm <- p_nycomps_cterm %>%
-    filter(cterm != "all") %>%
+    # calculate label positions
+    mutate(lab_y = .35) %>%
+    mutate_rows(cterm != "all", lab_y = lab_y - .032) %>%
+    mutate_rows(cterm == "NON-CYTOPLASMIC.", lab_y = lab_y - .032) %>% 
     ggplot() +
-    geom_hline(yintercept = 0.50, linetype = "dashed") +
-    geom_text(aes(x = group, y = .378, label = fmt_cnt(pos_count, count)),
-              size = 5*5/14,
-              data = p_nycomps_cterm %>%
-                  filter(cterm == "all")) +
-    geom_text(aes(x = group, y = .41 + .032*(cterm == "CYTOPLASMIC."),
+    geom_hline(yintercept = 0.50, color = "darkgrey", linetype = "dashed") +
+    geom_text(aes(x = group, y = lab_y,
                   color = cterm, label = fmt_cnt(pos_count, count)),
               size = 5*5/14) +
     geom_pointrange(aes(x = group, ymin = upper95, y = auc, ymax = lower95,
                         group = cterm, color = cterm),
                     fatten = 0.5,
                     position = position_dodge(width = 0.5)) +
-    geom_pointrange(aes(x = group, ymin = upper95, y = auc, ymax = lower95),
-                    fatten = 0.5,
-                    data = p_nycomps_cterm %>%
-                         filter(cterm == "all")) +
     ylab("AUC") +
     scale_color_manual(
-        values = setNames(brewer.pal(5, "Dark2"),
-                          c("CYTOPLASMIC.", "NON-CYTOPLASMIC.")),
-                       labels = c(`CYTOPLASMIC.` = "Cytoplasmic",
+        values = setNames(c("black", brewer.pal(5L, "Dark2")[1:2]),
+                          c("all", "CYTOPLASMIC.", "NON-CYTOPLASMIC.")),
+                       labels = c(`all` = "All C-termini",
+                                  `CYTOPLASMIC.` = "Cytoplasmic",
                                   `NON-CYTOPLASMIC.` = "Periplasmic")) +
-    labs(color = "C-terminus") +
-    scale_x_discrete(limits = p_nycomps_cterm %>%
+    scale_x_discrete(expand = c(0, 0),
+                     limits = p_nycomps_cterm %>%
                          filter(cterm == "all") %>%
                          arrange(desc(count)) %$% unlist(group)) +
-    scale_y_continuous(labels = function(x) x*100) +
-    theme(legend.position = c(.04, .8),
-          legend.title.align = 1,
-          legend.title = element_text(face = "bold", size = 6),
-          legend.text = element_text(color = brewer.pal(3, "Dark2")),
+    scale_y_continuous(expand = c(0, 0),
+                       labels = function(x) x*100) +
+    coord_cartesian(ylim = c(0.45, .885)) + 
+    theme(legend.position = c(.06, .8),
+          legend.title = element_blank(),
+          legend.key.size = unit(0.25, "cm"),
           axis.title.x = element_blank(),
-          axis.text.x = element_text(size = 5))#, angle = 35,
-                                     #hjust = 0.5, vjust = 0.5))
+          axis.text.x = element_text(size = 5),
+          plot.margin = unit(c(0,0,21,0), "pt"))
 
 p_nycomps_cterm %<>%
     ggplot_build %>% ggplot_gtable
 
+p_nycomps_cterm$layout %<>%
+    mutate_rows(name == "panel", clip = "off")
+
 # hide key
-for (idx in c(4L, 5L, 7L, 8L)) 
+for (idx in 4:11)
     p_nycomps_cterm$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
 
-# fix color of periplasmic text
-p_nycomps_cterm$grobs[[8L]]$grobs[[1L]]$grobs[[10L]]$gp$col <-
+# fix colors of C-terminal labels in legend
+p_nycomps_cterm$grobs[[8L]]$grobs[[1L]]$grobs[[13L]]$gp$col <-
+    brewer.pal(3, "Dark2")[[1]]
+p_nycomps_cterm$grobs[[8L]]$grobs[[1L]]$grobs[[14L]]$gp$col <-
     brewer.pal(3, "Dark2")[[2]]
 
 ggdraw(p_nycomps_cterm)
@@ -460,7 +481,7 @@ p2_main <- ggdraw() +
         x = 1/3, y = .355, width = 2/3, height = 1 - .355) +
     draw_plot(p2_trial_counts, x = 0, y = .37, width = .33, height = .35) + 
     draw_plot(p2_posmix_roc, x = -.12, y = 0, width = .5, height = .35) + 
-    draw_plot(p_nycomps_cterm, x = .27, y = 0, width = .735, height = .38) + 
+    draw_plot(p_nycomps_cterm, x = .27, y = 0, width = .715, height = .38) + 
     draw_plot_label(label = c("a", "d", "e"),
                     x = c(0, 0, .272),
                     y = c(1, .385, .385), size = 8)
