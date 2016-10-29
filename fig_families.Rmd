@@ -20,7 +20,7 @@ library(pROC)
 library(datamart) # `uconv` for unit conversion
 library(cowplot)
 library(RColorBrewer)
-theme_set(theme_cowplot(font_size = 7))
+theme_set(theme_cowplot(font_size = 7L))
 
 library(parallel)
 # currently provisioned resources
@@ -107,11 +107,11 @@ nycomps_pfam_outcomes <- nycomps_env$nycomps_gene_outcomes %>%
                           "C_LDAO", "MSGC.24",
                           "MSGC.28", "MSGC.7",
                           "MSGC.9", "MSGC.9_LDAO"),
-               labels = c("All\nGenes",
-                          "His-FLAG-\nTEV-(N)", "-TEV-His\n(C)",
-                          "-TEV-His\n(C, LDAO)", "His-GST-\nTEV-(24)",
-                          "-TEV-His\n(28)", "His-TEV-\n(7)",
-                          "His-MBP-\nTEV-(9)", "His-MBP-\nTEV-(9, LDAO)"))) %>%
+               labels = c("All Genes",
+                          "His-FLAG-TEV- (N)", "-TEV-His (C)",
+                          "-TEV-His (C, LDAO)", "His-GST-TEV- (24)",
+                          "-TEV-His (28)", "His-TEV- (7)",
+                          "His-MBP-TEV-(9)", "His-MBP-TEV- (9, LDAO)"))) %>%
     select(grp, id, outcome, score)
 
 # need to do it in this convoluted way to get proper NA handling
@@ -126,6 +126,11 @@ nycomps_pfam_outcomes <- nycomps_pfam %>%
                   distinct(id, clan, clan_training) %>%
                   left_join(nycomps_pfam_outcomes, ., by = "id") %>%
                   gather(attribute, attr_value, clan, clan_training))
+    
+nycomps_pfam_outcomes %<>%
+    filter(grp != "All Genes") %>%
+    mutate(grp = "All Outcomes") %>%
+    bind_rows(nycomps_pfam_outcomes)
 
 nycomps_pfam_outcomes %>%
     group_by(grp, attribute) %>%
@@ -164,7 +169,7 @@ nycomps_auc <- nycomps_pfam_outcomes %>%
 nycomps_pfam_auc <- nycomps_pfam_outcomes %>%
     group_by(grp, attribute, attr_value) %>%
     filter(n() > 1, count_uniq(outcome) > 1, count_uniq(score) > 1) %>%
-#    filter(grp == "-TEV-His\n(C,LDAO)") %>%
+#    filter(grp == "-TEV-His (C,LDAO)") %>%
     # filter(attribute %in% c("hmm_training", "hmm_acc"), attr_value %>% is.na) %$%
     # table(grp)
     do(auc_wrapper(.)) %>%
@@ -180,101 +185,46 @@ nycomps_pfam_auc %>%
 
 # plot outcomes across families
 ```{r}
-plot_auc_pfam <- function(df, legend_title)
-    df %>%
+p_hmm_acc <- nycomps_pfam_auc %>%
+    filter(attribute == "hmm_training",
+           grp %in% c("All Genes", "All Outcomes")) %>%
     ungroup %>%
-    # if ci was not computed, no way to draw CIs, but the point is still valid:
-    mutate_rows(is.na(lower95), upper95 = auc, lower95 = auc) %>%
+    mutate_rows(is.na(attr_value), attr_value = "NONE") %>%
     mutate(attr_value = factor(attr_value,
-                               c('TRUE', 'FALSE'),
-                               c("In training", "Not in training"),
+                               c('TRUE', 'FALSE', "NONE"),
+                               c("In training", "Not in training", "No Pfam"),
                                ordered = TRUE)) %>% 
     ggplot() +
-    geom_hline(yintercept = 0.50, linetype = "dashed") +
+    geom_hline(yintercept = 0.50, linetype = "dashed", color = "lightgrey") +
     geom_pointrange(aes(x = grp, ymin = upper95, y = auc, ymax = lower95,
                         group = attr_value, color = attr_value),
-              position = position_dodge(width = 0.5)) +
+                    size = 0.5, fatten = 0.5,
+                    position = position_dodge(width = 0.5)) +
     ylab("AUC") +
     scale_color_manual(values = brewer.pal(5, "Dark2"), na.value = "gray") +
-    labs(color = legend_title) +
     scale_x_discrete(expand = c(0, 0),
-                     limits = nycomps_auc %>%
-                         arrange(desc(count)) %$%
-                         unlist(grp)) +
-    scale_y_continuous(expand = c(0, 0),
-                       breaks = seq(0,1,.1),
+                     limits = c("All Genes", "All Outcomes")) +
+    scale_y_continuous(breaks = seq(0,1,.1),
                        labels = function(x) x*100) +
-    theme(legend.position = c(.10, .95),
-          legend.title.align = 1,
-          legend.title = element_text(face = "bold", size = 6),
-          legend.text = element_text(color = brewer.pal(3, "Dark2")),
+    theme(legend.position = c(.03, .95),
+          legend.title = element_blank(),
+          legend.text = element_text(color = brewer.pal(3, "Dark2")[[1]]),
           axis.title.x = element_blank(),
           axis.text.x = element_text(size = 5))
-
-p_hmm_acc <- nycomps_pfam_auc %>%
-    filter(attribute == "hmm_training") %>%
-    plot_auc_pfam(legend_title = "hmm_training") +
-    ggtitle("Pfam")
 
 p_hmm_acc %<>% ggplotGrob()
 p_hmm_acc$layout$clip <- "off"
 
-p_clan_acc <- nycomps_pfam_auc %>%
-    filter(attribute == "clan_training") %>%
-    plot_auc_pfam(legend_title = "clan_training") +
-    ggtitle("Clan")
-p_clan_acc %<>% ggplotGrob()
-p_clan_acc$layout$clip <- "off"
+# legend - remove keystones and change label colors
+for (idx in 4:8)
+    p_hmm_acc$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
+
+p_hmm_acc$grobs[[8L]]$grobs[[1L]][[1L]][[10L]]$gp$col <-
+    brewer.pal(3, "Dark2")[[2]]
+p_hmm_acc$grobs[[8L]]$grobs[[1L]][[1L]][[11L]]$gp$col <-
+    brewer.pal(3, "Dark2")[[3]]
 
 ggdraw(p_hmm_acc)
-ggdraw(p_clan_acc)
-```
-
-# auc by group
-# to calcuate an AUC for a group, you need a couple things
-1. within each group, there must be at least 2 observations
-2. there must be a positive and negative outcome observed (otherwise AUC
-is meaningless)
-This means for some groups there is no NA bar becuase of either 1 or 2
-```{r}
-p_nycomps_pfam_grps <-
-    nycomps_pfam_auc %>%
-    mutate(in_training =
-               attr_value %in% c(ecoli_pfam$clan, ecoli_pfam$hmm_acc)) %>%
-    # for domains that come up with a clan
-    mutate_rows(is.na(attr_value), in_training = NA) %>%
-    filter(attribute %in% c("hmm_acc", "clan")) %>%
-    mutate(in_training = factor(in_training,
-                               c('TRUE', 'FALSE'),
-                               c("In training", "Not in training"),
-                               ordered = TRUE))
-
-p_nycomps_pfam_grps %>%
-    group_by(attribute, grp, in_training) %>%
-    summarize(motif_count = n(),
-              pos_count = sum(pos_count),
-              exp_count = sum(count))
-
-p_nycomps_pfam_grps <- p_nycomps_pfam_grps %>%
-    # only plot if there are at least 5 outcomes for that specific pfam/vector group
-    #filter(count > 5) %>%
-    ggplot() +
-    geom_hline(yintercept = 0.50, linetype = "dashed") +
-    geom_boxplot(aes(grp, auc, color = in_training),
-                 width = 0.4, position = position_dodge(0.5)) +
-    ylab("AUC") +
-    scale_color_manual(values = brewer.pal(5, "Dark2"),
-                       na.value = "gray") +
-    scale_x_discrete(limits = nycomps_auc %>%
-                         arrange(desc(count)) %$% unlist(grp)) +
-    scale_y_continuous(labels = function(x) x*100) +
-    theme(legend.position = "bottom",
-          legend.title = element_blank(),
-          axis.title.x = element_blank(),
-          strip.background = element_blank()) + 
-    facet_wrap(~attribute, ncol = 1)
-
-p_nycomps_pfam_grps
 ```
 
 ```{r}
@@ -283,45 +233,6 @@ nycomps_pfam_auc %>%
     ggplot() +
     geom_point(aes(count, auc)) + 
     scale_x_log10()
-
-nycomps_pfam_auc %>%
-    filter(grp != "All\nGenes", attribute == "hmm_acc", !is.na(attr_value),
-           count > 5) %>%
-    group_by(attribute, attr_value) %>%
-    filter(auc == max(auc)) %>%
-    ungroup %>%
-    arrange(auc) %>%
-    mutate(attr_value = attr_value %>% factor(., ., ordered = TRUE)) %>%
-    ggplot() +
-    geom_hline(yintercept = 0.5, linetype = "dashed", color = "grey") +
-    geom_pointrange(
-        aes(x = attr_value, ymin = lower95, y = auc, ymax = upper95)) +
-    coord_flip()
-
-nycomps_pfam_best_vector <- nycomps_pfam_auc %>%
-    filter(grp != "All\nGenes", attribute == "hmm_acc", !is.na(attr_value),
-           count > 5) %>%
-    group_by(attribute, attr_value) %>%
-    filter(auc == max(auc))
-
-p_pfam_auc_hist <- ggplot(nycomps_pfam_best_vector) +
-    geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey") +
-    geom_hline(aes(yintercept = ecdf(auc)(0.5)),
-               color = "grey", linetype = "dashed") +
-    geom_text(aes(x = 0.25, y = ecdf(auc)(0.5) - 0.05,
-                  label = ecdf(auc)(0.5) %>% specify_decimal(2L)),
-              size = 5*5/14, color = "#A4A5A5") +
-    geom_text(aes(x = 0.75, y = ecdf(auc)(0.5) + 0.05,
-                  label = (1 - ecdf(auc)(0.5)) %>% specify_decimal(2L)),
-              size = 5*5/14, color = "#A10F1C") +
-    stat_ecdf(aes(x = auc)) +
-    geom_rug(aes(x = auc, color = auc > 0.5), size = 0.25) +
-    xlab("AUC") +
-    ylab("Cumulative Density (Pfams)") +
-    scale_x_continuous(expand = c(0,0), labels = function(x) x*100) +
-    scale_y_continuous(expand = c(0,0)) +
-    scale_color_manual(values = c(`TRUE` = "#A10F1C", `FALSE` = "#A4A5A5")) +
-    theme(legend.position = "none")
 
 nycomps_pfam_auc %>%
     mutate(in_training =
@@ -350,24 +261,95 @@ nycomps_pfam_auc %>%
 ```
 
 ```{r}
-pfams_of_interest <- c(PF00999.18 = 'Na+/H+ exchanger\n(PF00999)',
-                       PF01578.17 = 'Cytochrome C assembly\nprotein (PF01578)',
-                       PF01594.13 = 'AI-2E transporters\n(PF01594)',
-                       PF01699.21 = 'Na+/Ca2+ exchanger\n(PF01699)',
-                       PF02667.11 = 'Short-chain fatty-\nacid transporter\n(PF02667)',
-                       PF03601.11 = 'PRM1 family\n(PF03601)',
-                       PF03605.11 = 'C4-dicarboxylate\nuptake family\n(PF03605)',
-                       PF05425.10 = 'Copper resistance\nprotein D (PF05425)',
-                       PF06930.9  = 'DUF1282\n(PF06930)',
-                       PF00860.17 = '10TM permease\nfamily (PF00860)',
-                       PF01169.16 = 'Calcium transporter\nfamily (PF01169)',
-                       PF07690.13 = 'Major facilitator\nsuperfamily (PF07690)',
-                       PF13231.3  = 'PMT mannosyl-\ntransferases (PF13231)',
-                       PF00535.23 = 'Glycosyl transferase\nfamily (PF00535)',
-                       PF01384.17 = 'Phosphate transporter\nfamily (PF01384)',
-                       PF09335.8  = 'SNARE-associated golgi\nproteins (PF09335)',
-                       PF00950.14 = 'ABC Transporter 3\n(PF00950)')
-    
+pfams_of_interest <-
+    c(PF02628.12 = 'Cytochrome oxidase assembly\nprotein COX15-CtaA (PF02628)', # no struct
+      PF03062.16 = 'O-acyltransferase\n(PF03062)', # no struct
+      PF05425.10 = 'Copper resistance\nprotein D (PF05425)', # no struct
+      PF02667.11 = 'Short-chain fatty-acid\ntransporter (PF02667)', # no struct
+      PF01699.21 = 'Na+/Ca2+ exchanger\n(PF01699)',
+      PF00535.23 = 'Glycosyl transferase\nfamily (PF00535)',
+      PF07690.13 = 'Major facilitator\nsuperfamily (PF07690)',
+      PF01169.16 = 'Calcium transporter\nfamily (PF01169)',
+      PF09335.8  = 'SNARE-associated golgi\nproteins (PF09335)',
+      PF00950.14 = 'ABC transporter 3\n(PF00950)',
+      PF01594.13 = 'AI-2E transporters\n(PF01594)',
+      PF00860.17 = '10TM permease\nfamily (PF00860)'
+      # PF02659.12 = 'Manganese efflux\npump (PF02659)',
+      # PF00999.18 = 'Na+/H+ exchanger\n(PF00999)',
+      # PF01578.17 = 'Cytochrome C assembly\nprotein (PF01578)',
+      # PF03601.11 = 'PRM1 family\n(PF03601)',
+      # PF03605.11 = 'C4-dicarboxylate\nuptake family\n(PF03605)',
+      # PF06930.9  = 'DUF1282\n(PF06930)',
+      # PF13231.3  = 'PMT mannosyl-\ntransferases (PF13231)',
+      # PF01384.17 = 'Phosphate transporter\nfamily (PF01384)',
+      )
+
+nycomps_pfam_best_vector <- nycomps_pfam_auc %>%
+    filter(grp != "All Genes", grp != "All Outcomes",
+           attribute == "hmm_acc", !is.na(attr_value), count > 5L) %>%
+    group_by(attribute, attr_value) %>%
+    filter(auc == max(auc)) %>%
+    ungroup %>%
+    # for confidence groups, need to do this
+    mutate_rows(is.na(lower95), upper95 = auc, lower95 = auc) %>%
+    mutate(cumedist = cume_dist(auc),
+           conf_grp = ifelse(auc <= 0.5, 0,
+                             ifelse(lower95 <= 0.5, 0.5, 1))) %>%
+    separate(attr_value, c("pfam_main"), remove = FALSE) %>%
+    left_join(nycomps_pfam %>% distinct(hmm_acc, hmm_name),
+              by = c("attr_value" = "hmm_acc")) %>%
+    # Move this point so it doesn't overlap,
+    # position doesn't matter since all in this region have the same AUC
+    # `cumedist` is only used for the plot below
+    mutate_rows(attr_value == "PF03062.16", cumedist = 0.93)
+
+p_pfam_auc_ecdf <- nycomps_pfam_best_vector %>%
+    ggplot() +
+    geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey") +
+    geom_hline(aes(yintercept = ecdf(auc)(0.5)),
+               color = "grey", linetype = "dashed") +
+    geom_text(aes(x = lower95, y = cumedist, label = pfam_main),
+              size = 5*5/14, nudge_x = -.05,
+              data = nycomps_pfam_best_vector %>%
+                  filter(attr_value %in% names(pfams_of_interest))) +
+    geom_segment(aes(x = lower95, xend = upper95,
+                     y = cumedist, yend = cumedist),
+                 size = 0.5,
+                 data = nycomps_pfam_best_vector %>%
+                     filter(attr_value %in% names(pfams_of_interest))) +
+    geom_text(aes(x = 0.75, y = 0.16 + ifelse(is.na(conf_grp), -.05, conf_grp/10),
+                  label = proport, color = conf_grp),
+              size = 5*5/14,
+              data = nycomps_pfam_best_vector %>%
+                  group_by(conf_grp) %>%
+                  summarize(count = n()) %>%
+                  ungroup %>%
+                  mutate(proport = specify_decimal(count / sum(count), 2L)) %>%
+                  add_row(proport = nrow(nycomps_pfam_best_vector), conf_grp = NA)) +
+    draw_label("Best AUC across\nconditions tested", x = 0.01, y = 0.95,
+              hjust = 0, fontface = "bold", size = 6) + 
+    geom_step(aes(x = auc, y = cumedist, color = conf_grp)) +
+    geom_point(aes(x = auc, y = cumedist),
+               size = 0.5,
+               data = nycomps_pfam_best_vector %>%
+                   filter(attr_value %in% names(pfams_of_interest))) +
+    xlab("AUC") +
+    ylab("Cumulative Density") +
+    scale_x_continuous(expand = c(0, 0), labels = function(x) x*100) +
+    scale_y_continuous(expand = c(0, 0), limits = c(0, 1.001),
+                       labels = function(x) paste0(specify_decimal(x*100, 0L), "%")) +
+    scale_color_continuous(low = "#A4A5A5", high = "#A10F1C", na.value = "black") +
+    theme(legend.position = "none")
+
+p_pfam_auc_ecdf %<>% ggplotGrob
+
+p_pfam_auc_ecdf$layout %<>%
+    mutate_rows(name == "panel", clip = "off")
+
+ggdraw(p_pfam_auc_ecdf)
+```
+
+```{r}
 format_auc <- function(auc, lower95, upper95, k = 1L)
     paste0(specify_decimal(auc*100, k), " (",
            specify_decimal(lower95*100, k), "-",
@@ -377,30 +359,31 @@ format_cnt <- function(pos_count, count, k = 0L)
     paste0(specify_decimal(pos_count/count*100, k), "%/", count)
 
 p_nycomps_selected_families <- nycomps_pfam_outcomes %>%
-    filter(grp != "All\nGenes", attr_value %in% names(pfams_of_interest)) %>%
+    filter(grp != "All Genes", grp != "All Outcomes",
+           attr_value %in% names(pfams_of_interest)) %>%
     semi_join(nycomps_pfam_best_vector, by = c("grp", "attr_value")) %>%
     ggplot() +
-    geom_point(aes(x = attr_value, y = score, color = outcome), size = 0.5,
+    geom_point(aes(x = attr_value, y = score, color = outcome), size = 0.25,
                position = position_beeswarm(dodge.width = .5, cex = 3)) +
-    geom_text(aes(x = attr_value, y = 2,
-                  label = paste(format_auc(auc, lower95, upper95),
-                                format_cnt(pos_count, count), sep = "\n")),
-              size = 5*5/14,
-              data = nycomps_pfam_best_vector %>%
-                  filter(attr_value %in% names(pfams_of_interest))) +
-    geom_text(aes(x = attr_value, y = 3, label = gsub("\n", "", grp)), size = 5*5/14,
-              data = nycomps_pfam_best_vector %>%
-                  filter(attr_value %in% names(pfams_of_interest))) +
+    geom_text(
+        aes(x = attr_value, y = 2.3, 
+            label = paste(grp, format_cnt(pos_count, count), sep = "\n")),
+        size = 5*5/14,
+        data = nycomps_pfam_best_vector %>%
+            filter(grp != "All Outcomes",
+                   attr_value %in% names(pfams_of_interest))) +
     scale_color_manual(values = c(`TRUE` = "#A10F1C", `FALSE` = "#A4A5A5")) +
-    scale_x_discrete(expand = c(0, 0), labels = pfams_of_interest,
+    scale_x_discrete(expand = c(0, 0),
+                     labels = pfams_of_interest,
                      limits = nycomps_pfam_best_vector %>%
-                         filter(attr_value %in% names(pfams_of_interest)) %>%
+                         filter(grp != "All Outcomes",
+                                attr_value %in% names(pfams_of_interest)) %>%
                          arrange(auc) %$% unlist(attr_value)) +
     ylab(expression("SVM" ^ "rank"*~"score")) + 
     coord_flip(ylim = c(-5.11, 1.4)) +
     theme(legend.position = "None",
               axis.title.y = element_blank(),
-              plot.margin = unit(c(0, 100, 0, 0), "pt"))
+              plot.margin = unit(c(0, 60, 0, 0), "pt"))
 
 p_nycomps_selected_families %<>% ggplotGrob()
 
@@ -411,16 +394,22 @@ ggdraw(p_nycomps_selected_families)
 ```
 
 ```{r}
-f_features <- plot_grid(p_hmm_acc,
-                        p_clan_acc,
-                        rel_heights = c(1,1,2),
-                        p_nycomps_pfam_grps, ncol = 1)
+f_features <- ggdraw() +
+    plot_grid(p_hmm_acc, p_pfam_auc_ecdf, labels = c("a", "b"), label_size = 8,
+              align = "hv", rel_widths = c(1,4), nrow = 1) %>%
+    draw_plot(x = 0, y = .67, width = 1, height = .33) +
+    draw_plot(p_nycomps_selected_families,
+              x = 0, y = 0, width = 1, height = .67) +
+    draw_plot_label("c", x = 0, y = .69, size = 8)
 
+if (write_out == TRUE) {
+    save_plot(filename = "plots/fig6.pdf",
+              plot = f_features,
+              base_width = uconv(136, "mm", "in", "Length"))
+}
 f_features
 ```
 
 ```{r session}
-if (write_out)
-    save.image("fig_other.Rdata")
 sessionInfo()
 ```
