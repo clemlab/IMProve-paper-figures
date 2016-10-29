@@ -137,20 +137,44 @@ svmweights <- svmweights %>%
 ```
 
 ```{r summary}
+category_order <- svmweights %>%
+    group_by(prot_nuc, category) %>%
+    summarize(abs_weight = sum(abs(weight))) %>%
+    arrange(abs_weight)
+
+category_color <- category_order %>%
+    mutate_rows(prot_nuc == "Nucleotide",
+                prot_nuc = brewer.pal(5, "Dark2")[[5]]) %>%
+    mutate_rows(prot_nuc == "Protein",
+                prot_nuc = brewer.pal(7, "Dark2")[[7]]) %$%
+    setNames(prot_nuc, category)
+
+category_order <- category_order %$%
+    unlist(category, use.names = FALSE)
+
+geom_bar_def <-
+    partial(geom_bar, position = "stack", stat = "identity",
+            width = 0.5, size = 0.5, fill = "white", color = "black")
+
 p_weight_man_sum <- svmweights %>%
-    distinct(category, man_rank, man_alpha, man_weight, man_count) %>%
-    arrange(man_weight) %>%
-    mutate(man_label =
-               factor(category, levels = category, ordered = TRUE)) %>%
-    ggplot(aes(x = man_label)) +
-    geom_bar(aes(y = man_weight), stat = "identity") +
-    geom_text(aes(y = man_weight + 0.03, label = man_count), size = 5*5/14) +
-    ylab("Total Weight Magnitude") +
-    #ggtitle("Manually-curated groups") +
-    scale_x_discrete(expand = c(0, 0)) +
-    scale_y_continuous(expand = c(0, 0)) +
+    group_by(category) %>%
+    summarize(count = n(),
+              tot_weight = sum(weight)) %>%
+    ggplot(aes(x = category, y = weight)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "lightgrey") + 
+    geom_bar_def(data = svmweights %>%
+                     filter(weight > 0)) +
+    geom_bar_def(data = svmweights %>%
+                     filter(weight <= 0)) +
+    geom_text(aes(y = 1.6, label = count), size = 5*5/14) +
+    geom_point(aes(y = tot_weight), color = "red") +
+    ylab("Weight") +
+    scale_x_discrete(limits = category_order) +
     coord_flip() +
-    theme(axis.title.y = element_blank())
+    theme(legend.position = "none",
+          axis.title.y = element_blank(),
+          axis.text.y = element_text(color = category_color),
+          plot.margin = unit(c(0, 0, 0, 0), "pt"))
 
 p_weight_man_sum %<>% ggplot_build %>% ggplot_gtable
 p_weight_man_sum$layout$clip <- "off"
@@ -158,18 +182,22 @@ p_weight_man_sum$layout$clip <- "off"
 p_weight_protnuc <- svmweights %>%
     group_by(prot_nuc) %>%
     summarize(
-        weight = sum(abs(weight)),
-        count = n()) %>%
-    ggplot(aes(x = prot_nuc)) +
-    geom_bar(aes(y = weight), stat = "identity") +
-    geom_text(aes(y = weight + 0.03, label = count),
+        count = n(),
+        tot_weight = sum(weight)) %>%
+    ggplot(aes(x = prot_nuc, y = weight)) +
+    geom_bar_def(data = svmweights %>%
+                     filter(weight > 0)) +
+    geom_bar_def(data = svmweights %>%
+                     filter(weight <= 0)) +
+    geom_text(aes(y = 7, label = count),
               size = 5*5/14) +
-    ylab("Total Weight Magnitude") +
-    #ggtitle("Protein or Nucleotide Features") +
-    scale_x_discrete(expand = c(0, 0)) +
-    scale_y_continuous(expand = c(0, 0)) +
-    theme(axis.title.y = element_blank()) +
-    coord_flip()
+    geom_point(aes(y = tot_weight), color = "red") +
+    ylab("Weight") +
+    coord_flip() +
+    theme(axis.title.y = element_blank(),
+          axis.text.y =
+              element_text(color = brewer.pal(7, "Dark2")[c(5, 7)]),
+          plot.margin = unit(c(0, 0, 0, 0), "pt"))
 
 p_weight_protnuc %<>% ggplot_build %>% ggplot_gtable
 p_weight_protnuc$layout$clip <- "off"
@@ -253,23 +281,26 @@ p_feat_category_corr <- p_feat_category_corr %>%
     select(-id) %>%
     ggcorr(method = c("pairwise.complete.obs", "pearson"),
            hjust = 1, size = 2,
-           legend.position = c(.15, .85),
            diagColors = svmweights %>%
            distinct(prot_nuc, category) %>%
            rename(feature = category,
                   colorgrp = prot_nuc) %>%
            data.frame
            ) +
+    theme(legend.position = c(-0.2, .73),
+          legend.key.height = unit(12, "pt"),
+          legend.key.width = unit(7, "pt"),
+          plot.margin = unit(c(0, 0, 0, 0), "pt")) +
     scale_color_manual(values = setNames(brewer.pal(7, "Dark2")[c(5, 7)],
                                          c("Nucleotide", "Protein")),
-                       guide = FALSE) +
-    scale_fill_viridis(breaks = c(-1, 0, 1), limits = c(-1, 1),
-                       guide = guide_colourbar(title = "Pearson's r",
-                                               title.position = "top",
-                                               title.hjust = 0.5,
-                                               nbin = 50,
-                                               raster = FALSE,
-                                               direction = "horizontal"))
+                       guide = FALSE)# +
+    # scale_fill_viridis(breaks = c(-1, 0, 1), limits = c(-1, 1),
+    #                    guide = guide_colourbar(title = "Pearson's r",
+    #                                            title.position = "top",
+    #                                            title.hjust = 0.5,
+    #                                            nbin = 50,
+    #                                            raster = FALSE,
+    #                                            direction = "horizontal"))
 
 p_feat_category_corr %<>% ggplot_build %>% ggplot_gtable
 p_feat_category_corr$layout$clip <- "off"
@@ -403,14 +434,15 @@ feat_subset_auc %>%
                data = feat_subset_auc %>%
                    filter(order_name == "eq",
                           use_feat_col == "feature",
-                          dataset == "posmix")) + 
+                          dataset == "posmix")) +
+    coord_flip() +
     #coord_cartesian(ylim = c(0.35, 0.65)) +
     ylab("AUC") + 
-    scale_x_discrete(limits = feature_order) + 
+    scale_x_discrete(limits = feature_order %>% rev) + 
     scale_y_continuous(expand = c(0,0), labels = function(x)x*100) +
     theme(legend.position = "none",
-          axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
-          axis.title.x = element_blank())
+          axis.title.y = element_blank(),
+          plot.margin = unit(c(0, 0, 0, 0), "pt"))
 ```
 
 ```{r}
@@ -429,15 +461,15 @@ feature_color <- feature_order %>%
     add_row(prot_nuc = "#000000", iter = "SVMrank Score", .before = 1) %$%
     setNames(prot_nuc, iter)
 
-feature_order %<>%
-    unlist(.$iter, use.names = FALSE) %>%
+feature_order <- feature_order %$%
+    unlist(iter, use.names = FALSE) %>%
     c("SVMrank Score", .) %>%
     factor(., ., ordered = TRUE)
 
 p_category_incl_excl <- feat_subset_auc %>%
     filter(use_feat_col == "category", order_name %in% c("eq", "ne"),
            dataset != "posmix", dataset != "vectors") %>%
-    mutate(iter = factor(iter, feature_order, ordered = TRUE)) %>%
+    mutate(iter = factor(iter, unique(feature_order), ordered = TRUE)) %>%
     ggplot() +
     geom_hline(yintercept = 0.5, linetype = "dashed") +
     geom_pointrange(aes(x = "SVMrank Score",
@@ -458,60 +490,71 @@ p_category_incl_excl <- feat_subset_auc %>%
     ylab("AUC") +
     scale_y_continuous(expand = c(0,0), limits = c(.16, .86),
                        labels = function(x) x*100) +
-    scale_x_discrete(limits = feature_order) +
+    scale_x_discrete(limits = feature_order %>% rev) +
+    coord_flip() +
     theme(legend.position = "none",
-          axis.text.x = element_text(angle = 25,  hjust = 1,
-                                     color = feature_color),
-          axis.title.x = element_blank(),
-          strip.text = element_text(face = "bold"),
-          strip.background = element_blank()) +
-    facet_wrap(~order_name, ncol = 1,
+          axis.text.y = element_text(color = feature_color %>% rev),
+          axis.title.y = element_blank(),
+          strip.text = element_blank(),
+          strip.background = element_blank(),
+          plot.margin = unit(c(0, 0, 0, 0), "pt")) +
+    facet_wrap(~order_name, nrow = 1,
                labeller = c(`eq` = "Only Single Category",
                             `ne` = "Excluding Single Category") %>%
                    as_labeller)
+
+p_category_incl_excl <- ggdraw(p_category_incl_excl) +
+    draw_plot_label("Only Single\nCategory", x = .12, y = .92,
+                    fontface = "bold", size = 6, hjust = 0, vjust = 0) +
+    draw_plot_label("Excluding Single\nCategory", x = .59, y = .92,
+                    fontface = "bold", size = 6, hjust = 0, vjust = 0)
+   
+p_category_incl_excl %<>% ggplotGrob
+p_category_incl_excl$layout %<>%
+    mutate_rows(name == "panel", clip = "off")
+
+ggdraw(p_category_incl_excl)
 ```
 
 # protein or nucleotide auc plot
 ```{r}
 p_auc_protnuc <- feat_subset_auc %>%
-    filter(use_feat_col == "prot_nuc", order_name == "eq") %>%
-    mutate_rows(iter == "Nucleotide",
-                iter = "Nucleotide Only") %>%
-    mutate_rows(iter == "Protein",
-                iter = "Protein Only")
-    
+    filter(use_feat_col == "prot_nuc", order_name == "eq")
+
 p_auc_protnuc <- p_auc_protnuc %>%
     filter(dataset != 'vectors', dataset != 'posmix') %>%
     ggplot() +
     geom_hline(yintercept = 0.5, linetype = "dashed") +
-    geom_pointrange(aes(x = "SVMrank Score",
+    geom_pointrange(aes(x = "SVMrank",
                         y = auc, ymin = lower95, ymax = upper95,
                         group = dataset),
-                    position = position_dodge(width = 0.25),
+                    position = position_dodge(width = 0.5),
                     color = "lightgray", size = 0.5, fatten = 0.5,
                     data = model_auc %>% filter(dataset != "posmix")) +
-    geom_pointrange(aes(x = "SVMrank Score",
+    geom_pointrange(aes(x = "SVMrank",
                         y = auc, ymin = lower95, ymax = upper95),
                     color = "#A10F1C", size = 1, fatten = 1,
                     data = model_auc %>% filter(dataset == "posmix")) +
     geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95,
                         group = dataset),
-                    position = position_dodge(width = 0.25),
+                    position = position_dodge(width = 0.5),
                     color = "lightgray", size = 0.5, fatten = 0.5) +
     geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
                     color = "#A10F1C", size = 0.5, fatten = 0.5,
                     data = p_auc_protnuc %>% filter(dataset == "posmix")) +
     ylab("AUC") +
-    scale_y_continuous(expand = c(0,0), limits = c(.16, .86),
+    scale_y_continuous(expand = c(0, 0), limits = c(.16, .86),
                        labels = function(x) x*100) +
-    scale_x_discrete(limits = c("SVMrank Score",
-                                "Protein Only", "Nucleotide Only")) +
+    scale_x_discrete(limits = c("Nucleotide", "Protein", "SVMrank"),
+                     labels = c(Nucleotide = "Nucleotide\nOnly",
+                                Protein = "Protein\nOnly",
+                                SVMrank = "SVMrank\nScore")) +
+    coord_flip() +
     theme(legend.position = "none",
-          axis.text.x = element_text(angle = 25,  hjust = 1,
-                                     color = feature_color),
-          axis.title.x = element_blank()) +
-    theme(axis.text.x = element_text(
-        colour = c("#000000", brewer.pal(7, "Dark2")[c(7, 5)])))
+          axis.text.y = element_text(
+              color = c(brewer.pal(7, "Dark2")[c(5, 7)], "#000000")),
+          axis.title.y = element_blank(),
+          plot.margin = unit(c(0, 0, 0, 0), "pt"))
 
 p_auc_protnuc
 ```
@@ -519,18 +562,26 @@ p_auc_protnuc
 ## Figure importance plot
 This block plots the entire figure relating to feature importances.
 ```{r plot_feature_importances}
-p5_weight_importance <- plot_grid(
-    plot_grid(p_weight_man_sum, p_feat_category_corr, nrow = 1),
-    p_category_incl_excl,
-    plot_grid(p_auc_protnuc, p_weight_protnuc,
-              nrow = 1, align = "hv",
-              labels = letters[1:2]),
-    rel_heights = c(1, 2, 1),
-    ncol = 1,
-    label_size = 8)
+plt_lab <- partial(draw_plot_label, size = 8)
+
+p5_weight_importance <-
+    ggdraw() + 
+    draw_plot(p_weight_man_sum, x = 0, y = .7, width = .67, height = .3) +
+    draw_plot(p_feat_category_corr,
+              x = .73, y = .71, width = .29, height = .29) +
+    draw_plot(p_category_incl_excl, x = 0, y = .21, width = 1, height = .49) +
+    draw_plot(
+        plot_grid(p_auc_protnuc, p_weight_protnuc, nrow = 1, align = "hv"),
+        x = 0, y = 0, width = 1, height = .2) +
+    plt_lab(x = 0, y = 1, label = "a") +
+    plt_lab(x = .67, y = 1, label = "b") +
+    plt_lab(x = 0, y = .71, label = "c") +
+    plt_lab(x = 0.53, y = .71, label = "d") +
+    plt_lab(x = 0, y = .22, label = "e") +
+    plt_lab(x = 0.53, y = .22, label = "f")
 
 #if (write_out) {
-    save_plot(filename = "plots/p5_feat2.pdf", plot = p5_weight_importance,
+    save_plot(filename = "plots/fig5_feat2.pdf", plot = p5_weight_importance,
           base_width = uconv(183, "mm", "in", "Length"),
           base_height = 5.5)
 #}
