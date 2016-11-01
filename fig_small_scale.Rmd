@@ -273,10 +273,8 @@ p3_mt <- tcross_outcomes %>%
     ggplot() +
     geom_vline(aes(xintercept = median(score)),
                linetype = "dashed", size = 0.5) + 
-    geom_jitter(aes(x = score, y = outcome, fill = as.numeric(outcome),
-                    color = as.numeric(outcome)),
-                shape = 21, size = .95,
-                position = position_quasirandom(varwidth = TRUE), 
+    geom_jitter(aes(x = score, y = outcome, color = as.numeric(outcome)),
+                size = .95, position = position_quasirandom(varwidth = TRUE),
             data = filter(tcross_outcomes, fraction == "MEM")) +
     annotate("text", x = -3.7, y = 3.1, label = "M. tuberculosis",
              size = 7*5/14, fontface = "bold.italic") + 
@@ -284,8 +282,6 @@ p3_mt <- tcross_outcomes %>%
                                 "CB" = "Coomassie\nBlue",
                                 "Neither" = "No\nExpression")) +
     scale_x_continuous(expand = c(.01, 0), breaks = c(-5:5)) +
-    scale_fill_gradient(low = "#A4A5A5", high = "#A10F1C",
-                        na.value = "black") +
     scale_color_gradient(low = "#A4A5A5", high = "#A10F1C",
                          na.value = "black") +
     theme(axis.title = element_blank(),
