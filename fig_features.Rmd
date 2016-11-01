@@ -136,22 +136,20 @@ svmweights <- svmweights %>%
            man_alpha = LETTERS[man_rank])
 ```
 
-```{r summary}
-category_order <- svmweights %>%
+# order of labels throughout figure
+```{r}
+category_color <- svmweights %>%
     group_by(prot_nuc, category) %>%
-    summarize(abs_weight = sum(abs(weight))) %>%
-    arrange(abs_weight)
-
-category_color <- category_order %>%
+    summarize(weight = sum(weight)) %>%
+    arrange(weight) %>%
     mutate_rows(prot_nuc == "Nucleotide",
                 prot_nuc = brewer.pal(5, "Dark2")[[5]]) %>%
     mutate_rows(prot_nuc == "Protein",
                 prot_nuc = brewer.pal(7, "Dark2")[[7]]) %$%
     setNames(prot_nuc, category)
+```
 
-category_order <- category_order %$%
-    unlist(category, use.names = FALSE)
-
+```{r}
 geom_bar_def <-
     partial(geom_bar, position = "stack", stat = "identity",
             width = 0.5, size = 0.5, fill = "white", color = "black")
@@ -169,16 +167,20 @@ p_weight_man_sum <- svmweights %>%
     geom_text(aes(y = 1.6, label = count), size = 5*5/14) +
     geom_point(aes(y = tot_weight), color = "red") +
     ylab("Weight") +
-    scale_x_discrete(limits = category_order) +
+    scale_x_discrete(limits = names(category_color)) +
     coord_flip() +
     theme(legend.position = "none",
           axis.title.y = element_blank(),
           axis.text.y = element_text(color = category_color),
-          plot.margin = unit(c(0, 0, 0, 0), "pt"))
+          plot.margin = unit(rep(0, 4), "pt"))
 
 p_weight_man_sum %<>% ggplot_build %>% ggplot_gtable
 p_weight_man_sum$layout$clip <- "off"
 
+ggdraw(p_weight_man_sum)
+```
+
+```{r}
 p_weight_protnuc <- svmweights %>%
     group_by(prot_nuc) %>%
     summarize(
@@ -197,12 +199,11 @@ p_weight_protnuc <- svmweights %>%
     theme(axis.title.y = element_blank(),
           axis.text.y =
               element_text(color = brewer.pal(7, "Dark2")[c(5, 7)]),
-          plot.margin = unit(c(0, 0, 0, 0), "pt"))
+          plot.margin = unit(rep(0, 4), "pt"))
 
 p_weight_protnuc %<>% ggplot_build %>% ggplot_gtable
 p_weight_protnuc$layout$clip <- "off"
 
-ggdraw(p_weight_man_sum)
 ggdraw(p_weight_protnuc)
 ```
 
@@ -277,8 +278,10 @@ p_feat_category_corr <- p_feat_category_corr %>%
     group_by(id, category) %>%
     summarize(value = sum(value, na.omit = TRUE)) %>%
     spread(category, value) %>%
-    ungroup %>%
-    select(-id) %>%
+    ungroup
+
+p_feat_category_corr <-
+    p_feat_category_corr[, names(category_color)] %>%
     ggcorr(method = c("pairwise.complete.obs", "pearson"),
            hjust = 1, size = 2,
            diagColors = svmweights %>%
@@ -287,20 +290,24 @@ p_feat_category_corr <- p_feat_category_corr %>%
                   colorgrp = prot_nuc) %>%
            data.frame
            ) +
-    theme(legend.position = c(-0.2, .73),
-          legend.key.height = unit(12, "pt"),
-          legend.key.width = unit(7, "pt"),
-          plot.margin = unit(c(0, 0, 0, 0), "pt")) +
+    labs(fill = "Pearson's r") +
+    theme(legend.position = c(-.07, .83),
+          legend.title = element_text(size = 6),
+          legend.text = element_text(size = 5),
+          legend.key.height = unit(5, "pt"),
+          legend.key.width = unit(8, "pt"),
+          plot.margin = unit(rep(0, 4), "pt")) +
     scale_color_manual(values = setNames(brewer.pal(7, "Dark2")[c(5, 7)],
                                          c("Nucleotide", "Protein")),
-                       guide = FALSE)# +
-    # scale_fill_viridis(breaks = c(-1, 0, 1), limits = c(-1, 1),
-    #                    guide = guide_colourbar(title = "Pearson's r",
-    #                                            title.position = "top",
-    #                                            title.hjust = 0.5,
-    #                                            nbin = 50,
-    #                                            raster = FALSE,
-    #                                            direction = "horizontal"))
+                       guide = FALSE) +
+    scale_fill_gradient2(breaks = c(-1, 0, 1), limits = c(-1, 1),
+        guide = guide_colourbar(title = "Pearson's r",
+                                title.position = "top",
+                                title.hjust = 0.5,
+                                nbin = 100,
+                                raster = FALSE,
+                                direction = "horizontal",
+                                ticks = FALSE))
 
 p_feat_category_corr %<>% ggplot_build %>% ggplot_gtable
 p_feat_category_corr$layout$clip <- "off"
@@ -446,30 +453,14 @@ feat_subset_auc %>%
 ```
 
 ```{r}
-feature_order <- feat_subset_auc %>%
-    filter(order_name == "eq", dataset == "posmix", 
-           use_feat_col == "category") %>%
-    left_join(svmweights %>% distinct(category, prot_nuc, man_weight),
-              by = c("iter" = "category")) %>%
-    arrange(desc(man_weight))
+category_color %<>%
+    c(`SVMrank Score` = "#000000", .) %>%
+    rev
 
-feature_color <- feature_order %>%
-    mutate_rows(prot_nuc == "Nucleotide",
-                prot_nuc = brewer.pal(5, "Dark2")[[5]]) %>%
-    mutate_rows(prot_nuc == "Protein",
-                prot_nuc = brewer.pal(7, "Dark2")[[7]]) %>%
-    add_row(prot_nuc = "#000000", iter = "SVMrank Score", .before = 1) %$%
-    setNames(prot_nuc, iter)
-
-feature_order <- feature_order %$%
-    unlist(iter, use.names = FALSE) %>%
-    c("SVMrank Score", .) %>%
-    factor(., ., ordered = TRUE)
-
-p_category_incl_excl <- feat_subset_auc %>%
-    filter(use_feat_col == "category", order_name %in% c("eq", "ne"),
+make_incl_excl <- function(df) 
+    df %>%
+    filter(use_feat_col == "category", 
            dataset != "posmix", dataset != "vectors") %>%
-    mutate(iter = factor(iter, unique(feature_order), ordered = TRUE)) %>%
     ggplot() +
     geom_hline(yintercept = 0.5, linetype = "dashed") +
     geom_pointrange(aes(x = "SVMrank Score",
@@ -484,36 +475,37 @@ p_category_incl_excl <- feat_subset_auc %>%
                     color = "lightgray", size = 0.5, fatten = 0.5) +
     geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
                     color = "#A10F1C", size = 0.5, fatten = 0.5,
-               data = feat_subset_auc %>%
-                   filter(use_feat_col == "category",
-                          dataset == "posmix", order_name %in% c("eq", "ne"))) +
+               data = df %>%
+                   filter(use_feat_col == "category", dataset == "posmix")) +
     ylab("AUC") +
-    scale_y_continuous(expand = c(0,0), limits = c(.16, .86),
-                       labels = function(x) x*100) +
-    scale_x_discrete(limits = feature_order %>% rev) +
+    scale_y_continuous(limits = c(.16, .86), breaks = seq(0, 1, .2),
+                       labels = function(x) x*100,) +
+    scale_x_discrete(limits = names(category_color)) +
     coord_flip() +
     theme(legend.position = "none",
-          axis.text.y = element_text(color = feature_color %>% rev),
+          axis.text.y = element_text(color = category_color),
           axis.title.y = element_blank(),
           strip.text = element_blank(),
           strip.background = element_blank(),
-          plot.margin = unit(c(0, 0, 0, 0), "pt")) +
-    facet_wrap(~order_name, nrow = 1,
-               labeller = c(`eq` = "Only Single Category",
-                            `ne` = "Excluding Single Category") %>%
-                   as_labeller)
+          plot.margin = unit(rep(0, 4), "pt"))
 
-p_category_incl_excl <- ggdraw(p_category_incl_excl) +
-    draw_plot_label("Only Single\nCategory", x = .12, y = .92,
-                    fontface = "bold", size = 6, hjust = 0, vjust = 0) +
-    draw_plot_label("Excluding Single\nCategory", x = .59, y = .92,
+p_category_incl <- feat_subset_auc %>%
+    filter(order_name == "eq") %>%
+    make_incl_excl %>%
+    ggdraw +
+    draw_plot_label("Only Single\nCategory", x = .23, y = .92,
+                    fontface = "bold", size = 6, hjust = 0, vjust = 0) 
+
+p_category_excl <- feat_subset_auc %>%
+    filter(order_name == "ne") %>%
+    {make_incl_excl(.) + 
+         theme(axis.text.y = element_blank())} %>%
+    ggdraw +
+    draw_plot_label("Excluding Single\nCategory", x = .02, y = .92,
                     fontface = "bold", size = 6, hjust = 0, vjust = 0)
-   
-p_category_incl_excl %<>% ggplotGrob
-p_category_incl_excl$layout %<>%
-    mutate_rows(name == "panel", clip = "off")
 
-ggdraw(p_category_incl_excl)
+p_category_incl
+p_category_excl
 ```
 
 # protein or nucleotide auc plot
@@ -554,10 +546,89 @@ p_auc_protnuc <- p_auc_protnuc %>%
           axis.text.y = element_text(
               color = c(brewer.pal(7, "Dark2")[c(5, 7)], "#000000")),
           axis.title.y = element_blank(),
-          plot.margin = unit(c(0, 0, 0, 0), "pt"))
+          plot.margin = unit(rep(0, 4), "pt"))
 
 p_auc_protnuc
 ```
+
+### Load data from training process
+```{r}
+training_env <- new.env()
+load("training.RData", training_env)
+```
+
+## Load Fluman, et al., aSD mutant data (Figure 6 in their paper)
+```{r fluman_data_prep, cache=TRUE}
+fluman_asd <- read_csv("forward-genomes/fluman_asd_mutant.fna.allstats.csv") %>%
+    separate(title, c("gene")) %>%
+    mutate(gene = tolower(gene),
+           construct = "MUT")
+
+fluman_asd <- training_env$daley_allstats %>%
+    filter(id %in% fluman_asd$gene) %>% 
+    rename(gene = id) %>%
+    mutate(construct = "WT") %>%
+    bind_rows(fluman_asd)
+
+fluman_asd$score <- svmpredict(fluman_asd)
+
+fluman_asd <- read_csv("forward-genomes/fig6-analysis.csv") %>%
+    filter(band == "FOLDED") %>%
+    rename(outcome = `Area from Image`) %>%
+    mutate(gene = tolower(gene)) %>%
+    select(-`Percent (Just an identifier)`, -band) %>%
+    left_join(fluman_asd, by = c("gene", "construct")) %>%
+    gather(metric, value, -gene, -construct) %>%
+    spread(construct, value) %>%
+    mutate(rel_diff = rel_diff(MUT, WT))
+```
+
+# fluman asd plotting
+```{r fluman_asd_plotting}
+metrics_of_interest <- data.frame(
+    row.names = c("SD-like Sites",  "Folded Protein", "SVMrank Score"),
+    colors = c("#e7298a", "#7570b3", "#e6ab02"), 
+    short = c("totalSDsites", "outcome", "score")) %>% t
+
+p4_fluman_asd <- fluman_asd %>%
+    filter(metric %in% metrics_of_interest['short',]) %>%
+    mutate(gene = factor(gene,
+                         levels = c("ygdd", "brnq", "ybjj"),
+                         labels = c("YgdD", "BrnQ", "YbjJ")),
+           metric = factor(metric,
+                           levels = metrics_of_interest['short',],
+                           labels = colnames(metrics_of_interest))) %>%
+    ggplot(aes(x = gene, y = rel_diff, fill = metric)) +
+    geom_bar(stat = "identity", position = "dodge") + 
+    ylab("Relative Difference") +
+    scale_fill_manual(values = metrics_of_interest['colors',]) +
+    scale_y_continuous(labels = c(-1, -.5, 0, .25)) + 
+    theme(axis.title.x = element_blank(),
+          legend.title = element_blank(),
+          legend.key = element_blank(),
+          legend.key.size = unit(0.25, "cm"),
+          legend.position = c(.60, .23),
+          plot.margin = unit(rep(0, 4), "pt"))
+
+p4_fluman_asd %<>% ggplotGrob()
+
+# remove keystones and set legend text label colors
+
+for (idx in c(4L, 6L, 8L))
+    p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
+
+p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[9L]]$gp$col <-
+    metrics_of_interest['colors', 'SD-like Sites']
+
+p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[10L]]$gp$col <-
+    metrics_of_interest['colors', 'Folded Protein']
+
+p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[11L]]$gp$col <-
+    metrics_of_interest['colors', 'SVMrank Score']
+
+ggdraw(p4_fluman_asd)
+```
+
 
 ## Figure importance plot
 This block plots the entire figure relating to feature importances.
@@ -566,26 +637,37 @@ plt_lab <- partial(draw_plot_label, size = 8)
 
 p5_weight_importance <-
     ggdraw() + 
-    draw_plot(p_weight_man_sum, x = 0, y = .7, width = .67, height = .3) +
+    draw_plot(p_weight_man_sum, x = .34, y = .7, width = .66, height = .3) +
     draw_plot(p_feat_category_corr,
-              x = .73, y = .71, width = .29, height = .29) +
-    draw_plot(p_category_incl_excl, x = 0, y = .21, width = 1, height = .49) +
+              x = 0.05, y = .71, width = .29, height = .29) +
     draw_plot(
-        plot_grid(p_auc_protnuc, p_weight_protnuc, nrow = 1, align = "hv"),
+        plot_grid(p_category_incl, p_category_excl,
+                  nrow = 1L, rel_widths = c(2.6, 2)),
+        x = 0, y = .21, width = 1, height = .49) +
+    draw_plot(
+        plot_grid(p_weight_protnuc, p_auc_protnuc, p4_fluman_asd, nrow = 1,
+                  align = "h", rel_widths = c(2, 2, 1),
+                  labels = letters[5:7], label_size = 8, vjust = 0.5),
         x = 0, y = 0, width = 1, height = .2) +
     plt_lab(x = 0, y = 1, label = "a") +
-    plt_lab(x = .67, y = 1, label = "b") +
+    plt_lab(x = .31, y = 1, label = "b") +
     plt_lab(x = 0, y = .71, label = "c") +
-    plt_lab(x = 0.53, y = .71, label = "d") +
-    plt_lab(x = 0, y = .22, label = "e") +
-    plt_lab(x = 0.53, y = .22, label = "f")
+    plt_lab(x = 0.53, y = .71, label = "d")
+    # plt_lab(x = 0, y = .22, label = "e") +
+    # plt_lab(x = 0.53, y = .22, label = "f")
+
+p5_weight_importance %<>% ggplotGrob
+
+# dont clip e, f, g labels
+p5_weight_importance$grobs[[4]]$children[[5]]$children$layout$layout %<>%
+    mutate_rows(name == "panel", clip = "off")
 
 #if (write_out) {
-    save_plot(filename = "plots/fig5_feat2.pdf", plot = p5_weight_importance,
+    save_plot(filename = "plots/fig6_fluman.pdf", plot = p5_weight_importance,
           base_width = uconv(183, "mm", "in", "Length"),
           base_height = 5.5)
 #}
-p5_weight_importance
+ggdraw(p5_weight_importance)
 ```
 
 ## clustering of entire forward genomes
