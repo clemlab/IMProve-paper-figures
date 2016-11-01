@@ -32,7 +32,7 @@ library(parallel)
 library(foreach)
 library(doMC)
 registerDoMC(cores = 20L)
-# 
+#
 # library(doParallel)
 # registerDoParallel(cl)
 
@@ -72,7 +72,7 @@ ecoli_pfam %<>%
 
 ecoli_pfam_summary <- ecoli_pfam %>%
     group_by(id) %>%
-    arrange(id, envelope_start) %>% 
+    arrange(id, envelope_start) %>%
     summarize(hmm_arch = paste(hmm_acc, collapse = " "),
               clan_arch = paste(clan, collapse = " "))
 
@@ -126,7 +126,7 @@ nycomps_pfam_outcomes <- nycomps_pfam %>%
                   distinct(id, clan, clan_training) %>%
                   left_join(nycomps_pfam_outcomes, ., by = "id") %>%
                   gather(attribute, attr_value, clan, clan_training))
-    
+
 nycomps_pfam_outcomes %<>%
     filter(grp != "All Genes") %>%
     mutate(grp = "All Outcomes") %>%
@@ -193,7 +193,7 @@ p_hmm_acc <- nycomps_pfam_auc %>%
     mutate(attr_value = factor(attr_value,
                                c('TRUE', 'FALSE', "NONE"),
                                c("In training", "Not in training", "No Pfam"),
-                               ordered = TRUE)) %>% 
+                               ordered = TRUE)) %>%
     ggplot() +
     geom_hline(yintercept = 0.50, linetype = "dashed", color = "lightgrey") +
     geom_pointrange(aes(x = grp, ymin = upper95, y = auc, ymax = lower95,
@@ -231,7 +231,7 @@ ggdraw(p_hmm_acc)
 nycomps_pfam_auc %>%
     filter(attribute == "hmm_acc") %>%
     ggplot() +
-    geom_point(aes(count, auc)) + 
+    geom_point(aes(count, auc)) +
     scale_x_log10()
 
 nycomps_pfam_auc %>%
@@ -256,7 +256,7 @@ nycomps_pfam_auc %>%
     theme(legend.position = "bottom",
           legend.title = element_blank(),
           axis.title.x = element_blank(),
-          strip.background = element_blank()) + 
+          strip.background = element_blank()) +
     facet_wrap(~grp, scales = "free_y", ncol = 2)
 ```
 
@@ -327,7 +327,7 @@ p_pfam_auc_ecdf <- nycomps_pfam_best_vector %>%
                   mutate(proport = specify_decimal(count / sum(count), 2L)) %>%
                   add_row(proport = nrow(nycomps_pfam_best_vector), conf_grp = NA)) +
     draw_label("Best AUC across\nconditions tested", x = 0.01, y = 0.95,
-              hjust = 0, fontface = "bold", size = 6) + 
+              hjust = 0, fontface = "bold", size = 6) +
     geom_step(aes(x = auc, y = cumedist, color = conf_grp)) +
     geom_point(aes(x = auc, y = cumedist),
                size = 0.5,
@@ -366,7 +366,7 @@ p_nycomps_selected_families <- nycomps_pfam_outcomes %>%
     geom_point(aes(x = attr_value, y = score, color = outcome), size = 0.25,
                position = position_beeswarm(dodge.width = .5, cex = 3)) +
     geom_text(
-        aes(x = attr_value, y = 2.3, 
+        aes(x = attr_value, y = 2.3,
             label = paste(grp, format_cnt(pos_count, count), sep = "\n")),
         size = 5*5/14,
         data = nycomps_pfam_best_vector %>%
@@ -379,7 +379,7 @@ p_nycomps_selected_families <- nycomps_pfam_outcomes %>%
                          filter(grp != "All Outcomes",
                                 attr_value %in% names(pfams_of_interest)) %>%
                          arrange(auc) %$% unlist(attr_value)) +
-    ylab(expression("SVM" ^ "rank"*~"score")) + 
+    ylab(expression("SVM" ^ "rank"*~"score")) +
     coord_flip(ylim = c(-5.11, 1.4)) +
     theme(legend.position = "None",
               axis.title.y = element_blank(),
