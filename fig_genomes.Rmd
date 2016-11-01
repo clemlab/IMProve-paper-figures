@@ -10,19 +10,21 @@ Load all libraries necessary for subsequent data munging and plotting.
 Some defaults are set here to make things easier throughout.
 ```{r libraries}
 # if TRUE, then data will be written to file
-write_out = FALSE
+write_out = TRUE
 
 library(testthat)
 
 library(gdata) # for `interleave`
 library(datamart) # `uconv` for unit conversion
 
+library(plyr) # for `dlply`
 library(magrittr)
 library(tidyverse)
 library(multidplyr)
 library(dplyrExtras)
 
 library(RColorBrewer)
+library(ggbeeswarm)
 library(cowplot)
 theme_set(theme_cowplot(font_size = 7))
 
@@ -31,6 +33,9 @@ library(myutils)
 
 library(doMC)
 registerDoMC(cores = 20L)
+
+create_cluster(20L) %>%
+    set_default_cluster()
 ```
 
 ### Load data from training process
@@ -78,10 +83,10 @@ forward_preds <-
 forward_preds <- read_delim("forward-genomes/microbial_query.tsv.gz",
                             delim = "\t") %>%
     bind_cols(read_csv("forward-genomes/microbial_query.fna.allstats.csv.gz",
-             col_types = feat_col_spec), .) %>%
+              col_types = feat_col_spec), .) %>%
     rename(group = grouping) %>%
     # Remove duplicate E. coli genome
-    filter(species != "Escherichia coli (strain ATCC 33849 ") %>%
+    filter(species != "Escherichia coli (strain ATCC 33849 / DSM 4235 / NCIB 12045 / K12 / DH1)") %>%
     select(one_of(colnames(forward_preds))) %>%
     bind_rows(forward_preds) %>%
     filter(numTMs > 0) %>%
@@ -146,12 +151,17 @@ forward_preds_order <- c(
     "Mus musculus",           
     "Homo sapiens")
 
+thermophile_species <- c("Aquifex aeolicus",
+                         "Spirochaeta thermophila",
+                         "Thermus thermophilus")
+
 p4_all_violin <- ggplot(forward_preds) + 
     geom_hline(yintercept = forward_ec_thresholds['median'],
                linetype = "dashed", color = "darkgrey") +
     geom_point(aes(x = species, y = median),
                color = "darkgrey", data = forward_tufte_boxplots) + 
-    geom_text(aes(x = species, y = -6, label = species_count),
+    geom_text(aes(x = species, y = -6, label = species_count,
+                  color = species %in% thermophile_species),
               vjust = 2, fontface = "italic", size = 7*5/14,
               data = forward_tufte_boxplots) + 
     geom_linerange(aes(x = species, ymin = whisker_low, ymax = quartile1),
@@ -164,23 +174,18 @@ p4_all_violin <- ggplot(forward_preds) +
     ylab(expression("SVM" ^ "rank"*~"score")) + 
     scale_y_continuous(expand = c(0, 0), breaks = nycomps_env$nycomps_breaks) +
     scale_x_discrete(limits = forward_preds_order) +
-    theme(axis.ticks.y = element_blank(),
-              axis.title.y = element_blank(),
-              axis.text.y = element_blank(),
-              axis.line.y = element_blank())
+    scale_color_manual(values = c("TRUE" = "#ff6600",
+                                  "FALSE" = "black")) +
+    theme(legend.position = "none",
+          axis.ticks.y = element_blank(),
+          axis.title.y = element_blank(),
+          axis.text.y = element_blank(),
+          axis.line.y = element_blank())
 
-p4_all_violin %<>% ggplotGrob
-p4_all_violin$layout %<>%
-    mutate_rows(name == "panel", clip = "off")
-
-ggdraw(p4_all_violin)
+p4_all_violin
 ```
 
 ```{r}
-thermophile_species <- c("Aquifex aeolicus",
-                         "Spirochaeta thermophila",
-                         "Thermus thermophilus")
-
 selected_violin_genomes <- c("Plasmodium falciparum",
                              "Aquifex aeolicus",
                              "Thermus thermophilus",
@@ -192,7 +197,7 @@ selected_violin_genomes <- c("Plasmodium falciparum",
 
 p4_selected_violin <- forward_preds %>%
     filter(species %in% selected_violin_genomes) %>%
-    ggplot() + 
+    ggplot() +
     geom_hline(yintercept = forward_ec_thresholds['median'],
                linetype = "dashed", color = "darkgrey") +
     geom_point(aes(x = species, y = median), color = "darkgrey",
@@ -202,21 +207,21 @@ p4_selected_violin <- forward_preds %>%
                   color = species %in% thermophile_species),
               vjust = 2, fontface = "italic", size = 7*5/14,
               data = forward_tufte_boxplots %>%
-                  filter(species %in% selected_violin_genomes)) + 
+                  filter(species %in% selected_violin_genomes)) +
     geom_linerange(aes(x = species, ymin = whisker_low, ymax = quartile1),
                    color = "darkgrey",
                    data = forward_tufte_boxplots %>%
-                       filter(species %in% selected_violin_genomes)) + 
+                       filter(species %in% selected_violin_genomes)) +
     geom_linerange(aes(x = species, ymin = quartile3, ymax = whisker_high),
                    color = "darkgrey",
                    data = forward_tufte_boxplots %>%
                        filter(species %in% selected_violin_genomes)) +
     geom_violin2(aes(y = score, x = species),
-                 color = "black", adjust = 0.3, alpha = 0) + 
+                 color = "black", adjust = 0.3, alpha = 0) +
     coord_flip(ylim = nycomps_env$nycomps_xscale) +
     ylab(expression("SVM" ^ "rank"*~"score")) +
     scale_color_manual(values = c("TRUE" = "#ff6600",
-                                  "FALSE" = "black")) + 
+                                  "FALSE" = "black")) +
     scale_x_discrete(limits = selected_violin_genomes,
                      breaks = selected_violin_genomes) +
     scale_y_continuous(expand = c(0, 0), breaks = nycomps_env$nycomps_breaks) +
@@ -226,11 +231,7 @@ p4_selected_violin <- forward_preds %>%
           axis.text.y = element_blank(),
           axis.line.y = element_blank())
 
-p4_selected_violin %<>% ggplotGrob
-p4_selected_violin$layout %<>%
-    mutate_rows(name == "panel", clip = "off")
-
-ggdraw(p4_selected_violin)
+p4_selected_violin
 ```
 
 ```{r fig4_nycomps_nvector_ppv}
@@ -239,6 +240,7 @@ p4_nvector_ppv_prep <- nycomps_env$nycomps_all_outcomes %>%
     calc_auc_roc(grouping_col = "plasmid_name", score_col = "score",
                  outcome_col = "plasmid_outcome", method = "roc") %>%
     prep_for_polygon
+
 p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) + 
     geom_polygon(aes(x = thresholds, y = ppv, group = id, fill = y_greater_min,
                      color = y_greater_min), size = 0.1) +
@@ -368,7 +370,8 @@ mad_vs_nycomps <- overlap_df %>%
 p4_ecoli_dist <- ggplot(overlap_df) + 
     geom_vline(xintercept = 0.75,
                size = 0.7, linetype = "dotted", color = "#00b1b9") +
-    geom_point(aes(x = ec_whole, y = 1), shape = 17, alpha = 0.5, size = 0.4) +
+    geom_point(aes(x = ec_whole, y = 1), size = 0.25,
+               position = position_quasirandom()) +
     scale_x_continuous(expand = c(0, 0), limits = c(0, 1),
                        labels = function(x) x*100) +
     xlab("E. coli vs. E. coli (Training Set)") +
@@ -376,7 +379,13 @@ p4_ecoli_dist <- ggplot(overlap_df) +
           axis.text.y = element_blank(),
           axis.line.y = element_blank(),
           axis.ticks.y = element_blank())
-p4_ecoli_dist
+
+p4_ecoli_dist %<>% ggplotGrob
+
+p4_ecoli_dist$layout %<>%
+    mutate_rows(name == "panel", clip = "off")
+
+ggdraw(p4_ecoli_dist)
 ```
 
 ```{r}
@@ -452,34 +461,75 @@ pext2_nycomps_forward
 Need to split up plotting since we want to have several on log axes
 ```{r}
 selected <-
-    c("Sequence Length",
-      "Isoelectric Point",
-      "GC Content",
-      "Membrane Residue Count",
-      "tRNA Adapation Index",
-      "Positive Cytoplasmic Residues (normalized)",
-      "Codon Pair Score",
-      "ΔG of Insertion (Hessa, et al.)",
-      "Shine-Dalgarno Sites (normalized)",
-      "Length of TM1-TM2 Loop",
-      "RNA Secondary Structure (1st 40 codons)",
-      "Mean Disorder Prediction (RONN)")
+    c(seqLen = "Sequence Length",
+      pI = "Isoelectric Point",
+      GC = "GC Content",
+      membrCont = "Membrane Residue Count",
+      tAI = "tRNA Adapation Index",
+      numPosNormCyt = "Positive Cytoplasmic Residues (normalized)",
+      CPS = "Codon Pair Score",
+      delGallTMs = "ΔG of Insertion (Hessa, et al.)",
+      relareaSD = "Shine-Dalgarno Sites (normalized)",
+      len1_2loop = "Length of TM1-TM2 Loop",
+      zeroto38avgRNAss = "RNA Secondary Structure (1st 40 codons)",
+      avgRONN = "Mean Disorder Prediction (RONN)")
 
-names(selected) <-
-    c("seqLen", "pI", "GC", "membrCont", "tAI", "numPosNormCyt", "CPS",
-      "delGallTMs", "relareaSD", "len1_2loop", "zeroto38avgRNAss", "avgRONN")
 log_scale <- c("seqLen", "membrCont", "len1_2loop")
 
-# default formatting
-p_indiv_canvas <- ggplot() +
-    geom_blank() +
-    scale_fill_manual(values = brewer.pal(3L, "Dark2")) +
-    scale_color_manual(values = brewer.pal(3L, "Dark2")) +
-    scale_y_continuous(expand = c(0, 0)) +
-    scale_x_continuous(expand = c(0, 0)) +
-    theme(axis.title.y = element_blank(),
-          legend.position = "None",
-          plot.margin = unit(c(5, 5, 0, 0), "pt"))
+make_indiv_plot <- function(df) {
+    library(tidyverse)
+    library(cowplot)
+    library(myutils)
+    feat <- unique(df$feature)
+    
+    p_hist <- ggplot(df) +
+        geom_step_hist(aes(x = value, color = group),
+                       alpha = 0.7,
+                       position = "identity") +
+        xlab(selected[[feat]]) +
+        scale_color_manual(
+            values = c("training" = brewer.pal(3L, "Dark2")[[1L]],
+                       "thermo" = "#ff6600",
+                       "pf" = brewer.pal(3L, "Dark2")[[3L]])) +
+        scale_y_continuous(expand = c(0, 0)) +
+        scale_x_continuous(expand = c(0, 0)) +
+        theme(axis.title.y = element_blank(),
+              legend.position = "None",
+              plot.margin = unit(c(5, 5, 0, 0), "pt"))
+    
+    # adjustments if log scale is desired
+    if (feat %in% log_scale) {
+        p_hist <- p_hist +
+            scale_x_log10(
+                expand = c(0, 0),
+                labels = scales::trans_format(
+                        "log10", scales::math_format(10 ^ .x))) +
+            annotation_logticks2(sides = "b",
+                                 short = unit(-0.4, "mm"),
+                                 mid = unit(-0.4, "mm"),
+                                 long = unit(-0.6, "mm"),
+                                 size = 0.2)
+
+        p_hist %<>% ggplotGrob
+        p_hist$layout %<>%
+            mutate_rows(name == "panel", clip = "off")
+    }
+    
+    # add labels in ggdraw coordinates
+    ggdraw(p_hist) +
+        draw_label(x = 0.85, y = 0.9,
+                 label = overlap_df %>% 
+                     filter_("feature == '" %>% paste0(feat, "'")) %>%
+                     select(thermo) %>% unlist(use.names = FALSE) %>%
+                     specify_decimal(2L),
+                  size = 5, colour = "#ff6600") +
+        draw_label(x = 0.85, y = 0.8,
+                 label = overlap_df %>% 
+                     filter_("feature == '" %>% paste0(feat, "'")) %>%
+                     select(pf) %>% unlist(use.names = FALSE) %>%
+                     specify_decimal(2L),
+                 size = 5, colour = brewer.pal(3L, "Dark2")[[3L]])
+}
 
 p4_feat_hist <- all_features %>%
     # necessary to filter for certain features of interest
@@ -493,170 +543,50 @@ p4_feat_hist <- all_features %>%
     mutate_rows(species == "Plasmodium falciparum", group = "pf") %>%
     # to control plot order
     mutate(feature = factor(feature, names(selected))) %>%
-    dlply(.(feature), function(df) {
-        feat <- unique(df$feature)
-        if (feat %in% log_scale) {
-            bw <- fd_bw(log10(df$value))
-        } else {
-            bw <- fd_bw(df$value)
-        }
-        
-        p_hist <- p_indiv_canvas +
-            geom_step_hist(aes(x = value, color = group),
-                           binwidth = bw, alpha = 0.7,
-                           position = "identity", data = df) +
-            xlab(selected[[feat]])
-        
-        # adjustments if log scale is desired
-        if (feat %in% log_scale) {
-            p_hist <- p_hist +
-                scale_x_log10(
-                    expand = c(0, 0),
-                    labels = scales::trans_format(
-                            "log10", scales::math_format(10 ^ .x))) +
-                annotation_logticks2(sides = "b",
-                                     short = unit(-0.4, "mm"),
-                                     mid = unit(-0.4, "mm"),
-                                     long = unit(-0.6, "mm"),
-                                     size = 0.2)
-            
-            p_hist %<>% ggplotGrob
-            p_hist$layout %<>%
-                mutate_rows(name == "panel", clip = "off")
-        }
-        
-        # add labels in ggdraw coordinates
-        ggdraw(p_hist) +
-            draw_label(x = 0.85, y = 0.9,
-                     label = overlap_df %>% 
-                         filter_("feature == '" %>% paste0(feature, "'")) %>%
-                         select(thermo) %>% unlist(use.names = FALSE) %>%
-                         specify_decimal(2L),
-                      size = 5, colour = brewer.pal(3L, "Dark2")[[2L]]) +
-            draw_label(x = 0.85, y = 0.8,
-                     label = overlap_df %>% 
-                         filter_("feature == '" %>% paste0(feature, "'")) %>%
-                         select(pf) %>% unlist(use.names = FALSE) %>%
-                         specify_decimal(2L),
-                     size = 5, colour = brewer.pal(3L, "Dark2")[[3L]])
-    }) %>%
+    dlply(.(feature), make_indiv_plot, .parallel = TRUE) %>%
     # render final plot
-    plot_grid(plotlist = ., align = "hv", ncol = 2)
+    plot_grid(plotlist = ., align = "hv", ncol = 2L)
+
+p4_feat_hist
 ```
 
 ```{r}
-pext2 <- ggdraw() + 
+pext2 <- ggdraw() +
     draw_plot(p4_all_violin, width = 0.65) +
-    draw_label("A", x = 0.01, y = .99, fontface = "bold", size = 8) +
+    draw_label("a", x = 0.01, y = .99, fontface = "bold", size = 8) +
     draw_plot(p4_feat_hist, x = 0.67, width = 0.33, height = 0.97) +
-    draw_label("B", x = .66, y = .99, fontface = "bold", size = 8) +
-    draw_label("E. coli", x = .73, y = .98, fontface = "bold.italic", 
-               size = 7, colour = brewer.pal(3L, "Dark2")[[1]]) + 
+    draw_label("b", x = .66, y = .99, fontface = "bold", size = 8) +
+    draw_label("E. coli", x = .73, y = .98, fontface = "bold.italic",
+               size = 7, colour = brewer.pal(3L, "Dark2")[[1L]]) +
     draw_label("Thermophiles", x = .83, y = .98, fontface = "bold",
-               size = 7, colour = brewer.pal(3L, "Dark2")[[2]]) + 
+               size = 7, colour = "#ff6600") +
     draw_label("P. falciparum", x = .93, y = .98, fontface = "bold.italic",
-               size = 7, colour = brewer.pal(3L, "Dark2")[[3]]) +
+               size = 7, colour = brewer.pal(3L, "Dark2")[[3L]]) +
     draw_label("Counts", x = .655, y = .5,
                fontface = "bold", size = 7, angle = 90)
     
 # RGB by default
 if (write_out)
-    save_plot(filename = "plots/extfig2_names.pdf", 
-              plot = pext2, 
+    save_plot(filename = "plots/extfig2_names.pdf",
+              plot = pext2,
               base_width = uconv(183, "mm", "in", "Length"), base_height = 7,
               dpi = 300)
-    
+
 pext2
 ```
-
-## Load Fluman, et al., aSD mutant data (Figure 6 in their paper)
-```{r fluman_data_prep, cache=TRUE}
-fluman_asd <- read_csv("forward-genomes/fluman_asd_mutant.fna.allstats.csv") %>%
-    separate(title, c("gene")) %>%
-    mutate(gene = tolower(gene),
-           construct = "MUT")
-
-fluman_asd <- training_env$daley_allstats %>%
-    filter(id %in% fluman_asd$gene) %>% 
-    rename(gene = id) %>%
-    mutate(construct = "WT") %>%
-    bind_rows(fluman_asd)
-
-fluman_asd$score <- svmpredict(fluman_asd)
-
-fluman_asd <- read_csv("forward-genomes/fig6-analysis.csv") %>%
-    filter(band == "FOLDED") %>%
-    rename(outcome = `Area from Image`) %>%
-    mutate(gene = tolower(gene)) %>%
-    select(-`Percent (Just an identifier)`, -band) %>%
-    left_join(fluman_asd, by = c("gene", "construct")) %>%
-    gather(metric, value, -gene, -construct) %>%
-    spread(construct, value) %>%
-    mutate(rel_diff = rel_diff(MUT, WT))
-```
-
-# fluman asd plotting
-```{r fluman_asd_plotting}
-metrics_of_interest <- data.frame(
-    row.names = c("SD-like Sites",  "Folded Protein", "SVMrank Score"),
-    colors = c("#e7298a", "#7570b3", "#e6ab02"), 
-    short = c("totalSDsites", "outcome", "score")) %>% t
-
-p4_fluman_asd <- fluman_asd %>%
-    filter(metric %in% metrics_of_interest['short',]) %>%
-    mutate(gene = factor(gene,
-                         levels = c("ygdd", "brnq", "ybjj"),
-                         labels = c("YgdD", "BrnQ", "YbjJ")),
-           metric = factor(metric,
-                           levels = metrics_of_interest['short',],
-                           labels = colnames(metrics_of_interest))) %>%
-    ggplot(aes(x = gene, y = rel_diff, fill = metric)) +
-    geom_bar(stat = "identity", position = "dodge") + 
-    ylab("Relative Difference") +
-    scale_fill_manual(values = metrics_of_interest['colors',]) +
-    scale_y_continuous(labels = c(-1, -.5, 0, .25)) + 
-    theme(axis.title.x = element_blank(),
-          legend.title = element_blank(),
-          legend.key = element_blank(),
-          legend.key.size = unit(0.25, "cm"),
-          legend.position = c(.60, .20),
-          aspect.ratio = 1)
-
-p4_fluman_asd %<>% ggplotGrob()
-
-# remove keystones and set legend text label colors
-for (idx in c(4, 6, 8)) {
-    p4_fluman_asd$grobs[[8]]$grobs[[1]]$grobs[[idx]]$width$arg1 <-
-        unit(0, "npc")
-    p4_fluman_asd$grobs[[8]]$grobs[[1]]$grobs[[idx]]$width$arg2 <-
-        unit(0, "npc")
-}
-
-p4_fluman_asd$grobs[[8]]$grobs[[1]]$grobs[[9]]$gp$col <-
-    metrics_of_interest['colors', 'SD-like Sites']
-
-p4_fluman_asd$grobs[[8]]$grobs[[1]]$grobs[[10]]$gp$col <-
-    metrics_of_interest['colors', 'Folded Protein']
-
-p4_fluman_asd$grobs[[8]]$grobs[[1]]$grobs[[11]]$gp$col <-
-    metrics_of_interest['colors', 'SVMrank Score']
-
-ggdraw(p4_fluman_asd)
-```
-
 
 ## Figure 4 Compilation
 ```{r}
 p4_main <- ggdraw() + 
     draw_plot(plot_grid(p4_selected_violin, p4_nvector_ppv,
-                        nrow = 2, align = "hv", rel_heights = c(3, 1),
-                        labels = LETTERS[1:2], label_size = 8), 
+                        nrow = 2L, align = "hv", rel_heights = c(3, 1),
+                        labels = letters[1:2], label_size = 8), 
               x = -.01, y = 0, width = .72, height = 1) +
-    draw_plot(plot_grid(p4_ecoli_dist, pext2_nycomps_forward, 
-                        pext2_thermo, pext2_pf, p4_fluman_asd,
-                        labels = LETTERS[3:7], label_size = 8,
-                        ncol = 1, align = "hv",
-                        rel_heights = c(1, 3, 3, 3, 3)),
+    draw_plot(plot_grid(p4_ecoli_dist, pext2_nycomps_forward,
+                        pext2_thermo, pext2_pf,
+                        labels = letters[3:6], label_size = 8,
+                        ncol = 1L, align = "hv",
+                        rel_heights = c(2, 3, 3, 3)),
               x = .72, y = 0, width = .27, height = 1)
 
 # RGB by default
