@@ -36,7 +36,7 @@ library(parallel)
 library(foreach)
 library(doMC)
 registerDoMC(cores = 20L)
-# 
+#
 # library(doParallel)
 # registerDoParallel(cl)
 
@@ -118,7 +118,7 @@ nycomps_cor %<>%
 # boxes for groupings/orderings
 svmweights <- nycomps_dendro %>%
     cutree(k = 11) %>%
-    data.frame %>% 
+    data.frame %>%
     rownames_to_column %>%
     right_join(svmweights, by = c("rowname" = "feature")) %>%
     rename_(cluster = as.name("."),
@@ -147,121 +147,6 @@ category_color <- svmweights %>%
     mutate_rows(prot_nuc == "Protein",
                 prot_nuc = brewer.pal(7, "Dark2")[[7]]) %$%
     setNames(prot_nuc, category)
-```
-
-```{r}
-geom_bar_def <-
-    partial(geom_bar, position = "stack", stat = "identity",
-            width = 0.5, size = 0.5, fill = "white", color = "black")
-
-p_weight_man_sum <- svmweights %>%
-    group_by(category) %>%
-    summarize(count = n(),
-              tot_weight = sum(weight)) %>%
-    ggplot(aes(x = category, y = weight)) +
-    geom_hline(yintercept = 0, linetype = "dashed", color = "lightgrey") + 
-    geom_bar_def(data = svmweights %>%
-                     filter(weight > 0)) +
-    geom_bar_def(data = svmweights %>%
-                     filter(weight <= 0)) +
-    geom_text(aes(y = 1.6, label = count), size = 5*5/14) +
-    geom_point(aes(y = tot_weight), color = "red") +
-    ylab("Weight") +
-    scale_x_discrete(limits = names(category_color)) +
-    coord_flip() +
-    theme(legend.position = "none",
-          axis.title.y = element_blank(),
-          axis.text.y = element_text(color = category_color),
-          plot.margin = unit(rep(0, 4), "pt"))
-
-p_weight_man_sum %<>% ggplot_build %>% ggplot_gtable
-p_weight_man_sum$layout$clip <- "off"
-
-ggdraw(p_weight_man_sum)
-```
-
-```{r}
-p_weight_protnuc <- svmweights %>%
-    group_by(prot_nuc) %>%
-    summarize(
-        count = n(),
-        tot_weight = sum(weight)) %>%
-    ggplot(aes(x = prot_nuc, y = weight)) +
-    geom_bar_def(data = svmweights %>%
-                     filter(weight > 0)) +
-    geom_bar_def(data = svmweights %>%
-                     filter(weight <= 0)) +
-    geom_text(aes(y = 7, label = count),
-              size = 5*5/14) +
-    geom_point(aes(y = tot_weight), color = "red") +
-    ylab("Weight") +
-    coord_flip() +
-    theme(axis.title.y = element_blank(),
-          axis.text.y =
-              element_text(color = brewer.pal(7, "Dark2")[c(5, 7)]),
-          plot.margin = unit(rep(0, 4), "pt"))
-
-p_weight_protnuc %<>% ggplot_build %>% ggplot_gtable
-p_weight_protnuc$layout$clip <- "off"
-
-ggdraw(p_weight_protnuc)
-```
-
-## plot AUC within NYCOMPS with subsets of features
-```{r nycomps_subsets}
-transform_features <- function(ref_feat, weights) {
-    # scale and center features
-    feat_weights <- setNames(weights$weight, as.character(weights$old_name))
-    trans_feat <- preprocess_vars(ref_feat, model_env$daley_preprocess_params)
-    # reorder vector
-    feat_weights <- feat_weights[colnames(trans_feat)]
-    for (i in seq_along(trans_feat))
-        set(trans_feat, j = i, value = trans_feat[[i]] * feat_weights[i])
-
-    trans_feat[is.na(trans_feat)] <- 0
-    
-    trans_feat
-}
-
-calc_auc_feat_subsets <-
-    function(use_feat_col, order_name, ref_feat, ref_eval, weights) {
-        order_fun <- switch(order_name,
-                            desc = great_eq,
-                            incr = less_eq,
-                            eq = eq_fun,
-                            ne = ne_fun)
-    trans_feat <- transform_features(ref_feat, weights)
-
-    foreach(thisiter = weights %>%
-                distinct_(use_feat_col) %>%
-                unlist(use.names = FALSE),
-            .combine = bind_rows, .multicombine = TRUE,
-            .packages = c("pROC", "tidyverse"),
-            .export = c("auc_w_ci", "trans_feat", "weights", "use_feat_col",
-                        "order_fun", "ref_eval", "order_name"),
-            .verbose = FALSE) %dopar% {
-                # specify those features to use
-                # can't seem to work out NSE, so this clumsy way right now
-                use_feats <-
-                    weights[order_fun(thisiter, weights[,use_feat_col]),] %>%
-                    select(old_name) %>%
-                    unlist(use.names = FALSE) %>%
-                    as.character
-
-                # prediction
-                preds <- trans_feat[, use_feats, drop = FALSE] %>% rowSums
-
-                # calculate auc
-                data_frame(score = auc_w_ci(response = ref_eval,
-                                            predictor = preds),
-                           ci_labels = c("lower95", "auc", "upper95"),
-                           iter = as.character(thisiter),
-                           feat_count = length(use_feats))
-            } %>%
-        spread(ci_labels, score) %>%
-        mutate(order_name = order_name,
-               use_feat_col = use_feat_col)
-}
 ```
 
 # correlations between feature groups after adding by feature weights
@@ -315,9 +200,98 @@ p_feat_category_corr$layout$clip <- "off"
 ggdraw(p_feat_category_corr)
 ```
 
+
+```{r}
+geom_bar_def <-
+    partial(geom_bar, position = "stack", stat = "identity",
+            width = 0.5, size = 0.5, fill = "white", color = "black")
+
+p_weight_man_sum <- svmweights %>%
+    group_by(category) %>%
+    summarize(count = n(),
+              tot_weight = sum(weight)) %>%
+    ggplot(aes(x = category, y = weight)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "lightgrey") +
+    geom_bar_def(data = svmweights %>%
+                     filter(weight > 0)) +
+    geom_bar_def(data = svmweights %>%
+                     filter(weight <= 0)) +
+    geom_text(aes(y = 1.6, label = count), size = 5*5/14) +
+    geom_point(aes(y = tot_weight), color = "red") +
+    ylab("Weight") +
+    scale_x_discrete(limits = names(category_color)) +
+    coord_flip() +
+    theme(legend.position = "none",
+          axis.title.y = element_blank(),
+          axis.text.y = element_text(color = category_color),
+          plot.margin = unit(rep(0, 4), "pt"))
+
+p_weight_man_sum %<>% ggplot_build %>% ggplot_gtable
+p_weight_man_sum$layout$clip <- "off"
+
+ggdraw(p_weight_man_sum)
+```
+
+## plot AUC within NYCOMPS with subsets of features
+```{r nycomps_subsets}
+transform_features <- function(ref_feat, weights) {
+    # scale and center features
+    feat_weights <- setNames(weights$weight, as.character(weights$old_name))
+    trans_feat <- preprocess_vars(ref_feat, model_env$daley_preprocess_params)
+    # reorder vector
+    feat_weights <- feat_weights[colnames(trans_feat)]
+    for (i in seq_along(trans_feat))
+        set(trans_feat, j = i, value = trans_feat[[i]] * feat_weights[i])
+
+    trans_feat[is.na(trans_feat)] <- 0
+
+    trans_feat
+}
+
+calc_auc_feat_subsets <-
+    function(use_feat_col, order_name, ref_feat, ref_eval, weights) {
+        order_fun <- switch(order_name,
+                            desc = great_eq,
+                            incr = less_eq,
+                            eq = eq_fun,
+                            ne = ne_fun)
+    trans_feat <- transform_features(ref_feat, weights)
+
+    foreach(thisiter = weights %>%
+                distinct_(use_feat_col) %>%
+                unlist(use.names = FALSE),
+            .combine = bind_rows, .multicombine = TRUE,
+            .packages = c("pROC", "tidyverse"),
+            .export = c("auc_w_ci", "trans_feat", "weights", "use_feat_col",
+                        "order_fun", "ref_eval", "order_name"),
+            .verbose = FALSE) %dopar% {
+                # specify those features to use
+                # can't seem to work out NSE, so this clumsy way right now
+                use_feats <-
+                    weights[order_fun(thisiter, weights[,use_feat_col]),] %>%
+                    select(old_name) %>%
+                    unlist(use.names = FALSE) %>%
+                    as.character
+
+                # prediction
+                preds <- trans_feat[, use_feats, drop = FALSE] %>% rowSums
+
+                # calculate auc
+                data_frame(score = auc_w_ci(response = ref_eval,
+                                            predictor = preds),
+                           ci_labels = c("lower95", "auc", "upper95"),
+                           iter = as.character(thisiter),
+                           feat_count = length(use_feats))
+            } %>%
+        spread(ci_labels, score) %>%
+        mutate(order_name = order_name,
+               use_feat_col = use_feat_col)
+}
+```
+
 ```{r}
 # auc combinations to test
-feat_subset_combos <- 
+feat_subset_combos <-
     # expand.grid(
     # use_feat_col = c("abs_weight", "man_weight"),
     # order_name = c('desc', 'incr', 'eq')) %>%
@@ -398,7 +372,7 @@ model_auc <- nycomps_env$nycomps_all_outcomes %>%
             data_frame(score = .,
                        ci_labels = c("lower95", "auc", "upper95"))
     })
-    
+
 model_auc <- nycomps_env$nycomps_gene_outcomes %$%
     auc_w_ci(response = posmix_outcome,
              predictor = score) %>%
@@ -412,7 +386,7 @@ model_auc <- nycomps_env$nycomps_gene_outcomes %$%
 ## indiv weights
 ```{r}
 feature_order <- feat_subset_auc %>%
-    filter(order_name == "eq", dataset == "posmix", 
+    filter(order_name == "eq", dataset == "posmix",
            use_feat_col == "feature") %>%
     arrange(desc(as.numeric(auc))) %$%
     unlist(iter, use.names = FALSE) %>%
@@ -421,19 +395,19 @@ feature_order <- feat_subset_auc %>%
 
 feat_subset_auc %>%
     filter(order_name == "eq", use_feat_col == "feature",
-           dataset != "posmix", dataset != "vectors") %>% 
- #   bind_rows(model_auc %>% mutate(iter = "SVMrank Score")) %>% 
+           dataset != "posmix", dataset != "vectors") %>%
+ #   bind_rows(model_auc %>% mutate(iter = "SVMrank Score")) %>%
     mutate(iter = factor(iter, feature_order, ordered = TRUE)) %>%
     ggplot() +
     geom_hline(yintercept = 0.5, linetype = "dashed") +
     geom_pointrange(aes(x = "SVMrank Score",
                         y = auc, ymin = lower95, ymax = upper95),
                     color = "lightgray", size = 0.5, fatten = 0.5,
-                    data = model_auc %>% filter(dataset != "posmix")) + 
+                    data = model_auc %>% filter(dataset != "posmix")) +
     geom_pointrange(aes(x = "SVMrank Score",
                         y = auc, ymin = lower95, ymax = upper95),
                     color = "#A10F1C", size = 1, fatten = 1,
-                    data = model_auc %>% filter(dataset == "posmix")) + 
+                    data = model_auc %>% filter(dataset == "posmix")) +
     geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
                     color = "lightgray", size = 0.5, fatten = 0.5) +
     geom_pointrange(aes(x = iter, y = auc, ymin = lower95, ymax = upper95),
@@ -444,8 +418,8 @@ feat_subset_auc %>%
                           dataset == "posmix")) +
     coord_flip() +
     #coord_cartesian(ylim = c(0.35, 0.65)) +
-    ylab("AUC") + 
-    scale_x_discrete(limits = feature_order %>% rev) + 
+    ylab("AUC") +
+    scale_x_discrete(limits = feature_order %>% rev) +
     scale_y_continuous(expand = c(0,0), labels = function(x)x*100) +
     theme(legend.position = "none",
           axis.title.y = element_blank(),
@@ -457,9 +431,9 @@ category_color %<>%
     c(`SVMrank Score` = "#000000", .) %>%
     rev
 
-make_incl_excl <- function(df) 
+make_incl_excl <- function(df)
     df %>%
-    filter(use_feat_col == "category", 
+    filter(use_feat_col == "category",
            dataset != "posmix", dataset != "vectors") %>%
     ggplot() +
     geom_hline(yintercept = 0.5, linetype = "dashed") +
@@ -494,11 +468,11 @@ p_category_incl <- feat_subset_auc %>%
     make_incl_excl %>%
     ggdraw +
     draw_plot_label("Only Single\nCategory", x = .23, y = .92,
-                    fontface = "bold", size = 6, hjust = 0, vjust = 0) 
+                    fontface = "bold", size = 6, hjust = 0, vjust = 0)
 
 p_category_excl <- feat_subset_auc %>%
     filter(order_name == "ne") %>%
-    {make_incl_excl(.) + 
+    {make_incl_excl(.) +
          theme(axis.text.y = element_blank())} %>%
     ggdraw +
     draw_plot_label("Excluding Single\nCategory", x = .02, y = .92,
@@ -506,6 +480,34 @@ p_category_excl <- feat_subset_auc %>%
 
 p_category_incl
 p_category_excl
+```
+
+
+```{r}
+p_weight_protnuc <- svmweights %>%
+    group_by(prot_nuc) %>%
+    summarize(
+        count = n(),
+        tot_weight = sum(weight)) %>%
+    ggplot(aes(x = prot_nuc, y = weight)) +
+    geom_bar_def(data = svmweights %>%
+                     filter(weight > 0)) +
+    geom_bar_def(data = svmweights %>%
+                     filter(weight <= 0)) +
+    geom_text(aes(y = 7, label = count),
+              size = 5*5/14) +
+    geom_point(aes(y = tot_weight), color = "red") +
+    ylab("Weight") +
+    coord_flip() +
+    theme(axis.title.y = element_blank(),
+          axis.text.y =
+              element_text(color = brewer.pal(7, "Dark2")[c(5, 7)]),
+          plot.margin = unit(rep(0, 4), "pt"))
+
+p_weight_protnuc %<>% ggplot_build %>% ggplot_gtable
+p_weight_protnuc$layout$clip <- "off"
+
+ggdraw(p_weight_protnuc)
 ```
 
 # protein or nucleotide auc plot
@@ -565,7 +567,7 @@ fluman_asd <- read_csv("forward-genomes/fluman_asd_mutant.fna.allstats.csv") %>%
            construct = "MUT")
 
 fluman_asd <- training_env$daley_allstats %>%
-    filter(id %in% fluman_asd$gene) %>% 
+    filter(id %in% fluman_asd$gene) %>%
     rename(gene = id) %>%
     mutate(construct = "WT") %>%
     bind_rows(fluman_asd)
@@ -587,7 +589,7 @@ fluman_asd <- read_csv("forward-genomes/fig6-analysis.csv") %>%
 ```{r fluman_asd_plotting}
 metrics_of_interest <- data.frame(
     row.names = c("SD-like Sites",  "Folded Protein", "SVMrank Score"),
-    colors = c("#e7298a", "#7570b3", "#e6ab02"), 
+    colors = c("#e7298a", "#7570b3", "#e6ab02"),
     short = c("totalSDsites", "outcome", "score")) %>% t
 
 p4_fluman_asd <- fluman_asd %>%
@@ -599,10 +601,10 @@ p4_fluman_asd <- fluman_asd %>%
                            levels = metrics_of_interest['short',],
                            labels = colnames(metrics_of_interest))) %>%
     ggplot(aes(x = gene, y = rel_diff, fill = metric)) +
-    geom_bar(stat = "identity", position = "dodge") + 
+    geom_bar(stat = "identity", position = "dodge") +
     ylab("Relative Difference") +
     scale_fill_manual(values = metrics_of_interest['colors',]) +
-    scale_y_continuous(labels = c(-1, -.5, 0, .25)) + 
+    scale_y_continuous(labels = c(-1, -.5, 0, .25)) +
     theme(axis.title.x = element_blank(),
           legend.title = element_blank(),
           legend.key = element_blank(),
@@ -636,7 +638,7 @@ This block plots the entire figure relating to feature importances.
 plt_lab <- partial(draw_plot_label, size = 8)
 
 p5_weight_importance <-
-    ggdraw() + 
+    ggdraw() +
     draw_plot(p_weight_man_sum, x = .34, y = .7, width = .66, height = .3) +
     draw_plot(p_feat_category_corr,
               x = 0.05, y = .71, width = .29, height = .29) +
@@ -693,8 +695,8 @@ if (write_out)
 ```
 
 ## Plot weights
-This block plots the weights for the SVM model trained in the order of the 
-hclust clustering of the correlation matrix (plotted directly above). 
+This block plots the weights for the SVM model trained in the order of the
+hclust clustering of the correlation matrix (plotted directly above).
 ```{r plot_weights}
 feat_order <- dimnames(forward_cor_clust)[[1]] %>% rev
 p_svmweights <- svmweights %>%
