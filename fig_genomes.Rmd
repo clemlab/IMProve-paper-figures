@@ -109,7 +109,7 @@ my_boxplot <- function(x) {
     enframe(out)
 }
 
-forward_tufte_boxplots <- forward_preds %>% 
+forward_tufte_boxplots <- forward_preds %>%
     group_by(group, species) %>%
     do(my_boxplot(.$score)) %>%
     spread(name, value) %>%
@@ -118,7 +118,7 @@ forward_tufte_boxplots <- forward_preds %>%
     ungroup
 
 forward_ec_thresholds <-
-    filter(forward_tufte_boxplots, species == "Escherichia coli") %>% 
+    filter(forward_tufte_boxplots, species == "Escherichia coli") %>%
     select(-group, -species, -count, -species_count) %>% unlist
 
 forward_preds_order <- c(
@@ -128,50 +128,50 @@ forward_preds_order <- c(
     "Mycobacterium tuberculosis",
     "Staphylococcus aureus",
     "Plasmodium falciparum",
-    
+
     "Aquifex aeolicus",
     "Thermus thermophilus",
     "Spirochaeta thermophila",
-    
+
     "Gloeobacter violaceus",
     "Rhizobium loti",
     "Methanococcus maripaludis",
     "Haloarcula marismortui",
     "Bacillus halodurans",
-    
+
     "Lactobacillus casei",
     "Bacillus cereus",
     "Bacillus subtilis",
     "Escherichia coli",
-    
+
     "Pichia pastoris",
     "Saccharomyces cerevisiae",
-    
+
     "Caenorhabditis elegans",
-    "Mus musculus",           
+    "Mus musculus",
     "Homo sapiens")
 
 thermophile_species <- c("Aquifex aeolicus",
                          "Spirochaeta thermophila",
                          "Thermus thermophilus")
 
-p4_all_violin <- ggplot(forward_preds) + 
+p4_all_violin <- ggplot(forward_preds) +
     geom_hline(yintercept = forward_ec_thresholds['median'],
                linetype = "dashed", color = "darkgrey") +
     geom_point(aes(x = species, y = median),
-               color = "darkgrey", data = forward_tufte_boxplots) + 
+               color = "darkgrey", data = forward_tufte_boxplots) +
     geom_text(aes(x = species, y = -6, label = species_count,
                   color = species %in% thermophile_species),
               vjust = 2, fontface = "italic", size = 7*5/14,
-              data = forward_tufte_boxplots) + 
+              data = forward_tufte_boxplots) +
     geom_linerange(aes(x = species, ymin = whisker_low, ymax = quartile1),
-                   color = "darkgrey", data = forward_tufte_boxplots) + 
+                   color = "darkgrey", data = forward_tufte_boxplots) +
     geom_linerange(aes(x = species, ymin = quartile3, ymax = whisker_high),
                    color = "darkgrey", data = forward_tufte_boxplots) +
     geom_violin2(aes(y = score, x = species),
                  color = "black", adjust = 0.3, alpha = 0) +
     coord_flip(ylim = nycomps_env$nycomps_xscale) +
-    ylab(expression("SVM" ^ "rank"*~"score")) + 
+    ylab(expression("SVM" ^ "rank"*~"score")) +
     scale_y_continuous(expand = c(0, 0), breaks = nycomps_env$nycomps_breaks) +
     scale_x_discrete(limits = forward_preds_order) +
     scale_color_manual(values = c("TRUE" = "#ff6600",
@@ -241,7 +241,7 @@ p4_nvector_ppv_prep <- nycomps_env$nycomps_all_outcomes %>%
                  outcome_col = "plasmid_outcome", method = "roc") %>%
     prep_for_polygon
 
-p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) + 
+p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) +
     geom_polygon(aes(x = thresholds, y = ppv, group = id, fill = y_greater_min,
                      color = y_greater_min), size = 0.1) +
     geom_path(aes(x = thresholds, y = ppv), size = 0.5,
@@ -250,15 +250,15 @@ p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) +
     geom_hline(aes(yintercept = min(min_ppv)),
                linetype = "dashed", color = "darkgrey", size = 0.5) +
     annotate("text", x = -1.7, y = 55, size = 7*5/14,
-             label = "Expression in (N) His-FLAG-TEV-", fontface = "bold") + 
+             label = "Expression in (N) His-FLAG-TEV-", fontface = "bold") +
     coord_cartesian(xlim = nycomps_env$nycomps_xscale) +
     scale_x_continuous(expand = c(0, 0), breaks = nycomps_env$nycomps_breaks) +
     scale_y_continuous(expand = c(0, 0), limits = c(0, .6),
                        breaks = seq(0, 1, .2), labels = function(x) x*100) +
-    xlab(expression("SVM" ^ "rank"*~"score")) + 
+    xlab(expression("SVM" ^ "rank"*~"score")) +
     ylab("Positive Predictive Value") +
-    scale_color_manual(values = c("#A4A5A5", "#A10F1C")) + 
-    scale_fill_manual(values = c("#A4A5A5", "#A10F1C")) + 
+    scale_color_manual(values = c("#A4A5A5", "#A10F1C")) +
+    scale_fill_manual(values = c("#A4A5A5", "#A10F1C")) +
     theme(legend.position = "None",
           plot.margin = unit(c(0, 0, 0, 0), "in"))
 
@@ -297,7 +297,7 @@ all_features %<>%
 test_that("correct number of distinct features", {
   expect_equal(all_features %>%
                    filter(set == "training") %>%
-                   distinct(feature) %>% 
+                   distinct(feature) %>%
                    nrow, 84)
 })
 
@@ -367,7 +367,7 @@ mad_vs_nycomps <- overlap_df %>%
 
 
 ```{r}
-p4_ecoli_dist <- ggplot(overlap_df) + 
+p4_ecoli_dist <- ggplot(overlap_df) +
     geom_vline(xintercept = 0.75,
                size = 0.7, linetype = "dotted", color = "#00b1b9") +
     geom_point(aes(x = ec_whole, y = 1), size = 0.25,
@@ -392,14 +392,14 @@ ggdraw(p4_ecoli_dist)
 pext2_thermo <-
     ggplot(overlap_df, aes(x = nycomps, y = thermo, label = feature)) +
     geom_hline(yintercept = 0.75,
-               linetype = "dotted", size = 0.7, color = "#00b1b9") + 
+               linetype = "dotted", size = 0.7, color = "#00b1b9") +
     geom_vline(xintercept = 0.75,
                linetype = "dotted", size = 0.7, color = "#00b1b9") +
     geom_abline(color = "grey", linetype = "dashed") +
     geom_point(size = 0.25) +
     annotate(geom = "text",
              label = paste0("MAD=", specify_decimal(mad_vs_nycomps['thermo'])),
-             x = 0.25, y = 0.9, size = 6*5/14) + 
+             x = 0.25, y = 0.9, size = 6*5/14) +
     xlab("NYCOMPS vs. Training") +
     ylab("Thermophiles vs. Training") +
     scale_x_continuous(limits = c(0,1), expand = c(0,0),
@@ -444,10 +444,10 @@ pext2_nycomps_forward <-
     geom_vline(xintercept = 0.75,
                linetype = "dotted", size = 0.7, color = "#00b1b9") +
     geom_abline(color = "grey", linetype = "dashed") +
-    geom_point(size = 0.25) + 
+    geom_point(size = 0.25) +
     annotate(geom = "text",
              label = paste0("MAD=", specify_decimal(mad_vs_nycomps['forward'])),
-             x = 0.25, y = 0.9, size = 6*5/14) + 
+             x = 0.25, y = 0.9, size = 6*5/14) +
     xlab("NYCOMPS vs. Training") +
     ylab("Forward vs. Training") +
     scale_x_continuous(limits = c(0,1), expand = c(0,0),
@@ -481,7 +481,7 @@ make_indiv_plot <- function(df) {
     library(cowplot)
     library(myutils)
     feat <- unique(df$feature)
-    
+
     p_hist <- ggplot(df) +
         geom_step_hist(aes(x = value, color = group),
                        alpha = 0.7,
@@ -496,7 +496,7 @@ make_indiv_plot <- function(df) {
         theme(axis.title.y = element_blank(),
               legend.position = "None",
               plot.margin = unit(c(5, 5, 0, 0), "pt"))
-    
+
     # adjustments if log scale is desired
     if (feat %in% log_scale) {
         p_hist <- p_hist +
@@ -514,17 +514,17 @@ make_indiv_plot <- function(df) {
         p_hist$layout %<>%
             mutate_rows(name == "panel", clip = "off")
     }
-    
+
     # add labels in ggdraw coordinates
     ggdraw(p_hist) +
         draw_label(x = 0.85, y = 0.9,
-                 label = overlap_df %>% 
+                 label = overlap_df %>%
                      filter_("feature == '" %>% paste0(feat, "'")) %>%
                      select(thermo) %>% unlist(use.names = FALSE) %>%
                      specify_decimal(2L),
                   size = 5, colour = "#ff6600") +
         draw_label(x = 0.85, y = 0.8,
-                 label = overlap_df %>% 
+                 label = overlap_df %>%
                      filter_("feature == '" %>% paste0(feat, "'")) %>%
                      select(pf) %>% unlist(use.names = FALSE) %>%
                      specify_decimal(2L),
@@ -564,7 +564,7 @@ pext2 <- ggdraw() +
                size = 7, colour = brewer.pal(3L, "Dark2")[[3L]]) +
     draw_label("Counts", x = .655, y = .5,
                fontface = "bold", size = 7, angle = 90)
-    
+
 # RGB by default
 if (write_out)
     save_plot(filename = "plots/extfig2_names.pdf",
@@ -577,10 +577,10 @@ pext2
 
 ## Figure 4 Compilation
 ```{r}
-p4_main <- ggdraw() + 
+p4_main <- ggdraw() +
     draw_plot(plot_grid(p4_selected_violin, p4_nvector_ppv,
                         nrow = 2L, align = "hv", rel_heights = c(3, 1),
-                        labels = letters[1:2], label_size = 8), 
+                        labels = letters[1:2], label_size = 8),
               x = -.01, y = 0, width = .72, height = 1) +
     draw_plot(plot_grid(p4_ecoli_dist, pext2_nycomps_forward,
                         pext2_thermo, pext2_pf,

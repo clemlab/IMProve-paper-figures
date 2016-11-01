@@ -58,12 +58,12 @@ ecoli_daley_fluman <- training_env$daley_outcomes %>%
     bind_rows(training_env$fluman_folded %>%
                   mutate(cterm = "fluman") %>%
                   select(id, cterm, measurement, outcome)) %>%
-    group_by(cterm, id) %>% 
+    group_by(cterm, id) %>%
     summarize(outcome_max = max(outcome, na.rm = TRUE),
               outcome_avg = mean(outcome, na.rm = TRUE),
               outcome_min = min(outcome, na.rm = TRUE)) %>%
     ungroup
-    
+
 ecoli_daley_fluman <- ecoli_daley_fluman %>%
     filter(cterm == "in") %>%
     inner_join(ecoli_daley_fluman %>%
@@ -81,7 +81,7 @@ ecoli_daley_fluman <- ecoli_daley_fluman %>%
 ## Perform bootstrap estimates if calculation has not been saved of
 Spearman correlation coefficent confidence intervals and significance
 To avoid making unnecessary assumptions about the spread of the data, use
-bootstrap resampling to calculate confidence intervals and shuffling to 
+bootstrap resampling to calculate confidence intervals and shuffling to
 calculate p-values. Since we calculate $10^6$ bootstraps/shuffles, this takes
 a couple hours on a 32-core machine. To avoid running this everytime, the output
 is saved.
@@ -94,7 +94,7 @@ daley_fluman_cor <- ecoli_daley_fluman %>%
 
 # Daley, et al. vs Fluman, et al. outcomes
 Plotting the agreement between whole cell fluorescence (Daley, et al.) and
-folded protein via in-gel fluorescence (Fluman, et al.). 
+folded protein via in-gel fluorescence (Fluman, et al.).
 ```{r daley_vs_fluman}
 ecoli_daley_fluman_cor_label <- daley_fluman_cor %>%
     mutate(t0 = specify_decimal(t0, k = 2L),
@@ -104,7 +104,7 @@ ecoli_daley_fluman_cor_label <- daley_fluman_cor %>%
     mutate(label = paste0("'", t0, "'~('", bca_low, "'-'", bca_high, "')")) %>%
     select(label) %>% unlist
 
-p1_daley_fluman <- ggplot(ecoli_daley_fluman) + 
+p1_daley_fluman <- ggplot(ecoli_daley_fluman) +
     geom_segment(aes(x = fluman_min, xend = fluman_max,
                      y = daley_avg, yend = daley_avg),
                  size = 0.3, alpha = 0.35) +
@@ -115,9 +115,9 @@ p1_daley_fluman <- ggplot(ecoli_daley_fluman) +
     annotate("text", x = 1L, y = 7.45, label = ecoli_daley_fluman_cor_label,
              size = 5*5/14, parse = TRUE) +
     scale_y_continuous(expand = c(0, 0)) +
-    scale_x_continuous(expand = c(.01, 0)) + 
+    scale_x_continuous(expand = c(.01, 0)) +
     ylab("Normalized GFP activity") +
-    xlab("Normalized folded protein") + 
+    xlab("Normalized folded protein") +
     theme(axis.title.x = element_text(size = 7L,
                                       color = brewer.pal(3, "Dark2")[3]),
               axis.title.y = element_text(size = 7L,
@@ -137,7 +137,7 @@ ecoli_stats <- training_env$ecoli_training %>%
     summarize(plates = length(unique(grouping)),
               genes = length(unique(id)),
               observations = n())
-    
+
 ecoli_stats <- training_env$best_performance %>%
     select(cterm, total, kendall) %>%
     inner_join(ecoli_stats, ., by = "cterm") %>%
@@ -154,7 +154,7 @@ ecoli_stats <- training_env$best_performance %>%
                 cterm = "C-terminal Cytoplasmic\n(GFP, folded protein)") %>%
     as.data.frame %>%
     column_to_rownames("cterm") %>%
-    t %>% 
+    t %>%
     as.data.frame
 
 table_theme <-  ttheme_default(
@@ -167,7 +167,7 @@ tab <- tableGrob(ecoli_stats, theme = table_theme)
 header <- tableGrob(ecoli_stats[1L, 1:2],
                     theme = table_theme,
                     cols = c("Daley, Rapp, et al., 2005",
-                             "Fluman, et al., 2014")) 
+                             "Fluman, et al., 2014"))
 
 p1_table <- gridExtra::combine(header[1,], tab, along = 2L)
 p1_table$layout[1:6, c("l", "r")] <- list(c(2L, 4L), c(3L, 4L))
@@ -199,7 +199,7 @@ lm_data <- ecoli_training_norm %>%
     inner_join(daley_allstats_transformed, by = "id") %>%
     select(-id)
 lm_data[is.na(lm_data)] <- 0
-lm_fit <- train(outcome ~ ., data = lm_data, 
+lm_fit <- train(outcome ~ ., data = lm_data,
                  method = "lm")
 lm_data$scores <- predict(lm_fit, lm_data)
 cor(lm_data$outcome, lm_data$scores)
@@ -218,7 +218,7 @@ cor(fluman_data$outcome, fluman_data$scores)
 ## Perform bootstrap estimates if calculation has not been saved of
 Spearman correlation coefficent confidence intervals and significance
 To avoid making unnecessary assumptions about the spread of the data, use
-bootstrap resampling to calculate confidence intervals and shuffling to 
+bootstrap resampling to calculate confidence intervals and shuffling to
 calculate p-values. Since we calculate $10^6$ bootstraps/shuffles, this takes
 a couple hours on a 32-core machine. To avoid running this everytime, the output
 is saved.
@@ -257,7 +257,7 @@ ecoli_xy_cor_label <- training_env$ecoli_training %>%
               # label positions
               x = min(score) + (max(score) - min(score))*(6/20),
               y1 = max(outcome)*(1 - 1/50) - max(outcome)*(2/20),
-              y2 = y1 - max(outcome)*(2/20)) %>% 
+              y2 = y1 - max(outcome)*(2/20)) %>%
     inner_join(ecoli_xy_cor, by = "cterm") %>%
     mutate(t0 = specify_decimal(t0, k = 2L),
            bca_low = specify_decimal(bca_low, k = 2L),
@@ -265,7 +265,7 @@ ecoli_xy_cor_label <- training_env$ecoli_training %>%
     mutate_rows(perm_p < 0.01, t0 = t0 %>% paste0('**')) %>%
     mutate(label = paste0("'", t0, "'~('", bca_low, "'-'", bca_high, "')"),
            cterm = factor(cterm, c("in", "out", "fluman"),
-                          ordered = TRUE)) 
+                          ordered = TRUE))
 
 p1_ecoli_xy <- training_env$ecoli_training %>%
     filter(normalized, !is.na(score)) %>%
@@ -280,11 +280,11 @@ p1_ecoli_xy <- training_env$ecoli_training %>%
     geom_text(aes(x = -2, y = y2, color = cterm, label = label),
               size = 5*5/14, parse = TRUE, data = ecoli_xy_cor_label) +
     scale_y_continuous(expand = c(.01, 0), breaks = c(0:3, 4L, 6L, 8L)) +
-    expand_limits(ymin = 0) + 
+    expand_limits(ymin = 0) +
     scale_x_continuous(expand = c(.01, 0.01)) +
-    scale_color_manual(values = brewer.pal(3, "Dark2")) + 
+    scale_color_manual(values = brewer.pal(3, "Dark2")) +
     ylab("Mean Normalized Activity") +
-    xlab(expression("SVM" ^ "rank"*~"score")) + 
+    xlab(expression("SVM" ^ "rank"*~"score")) +
     theme(legend.position = "None",
           strip.text = element_blank(),
           plot.margin = unit(c(0L, 0L, 0L, 0L), "mm")) +
@@ -306,7 +306,7 @@ any percentile can be plotted. the $50^{th}$ and $97^{th}$ seem to show an
 interesting behavior on the all-AUC plot (the following figure), but there
 potentially are many others that could be interesting!
 ```{r training_roc}
-ecoli_selected_auc <- ecoli_auc %>% 
+ecoli_selected_auc <- ecoli_auc %>%
     mutate(group = factor(group, levels = c("in", "out", "fluman"),
                           ordered = TRUE)) %>%
     group_by(group) %>%
@@ -323,7 +323,7 @@ ecoli_selected_counts <- ecoli_selected_auc %>%
     group_by(outcome_percentile) %>%
     summarize(count = paste(pos_count, collapse = ","))
 
-p1_ecoli_roc <- ecoli_roc %>% 
+p1_ecoli_roc <- ecoli_roc %>%
     mutate(group = factor(group, levels = c("in", "out", "fluman"),
                           ordered = TRUE)) %>%
     group_by(group) %>%
@@ -395,7 +395,7 @@ p1_main <- ggdraw() +
     draw_plot(p1_ecoli_xy, x = .75, y = 0, width = .24, height = .98) +
     draw_plot(plot_grid(p1_ecoli_roc, p1_ecoli_auc,
                         nrow = 1L, rel_widths = c(1L, 1L)),
-              x = 0, y = 0, width = .75, height = .5) + 
+              x = 0, y = 0, width = .75, height = .5) +
     draw_plot_label(letters[1:5],
                     c(0, 0.26, .75, 0, 0.38), c(1, 1, 1, 0.52, 0.52), size = 8L)
 
