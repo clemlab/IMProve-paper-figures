@@ -272,8 +272,9 @@ Sys.glob(gsub("%PARAM%", "\\*", model_template)) %>%
     file.remove() %>% all
 
 if (write_out) {
-    save(daley_allstats, daley_outcomes, fluman_folded, ecoli_training,
-         daley_to_train, training_performance, best_performance,
+    save(control_outcomes, daley_outcomes, fluman_folded,
+         daley_allstats, ecoli_training, daley_to_train,
+         training_performance, best_performance,
          file = "training.RData", compression_level = 9L)
     save(svmpredict, daley_preprocess_params, svm_model, file = "model.RData",
          compression_level = 9L)
