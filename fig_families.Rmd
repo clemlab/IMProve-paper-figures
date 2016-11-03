@@ -301,61 +301,6 @@ nycomps_pfam_outcomes_auc <- nycomps_pfam_auc %>%
     separate(attr_value, c("pfam_main"), remove = FALSE) %>%
     left_join(nycomps_pfam %>% distinct(hmm_acc, hmm_name),
               by = c("attr_value" = "hmm_acc"))
-
-nycomps_pfam_best_vector %>%
-    ggplot() +
-    # geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey") +
-    geom_hline(aes(yintercept = ecdf(auc)(0.5)),
-               color = "grey", linetype = "dashed") +
-    # geom_text(aes(x = lower95, y = cumedist, label = pfam_main),
-    #           size = 5*5/14, nudge_x = -.05,
-    #           data = nycomps_pfam_best_vector %>%
-    #               filter(attr_value %in% names(pfams_of_interest))) +
-    # geom_segment(aes(x = lower95, xend = upper95,
-    #                  y = cumedist, yend = cumedist),
-    #              size = 0.5,
-    #              data = nycomps_pfam_best_vector %>%
-    #                  filter(attr_value %in% names(pfams_of_interest))) +
-    # geom_text(aes(x = 0.75, y = 0.16 + ifelse(is.na(conf_grp), -.05, conf_grp/10),
-    #               label = proport, color = conf_grp),
-    #           size = 5*5/14,
-    #           data = nycomps_pfam_best_vector %>%
-    #               group_by(conf_grp) %>%
-    #               summarize(count = n()) %>%
-    #               ungroup %>%
-    #               mutate(proport = specify_decimal(count / sum(count), 2L)) %>%
-    #               add_row(proport = nrow(nycomps_pfam_best_vector), conf_grp = NA)) +
-    # draw_label("Best AUC across\nconditions tested", x = 0.01, y = 0.95,
-    #           hjust = 0, fontface = "bold", size = 6) +
-    # geom_step(aes(x = auc, y = cumedist, color = conf_grp),
-    #           data = nycomps_pfam_outcomes) +
-    # geom_step(aes(x = auc, y = cumedist, color = conf_grp),
-    #           data = nycomps_pfam_vectors) +
-    geom_step(aes(x = auc, y = cumedist), linetype = "dotted") +
-    geom_point(aes(x = auc, y = cumedist, color = conf_grp, size = count),
-               shape = 21) +
-    # geom_point(aes(x = auc, y = cumedist),
-    #            size = 0.5,
-    #            data = nycomps_pfam_best_vector %>%
-    #                filter(attr_value %in% names(pfams_of_interest))) +
-    xlab("AUC") +
-    ylab("Cumulative Density") +
-    scale_size(breaks = c(10, 50, 100, 500), range = c(0.25, 3)) +
-    scale_x_continuous(limits = c(-.01, 1.01), expand = c(0, 0),
-                       labels = function(x) x*100) +
-    scale_y_continuous(limits = c(-.01, 1.01), expand = c(0, 0),
-                       labels = function(x) paste0(specify_decimal(x*100, 0L), "%")) +
-    scale_color_continuous(low = "#A4A5A5", high = "#A10F1C", na.value = "black",
-                           guide = "none") +
-    theme(legend.title = element_blank(),
-          legend.position = c(0.2, 0.8))
-
-# p_pfam_auc_ecdf %<>% ggplotGrob
-# 
-# p_pfam_auc_ecdf$layout %<>%
-#     mutate_rows(name == "panel", clip = "off")
-# 
-# ggdraw(p_pfam_auc_ecdf)
 ```
 
 # ecdf nycomps all outcomes - min max vectors
@@ -394,8 +339,6 @@ p_nycomps_summary <- nycomps_pfam_all_outcomes %>%
                color = "black", linetype = "dashed") +
     geom_vline(xintercept = 0.5, color = "black", linetype = "dashed") +
     geom_step(linetype = "dotted") +
-    # geom_point(aes(x = auc, y = cumedist, color = conf_grp, size = count),
-    #            shape = 21) +
     geom_segment(aes(x = min_auc, xend = max_auc, yend = cumedist), alpha = 0.25, size = 0.25) +
     geom_point(aes(color = conf_grp), size = 0.3) +
     geom_text(aes(x = 0.75, y = 0.16 + ifelse(is.na(conf_grp), -.05, conf_grp/10),
@@ -404,9 +347,6 @@ p_nycomps_summary <- nycomps_pfam_all_outcomes %>%
               data = get_ecdf_labels(nycomps_pfam_all_outcomes)) +
     xlab("AUC") +
     ylab("Cumulative Density") +
-    # scale_size(breaks = c(5, 15, 25), range = c(0.25, 2),
-    #            labels = function(x) ifelse(x == 5, "<5",
-    #                                        ifelse(x == 25, ">25", x))) +
     scale_x_continuous(limits = c(-.01, 1.01), expand = c(0, 0),
                        labels = function(x) x*100) +
     scale_y_continuous(limits = c(-.01, 1.01), expand = c(0, 0),
@@ -464,9 +404,6 @@ best_worst_segments <- p_nycomps_best_worst %>%
     ungroup
     
 p_nycomps_best_worst <- p_nycomps_best_worst %>%
-    # censor the size interval to make circles easier to read
-    # mutate_rows(count > 25, count = 25) %>%
-    # mutate_rows(count < 5, count = 5) %>%
     ggplot(aes(x = auc, y = cumedist)) +
     geom_segment(aes(x = xmin, xend = xmax, y = cumedist, yend = cumedist),
                  color = "grey", linetype = "dashed",
