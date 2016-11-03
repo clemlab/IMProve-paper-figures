@@ -61,7 +61,8 @@ ecoli_daley_fluman <- training_env$daley_outcomes %>%
     group_by(cterm, id) %>%
     summarize(outcome_max = max(outcome, na.rm = TRUE),
               outcome_avg = mean(outcome, na.rm = TRUE),
-              outcome_min = min(outcome, na.rm = TRUE)) %>%
+              outcome_min = min(outcome, na.rm = TRUE),
+              outcome_var = diff(range(outcome, na.rm = TRUE))) %>%
     ungroup
 
 ecoli_daley_fluman <- ecoli_daley_fluman %>%
@@ -124,8 +125,7 @@ p1_daley_fluman <- ggplot(ecoli_daley_fluman) +
                                           color = brewer.pal(3, "Dark2")[1]),
               plot.margin = unit(c(0L, 0L, 0L, .5), "mm"))
 
-if (!write_out)
-    p1_daley_fluman
+p1_daley_fluman
 ```
 
 ## Training metrics
@@ -414,4 +414,43 @@ No variables need to be kept. Since bootstraps are recorded to file at the time
 they are calculated.
 ```{r session}
 sessionInfo()
+```
+
+
+## look at variability due to normalization
+```{r var_x_y}
+var_x_y <- function(mean_x, mean_y, var_x, var_y, cov_x_y)
+    (mean_x / mean_y) ^ 2 * (
+        (var_x / mean_x) ^ 2 + (var_y / mean_y) ^ 2 -
+        2 * (cov_x_y / (mean_x * mean_y))
+    )
+
+daley_variation <- training_env$daley_outcomes %>%
+    filter(cterm != "fluman", grepl("Val", measurement)) %>%
+    separate(grouping, c("Day")) %>%
+    left_join(training_env$control_outcomes) %>%
+    mutate(outcome_raw = outcome*(control - background)) %>%
+    group_by(id) %>% 
+    summarize(mean_id = mean(outcome_raw),
+              mean_ctrl = mean(control),
+              var_id = var(outcome_raw),
+              var_ctrl = var(control),
+              cov_id_ctrl = cov(outcome_raw, control)) %>%
+    ungroup %>%
+    mutate(var_id_ctrl = var_x_y(mean_id, mean_ctrl,
+                                 var_id, var_ctrl, cov_id_ctrl),
+           var_id_less = var_id < var_id_ctrl,
+           var_ctrl_less = var_ctrl < var_id_ctrl)
+
+ggplot(ecoli_daley_fluman) +
+    geom_point(aes(outcome_var_in, outcome_var_fluman)) +
+    geom_abline(slope = 1) +
+    theme(aspect.ratio = 1)
+
+table(ecoli_daley_fluman$outcome_var_in > ecoli_daley_fluman$outcome_var_fluman)
+# FALSE  TRUE 
+#    22    51
+# 
+# 22/51
+# [1] 0.4313725
 ```
