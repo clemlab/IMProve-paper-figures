@@ -67,7 +67,7 @@ control_outcomes <- control_outcomes %>%
 
 ```{r}
 daley_outcomes <- read_csv("training/AllPlates_161104_with_raw.csv") %>%
-    gather(measurement, outcome, Val1:OD600_Norm4) %>% 
+    gather(measurement, outcome, Val1:OD600_Norm4) %>%
     mutate(id = tolower(ID),
            cterm = Cterm_new,
            grouping = paste(groupid, measurement, sep = "|"),
@@ -80,13 +80,13 @@ daley_outcomes <- read_csv("training/AllPlates_161104_with_raw.csv") %>%
     # properly normalize values where possible
     left_join(control_outcomes %>%
                   mutate(normalized = TRUE),
-              by = c("Day", "cterm", "measurement")) %>% 
+              by = c("Day", "cterm", "measurement")) %>%
     mutate_rows(is.na(control),
                 background = 0L, normalized = FALSE, control = 1L) %>%
     # normalize to control well
     mutate(outcome = (outcome - background)/(control - background)) %>%
     select(-control, -background, -Day)
-    
+
 daley_outcomes_exp <- daley_outcomes %>%
     # original model was trained using these three measurement categories
     # omitting "Val3"
@@ -142,7 +142,7 @@ near_zero_var_features <- nearZeroVar(daley_allstats, names = TRUE)
 daley_allstats[, near_zero_var_features] <- list(NULL)
 
 # Find highly correlating features
-highly_correlating_features <- daley_allstats %>% 
+highly_correlating_features <- daley_allstats %>%
     select(-id) %>%
     cor(use = "pairwise.complete.obs") %>%
     findCorrelation(cutoff = 0.95, names = TRUE)
@@ -202,16 +202,16 @@ model_template <- gsub(".svmlight", ".train.%PARAM%.model", daley_svmlight_fn)
 training_performance <-
     foreach(thisparam = tunegrid,
             .combine = bind_rows, .multicombine = TRUE) %dopar% {
-                
+
     filename <- gsub("%PARAM%", thisparam, model_template)
     model <- read_svmlight_model(filename, feat_names)
-        
+
     daley_allstats_transformed %>%
         mutate(scores =
                    prediction_fn(daley_allstats,
                                  xtrans = daley_preprocess_params, model)) %>%
         select(id, scores) %>%
-        right_join(ecoli_training, by = "id") %>% 
+        right_join(ecoli_training, by = "id") %>%
         calc_performance(score_col = "scores",
                          outcome_col = "outcome",
                          subgrp_col = "grouping",

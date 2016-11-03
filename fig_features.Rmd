@@ -647,7 +647,7 @@ p5_weight_importance <-
                   nrow = 1L, rel_widths = c(2.6, 2)),
         x = 0, y = .21, width = 1, height = .49) +
     draw_plot(
-        plot_grid(p_weight_protnuc, p_auc_protnuc, p4_fluman_asd, nrow = 1,
+        plot_grid(p_weight_protnuc, p_auc_protnuc, p4_fluman_asd, nrow = 1L,
                   align = "h", rel_widths = c(2, 2, 1),
                   labels = letters[5:7], label_size = 8, vjust = 0.5),
         x = 0, y = 0, width = 1, height = .2) +
@@ -661,14 +661,14 @@ p5_weight_importance <-
 p5_weight_importance %<>% ggplotGrob
 
 # dont clip e, f, g labels
-p5_weight_importance$grobs[[4]]$children[[5]]$children$layout$layout %<>%
+p5_weight_importance$grobs[[4L]]$children[[5L]]$children$layout$layout %<>%
     mutate_rows(name == "panel", clip = "off")
 
-#if (write_out) {
+if (write_out) {
     save_plot(filename = "plots/fig6_fluman.pdf", plot = p5_weight_importance,
           base_width = uconv(183, "mm", "in", "Length"),
           base_height = 5.5)
-#}
+}
 ggdraw(p5_weight_importance)
 ```
 
