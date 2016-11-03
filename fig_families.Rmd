@@ -132,11 +132,6 @@ nycomps_pfam_outcomes %<>%
     filter(grp != "All Genes") %>%
     mutate(grp = "All Outcomes") %>%
     bind_rows(nycomps_pfam_outcomes)
-
-nycomps_pfam_outcomes %>%
-    group_by(grp, attribute) %>%
-    summarize(count = n(),
-              countna = sum(is.na(attr_value)))
 ```
 
 # calculate AUC for subsets
@@ -195,16 +190,16 @@ p_hmm_acc <- nycomps_pfam_auc %>%
                     size = 0.5, fatten = 0.5,
                     position = position_dodge(width = 0.5)) +
     ylab("AUC") +
-    scale_color_manual(values = brewer.pal(5, "Dark2"), na.value = "gray") +
+    scale_color_manual(values = brewer.pal(5L, "Dark2"), na.value = "gray") +
     scale_x_discrete(expand = c(0, 0),
                      limits = c("All Genes", "All Outcomes")) +
-    scale_y_continuous(breaks = seq(0,1,.1),
+    scale_y_continuous(breaks = seq(0, 1, .1),
                        labels = function(x) x*100) +
     theme(legend.position = c(.03, .95),
           legend.title = element_blank(),
           legend.text = element_text(color = brewer.pal(3, "Dark2")[[1]]),
           axis.title.x = element_blank(),
-          axis.text.x = element_text(size = 5))
+          axis.text.x = element_text(size = 7))
 
 p_hmm_acc %<>% ggplotGrob()
 p_hmm_acc$layout$clip <- "off"
@@ -214,44 +209,11 @@ for (idx in 4:8)
     p_hmm_acc$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
 
 p_hmm_acc$grobs[[8L]]$grobs[[1L]][[1L]][[10L]]$gp$col <-
-    brewer.pal(3, "Dark2")[[2]]
+    brewer.pal(3L, "Dark2")[[2L]]
 p_hmm_acc$grobs[[8L]]$grobs[[1L]][[1L]][[11L]]$gp$col <-
-    brewer.pal(3, "Dark2")[[3]]
+    brewer.pal(3L, "Dark2")[[3L]]
 
 ggdraw(p_hmm_acc)
-```
-
-```{r}
-nycomps_pfam_auc %>%
-    filter(attribute == "hmm_acc") %>%
-    ggplot() +
-    geom_point(aes(count, auc)) +
-    scale_x_log10()
-
-nycomps_pfam_auc %>%
-    mutate(in_training =
-               attr_value %in% c(ecoli_pfam$clan, ecoli_pfam$hmm_acc)) %>%
-    # for domains that come up with a clan
-    mutate_rows(is.na(attr_value), in_training = NA) %>%
-    filter(attribute %in% c("hmm_acc")) %>%
-    # only plot if there are at least 5 outcomes for that specific pfam/vector group
-    filter(count > 5) %>%
-    ggplot() +
-    geom_vline(xintercept = 0.50, linetype = "dashed") +
-    geom_histogram(aes(auc),
-                # width = 0.4,
-                 position = position_dodge(0.5)) +
-    ylab("AUC") +
-    scale_color_manual(values = brewer.pal(5, "Dark2"),
-                       na.value = "gray") +
-   # scale_x_discrete(limits = nycomps_auc %>%
-#                         arrange(desc(count)) %$% unlist(grp)) +
-    scale_y_continuous(labels = function(x) x*100) +
-    theme(legend.position = "bottom",
-          legend.title = element_blank(),
-          axis.title.x = element_blank(),
-          strip.background = element_blank()) +
-    facet_wrap(~grp, scales = "free_y", ncol = 2)
 ```
 
 ```{r}
@@ -325,51 +287,6 @@ nycomps_pfam_worst_vector <- nycomps_pfam_auc %>%
     separate(attr_value, c("pfam_main"), remove = FALSE) %>%
     left_join(nycomps_pfam %>% distinct(hmm_acc, hmm_name),
               by = c("attr_value" = "hmm_acc"))
-
-p_pfam_auc_ecdf <- nycomps_pfam_best_vector %>%
-    ggplot() +
-    geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey") +
-    geom_hline(aes(yintercept = ecdf(auc)(0.5)),
-               color = "grey", linetype = "dashed") +
-    geom_text(aes(x = lower95, y = cumedist, label = pfam_main),
-              size = 5*5/14, nudge_x = -.05,
-              data = nycomps_pfam_best_vector %>%
-                  filter(attr_value %in% names(pfams_of_interest))) +
-    geom_segment(aes(x = lower95, xend = upper95,
-                     y = cumedist, yend = cumedist),
-                 size = 0.5,
-                 data = nycomps_pfam_best_vector %>%
-                     filter(attr_value %in% names(pfams_of_interest))) +
-    geom_text(aes(x = 0.75, y = 0.16 + ifelse(is.na(conf_grp), -.05, conf_grp/10),
-                  label = proport, color = conf_grp),
-              size = 5*5/14,
-              data = nycomps_pfam_best_vector %>%
-                  group_by(conf_grp) %>%
-                  summarize(count = n()) %>%
-                  ungroup %>%
-                  mutate(proport = specify_decimal(count / sum(count), 2L)) %>%
-                  add_row(proport = nrow(nycomps_pfam_best_vector), conf_grp = NA)) +
-    draw_label("Best AUC across\nconditions tested", x = 0.01, y = 0.95,
-              hjust = 0, fontface = "bold", size = 6) +
-    geom_step(aes(x = auc, y = cumedist, color = conf_grp)) +
-    geom_point(aes(x = auc, y = cumedist),
-               size = 0.5,
-               data = nycomps_pfam_best_vector %>%
-                   filter(attr_value %in% names(pfams_of_interest))) +
-    xlab("AUC") +
-    ylab("Cumulative Density") +
-    scale_x_continuous(expand = c(0, 0), labels = function(x) x*100) +
-    scale_y_continuous(expand = c(0, 0), limits = c(0, 1.001),
-                       labels = function(x) paste0(specify_decimal(x*100, 0L), "%")) +
-    scale_color_continuous(low = "#A4A5A5", high = "#A10F1C", na.value = "black") +
-    theme(legend.position = "none")
-
-p_pfam_auc_ecdf %<>% ggplotGrob
-
-p_pfam_auc_ecdf$layout %<>%
-    mutate_rows(name == "panel", clip = "off")
-
-ggdraw(p_pfam_auc_ecdf)
 ```
 
 ```{r}
@@ -384,8 +301,6 @@ nycomps_pfam_outcomes_auc <- nycomps_pfam_auc %>%
     separate(attr_value, c("pfam_main"), remove = FALSE) %>%
     left_join(nycomps_pfam %>% distinct(hmm_acc, hmm_name),
               by = c("attr_value" = "hmm_acc"))
-
-nycomps_pfam_outcomes
 
 nycomps_pfam_best_vector %>%
     ggplot() +
