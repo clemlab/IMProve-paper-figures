@@ -430,7 +430,7 @@ daley_variation <- training_env$daley_outcomes %>%
     separate(grouping, c("Day")) %>%
     left_join(training_env$control_outcomes) %>%
     mutate(outcome_raw = outcome*(control - background)) %>%
-    group_by(id) %>% 
+    group_by(id) %>%
     summarize(mean_id = mean(outcome_raw),
               mean_ctrl = mean(control),
               var_id = var(outcome_raw),
@@ -448,9 +448,9 @@ ggplot(ecoli_daley_fluman) +
     theme(aspect.ratio = 1)
 
 table(ecoli_daley_fluman$outcome_var_in > ecoli_daley_fluman$outcome_var_fluman)
-# FALSE  TRUE 
+# FALSE  TRUE
 #    22    51
-# 
+#
 # 22/51
 # [1] 0.4313725
 ```

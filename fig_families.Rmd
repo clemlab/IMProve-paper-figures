@@ -342,7 +342,7 @@ nycomps_pfam_all_outcomes <- nycomps_pfam_auc %>%
 
     # mutate(cumedist = row_number(auc) / length(auc),
     #        conf_grp = ifelse(auc <= 0.5, 0,
-    #                          ifelse(lower95 <= 0.5, 0.5, 1))) 
+    #                          ifelse(lower95 <= 0.5, 0.5, 1)))
 
 nycomps_pfam_all_outcomes %>%
     filter(min_auc < 0.5, max_auc > 0.5) %>%
@@ -352,7 +352,7 @@ nycomps_pfam_worst_vector %>%
     summarize(count2 = n()) %>%
     arrange(desc(count2))
 
-get_ecdf_labels <- function(df) 
+get_ecdf_labels <- function(df)
     df %>%
     group_by(conf_grp) %>%
     summarize(count = n()) %>%
@@ -432,7 +432,7 @@ best_worst_segments <- p_nycomps_best_worst %>%
     mutate(xmin = ifelse(auc == min(auc), 0, xmin),
            xmax = ifelse(auc == max(auc), 1, xmax)) %>%
     ungroup
-    
+
 p_nycomps_best_worst <- p_nycomps_best_worst %>%
     ggplot(aes(x = auc, y = cumedist)) +
     geom_segment(aes(x = xmin, xend = xmax, y = cumedist, yend = cumedist),
@@ -441,7 +441,7 @@ p_nycomps_best_worst <- p_nycomps_best_worst %>%
     geom_segment(aes(x = .05, xend = .05, y = min, yend = max),
                  arrow = arrow(ends = "both", length = unit(0.02, "npc")),
                  size = 0.25,
-                 data = best_worst_segments %>% 
+                 data = best_worst_segments %>%
                      summarize_at(vars(cumedist), funs(min, max))) +
     geom_text(aes(x = .085, y = mean, label = round(diff) %>% paste0("%")),
               size = 5*5/14,
@@ -534,7 +534,7 @@ make_family_plot <- function(df, plot_all = TRUE) {
             bind_rows(nycomps_pfam_auc %>%
                       filter(grp == "All Outcomes") %>%
                       semi_join(data, by = "attr_value"))
-    
+
     data %<>%
         ungroup %>%
         mutate(label = paste0(format_cnt(pos_count, count), "\n",
@@ -542,10 +542,10 @@ make_family_plot <- function(df, plot_all = TRUE) {
                attr_label = pfams_of_interest[attr_value],
                xlabel = paste(attr_label, grp, sep = "\n")) %>%
         arrange(attr_value, grp == "All Outcomes", auc)
-        
+
     to_plot <- nycomps_pfam_outcomes %>%
         inner_join(data)
-    
+
      ggplot(to_plot, aes(x = paste(attr_label, grp, sep = "\n"), y = score)) +
         geom_point(aes(color = outcome), size = 0.25,
                    position = position_quasirandom(dodge.width = .5)) +
@@ -571,7 +571,7 @@ p_single <- nycomps_pfam_auc %>%
     {make_family_plot(., plot_all = FALSE) +
          theme(axis.title.x = element_blank())} %>%
     ggplotGrob
-    
+
 p_single$layout %<>%
     mutate_rows(name == "panel", clip = "off")
 
@@ -584,7 +584,7 @@ p_mfs <- nycomps_pfam_auc %>%
     {make_family_plot(.) +
          theme(axis.title.x = element_blank())} %>%
     ggplotGrob
-    
+
 p_mfs$layout %<>%
     mutate_rows(name == "panel", clip = "off")
 
@@ -596,7 +596,7 @@ p_abc2 <- nycomps_pfam_auc %>%
     filter(attr_value == "PF01061.21") %>%
     make_family_plot %>%
     ggplotGrob
-    
+
 p_abc2$layout %<>%
     mutate_rows(name == "panel", clip = "off")
 
