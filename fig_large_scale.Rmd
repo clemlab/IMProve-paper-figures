@@ -303,85 +303,6 @@ if (write_out)
     p2_posmix_roc
 ```
 
-```{r nycomps_auc_table}
-nycomps_cterm <- nycomps_auc %>%
-    mutate(auc = specify_decimal(auc*100),
-           lower95 = specify_decimal(lower95*100),
-           upper95 = specify_decimal(upper95*100),
-           auc_label = paste0(auc, " (", lower95, "-", upper95, ")")) %>%
-    filter(group != "posmix") %>%
-    select(group, count, auc_label, cterm)
-
-nycomps_cterm %<>%
-    filter(cterm == "all") %>%
-    select(-cterm) %>%
-    inner_join(nycomps_cterm %>% filter(cterm != "all"),
-               by = "group", suffix = c("_all", "_cterm")) %>%
-    arrange(desc(count_all), cterm) %>%
-    mutate(
-        group = factor(group,
-               levels = c("all",
-                          "N", "C",
-                          "C_LDAO", "MSGC.24",
-                          "MSGC.28", "MSGC.7",
-                          "MSGC.9", "MSGC.9_LDAO"),
-               labels = c("All Conditions",
-                          "(N) His-FLAG-TEV-", "(C) -TEV-His",
-                          "(C) -TEV-His (LDAO)", "(24) His-GST-TEV-",
-                          "(28) -TEV-His", "(7) His-TEV-",
-                          "(9) His-MBP-TEV-", "(9) His-MBP-TEV- (LDAO)")),
-        cterm = factor(cterm,
-                       levels = c("CYTOPLASMIC.", "NON-CYTOPLASMIC."),
-                       labels = c("Cyto.", "Peri."))) %>%
-    # do it in two parts in case we want to show more vectors later
-    filter(group %in% c("All Conditions", "(N) His-FLAG-TEV-", "(C) -TEV-His"))
-
-table_theme2 <- ttheme_default(
-    core = list(fg_params = list(fontsize = 7)),
-    colhead = list(fg_params = list(fontsize = 7)),
-    rowhead = list(fg_params = list(fontsize = 7)),
-    padding = unit(c(1, 2), "mm"))
-
-p2_auc_table <- tableGrob(select(nycomps_cterm, -group),
-                          theme = table_theme2,
-                          cols = c("Count", "AUC (95% CI)",
-                                   "Count", "AUC (95% CI)", ""),
-                          rows = c("All Conditions", "",
-                                   "(N) His-FLAG-TEV-","", "(C) -TEV-His", ""))
-
-# All Conditions
-p2_auc_table <-
-    change_cell(p2_auc_table, 2L, 1L, "rowhead", tnew = 2L, bnew = 3L)
-p2_auc_table <- change_cell(p2_auc_table, 2L, 2L, tnew = 2L, bnew = 3L)
-p2_auc_table <- change_cell(p2_auc_table, 2L, 3L, tnew = 2L, bnew = 3L)
-
-# N
-p2_auc_table <-
-    change_cell(p2_auc_table, 4L, 1L, "rowhead", tnew = 4L, bnew = 5L)
-p2_auc_table <- change_cell(p2_auc_table, 5L, 2L, tnew = 4L, bnew = 5L)
-p2_auc_table <- change_cell(p2_auc_table, 5L, 3L, tnew = 4L, bnew = 5L)
-
-# C
-p2_auc_table <-
-    change_cell(p2_auc_table, 6L, 1L, "rowhead", tnew = 6L, bnew = 7L)
-p2_auc_table <- change_cell(p2_auc_table, 6L, 2L, tnew = 6L, bnew = 7L)
-p2_auc_table <- change_cell(p2_auc_table, 6L, 3L, tnew = 6L, bnew = 7L)
-
-# italicize last column, remove background
-ind <- find_cell(p2_auc_table, 1L, 6L, "colhead-bg")
-p2_auc_table$grobs[ind][[1L]][["gp"]]$fill <- "white"
-for (idx in 2:7) {
-    ind <- find_cell(p2_auc_table, idx, 6L, "core-fg")
-    p2_auc_table$grobs[ind][[1L]][["gp"]]$font <- 3L
-
-    ind <- find_cell(p2_auc_table, idx, 6L, "core-bg")
-    p2_auc_table$grobs[ind][[1L]][["gp"]]$fill <- "white"
-}
-
-if (write_out)
-    ggdraw(p2_auc_table)
-```
-
 ```{r}
 p_nycomps_cterm <- nycomps_auc %>%
     filter(group != "posmix") %>%
@@ -397,9 +318,6 @@ p_nycomps_cterm <- nycomps_auc %>%
                           "-TEV-His\n(C,LDAO)", "His-GST-\nTEV-(24)",
                           "-TEV-His\n(28)", "His-TEV-\n(7)",
                           "His-MBP-\nTEV-(9)", "His-MBP-\nTEV-(9, LDAO)")))
-
-fmt_cnt <- function(pos, all)
-    paste0(round(pos/all*100), '%/', all)
 
 p_nycomps_cterm <- p_nycomps_cterm %>%
     # calculate label positions
