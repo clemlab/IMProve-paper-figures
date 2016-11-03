@@ -10,7 +10,7 @@ Load all libraries necessary for subsequent data munging and plotting.
 Some defaults are set here to make things easier throughout.
 ```{r libraries}
 # if TRUE, then data will be written to file
-write_out = FALSE
+write_out = TRUE
 
 library(magrittr)
 library(tidyverse)
@@ -93,7 +93,10 @@ nycomps_pfam %<>%
     mutate(hmm_training = hmm_acc %in% ecoli_pfam$hmm_acc,
            clan_training = clan %in% ecoli_pfam$clan) %>%
     mutate_rows(clan == "No_clan", clan_training = NA, clan = NA)
+```
 
+# merge pfam information with outcomes
+```{r}
 nycomps_pfam_outcomes <- nycomps_env$nycomps_all_outcomes %>%
     mutate(outcome = plasmid_outcome == 1) %>%
     rename(grp = plasmid_name)
@@ -172,49 +175,73 @@ nycomps_pfam_auc <- nycomps_pfam_outcomes %>%
     spread(ci_labels, score)
 ```
 
-# plot outcomes across families
+# auc for families in training or not
 ```{r}
+p_hmm_acc <- nycomps_pfam %>%
+    distinct(hmm_acc, hmm_training) %>%
+    group_by(hmm_training) %>%
+    summarize(hmm_count = n()) %>%
+    add_row(hmm_training = "NONE", hmm_count = "") %>%
+    mutate(label = "In training") %>%
+    mutate_rows(hmm_training == "FALSE", label = "Not in training") %>%
+    mutate_rows(hmm_training == "NONE", label = "No Pfam") %>%
+    mutate_rows(hmm_training != "NONE",
+                label = paste0(label, " (", hmm_count, ")")) %>%
+    arrange(hmm_training == "TRUE", hmm_training == "FALSE") %$%
+    setNames(label, hmm_training)
+
 p_hmm_acc <- nycomps_pfam_auc %>%
     filter(attribute == "hmm_training",
            grp %in% c("All Genes", "All Outcomes")) %>%
     ungroup %>%
     mutate_rows(is.na(attr_value), attr_value = "NONE") %>%
-    mutate(attr_value = factor(attr_value,
-                               c('TRUE', 'FALSE', "NONE"),
-                               c("In training", "Not in training", "No Pfam"),
-                               ordered = TRUE)) %>%
-    ggplot() +
-    geom_hline(yintercept = 0.50, linetype = "dashed", color = "lightgrey") +
-    geom_pointrange(aes(x = grp, ymin = upper95, y = auc, ymax = lower95,
-                        group = attr_value, color = attr_value),
+    mutate(attr_value = factor(attr_value, c("TRUE", "FALSE", "NONE"))) %>%
+    # calculate label positions
+    mutate(lab_y = .47) %>%
+    mutate_rows(attr_value != "TRUE", lab_y = lab_y - .010) %>%
+    mutate_rows(attr_value == "NONE", lab_y = lab_y - .010) %>%
+    ggplot(aes(x = grp, color = attr_value)) +
+    geom_hline(yintercept = 0.5, linetype = "dashed", color = "lightgrey") +
+    geom_pointrange(aes(ymin = upper95, y = auc, ymax = lower95),
                     size = 0.5, fatten = 0.5,
                     position = position_dodge(width = 0.5)) +
+    geom_text(aes(y = lab_y, label = fmt_cnt(pos_count, count)),
+              size = 5*5/14) +
     ylab("AUC") +
-    scale_color_manual(values = brewer.pal(5L, "Dark2"), na.value = "gray") +
+    scale_color_manual(values = brewer.pal(5L, "Dark2"),
+                       labels = p_hmm_acc,
+                       limits = names(p_hmm_acc) %>% rev) +
     scale_x_discrete(expand = c(0, 0),
                      limits = c("All Genes", "All Outcomes")) +
-    scale_y_continuous(breaks = seq(0, 1, .1),
+    scale_y_continuous(expand = c(0, 0),
+                       breaks = seq(0, 1, .1),
                        labels = function(x) x*100) +
-    theme(legend.position = c(.03, .95),
+    # necessary for the labels
+    coord_cartesian(ylim = c(0.495, 0.65)) +
+    theme(legend.position = c(.57, .23),
+          legend.key.size = unit(8, "pt"),
           legend.title = element_blank(),
-          legend.text = element_text(color = brewer.pal(3, "Dark2")[[1]]),
+          legend.text = element_text(color = brewer.pal(3, "Dark2")[[1L]]),
           axis.title.x = element_blank(),
-          axis.text.x = element_text(size = 7))
+          axis.text.x = element_text(size = 7),
+          # necessary for the labels
+          plot.margin = unit(c(4, 0, 19, 4), "pt"))
 
 p_hmm_acc %<>% ggplotGrob()
 p_hmm_acc$layout$clip <- "off"
 
 # legend - remove keystones and change label colors
-for (idx in 4:8)
+for (idx in 4:11)
     p_hmm_acc$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
 
-p_hmm_acc$grobs[[8L]]$grobs[[1L]][[1L]][[10L]]$gp$col <-
+p_hmm_acc$grobs[[8L]]$grobs[[1L]][[1L]][[13L]]$gp$col <-
     brewer.pal(3L, "Dark2")[[2L]]
-p_hmm_acc$grobs[[8L]]$grobs[[1L]][[1L]][[11L]]$gp$col <-
+p_hmm_acc$grobs[[8L]]$grobs[[1L]][[1L]][[14L]]$gp$col <-
     brewer.pal(3L, "Dark2")[[3L]]
 
 ggdraw(p_hmm_acc)
 ```
+
 
 ```{r}
 pfams_of_interest <-
@@ -339,9 +366,11 @@ p_nycomps_summary <- nycomps_pfam_all_outcomes %>%
                color = "black", linetype = "dashed") +
     geom_vline(xintercept = 0.5, color = "black", linetype = "dashed") +
     geom_step(linetype = "dotted") +
-    geom_segment(aes(x = min_auc, xend = max_auc, yend = cumedist), alpha = 0.25, size = 0.25) +
-    geom_point(aes(color = conf_grp), size = 0.3) +
-    geom_text(aes(x = 0.75, y = 0.16 + ifelse(is.na(conf_grp), -.05, conf_grp/10),
+    geom_segment(aes(x = min_auc, xend = max_auc, yend = cumedist),
+                 alpha = 0.25, size = 0.25) +
+    geom_point(aes(color = conf_grp), size = 0.25) +
+    geom_text(aes(x = 0.06,
+                  y = 0.85 + ifelse(is.na(conf_grp), -.05, conf_grp/10),
                   label = proport, color = conf_grp),
               size = 5*5/14,
               data = get_ecdf_labels(nycomps_pfam_all_outcomes)) +
@@ -350,9 +379,10 @@ p_nycomps_summary <- nycomps_pfam_all_outcomes %>%
     scale_x_continuous(limits = c(-.01, 1.01), expand = c(0, 0),
                        labels = function(x) x*100) +
     scale_y_continuous(limits = c(-.01, 1.01), expand = c(0, 0),
-                       labels = function(x) paste0(specify_decimal(x*100, 0L), "%")) +
-    scale_color_continuous(low = "#A4A5A5", high = "#A10F1C", na.value = "black",
-                           guide = "none") +
+                       labels = function(x)
+                           paste0(specify_decimal(x*100, 0L), "%")) +
+    scale_color_continuous(low = "#A4A5A5", high = "#A10F1C",
+                           na.value = "black", guide = "none") +
     theme(legend.title = element_blank(),
           legend.position = c(0.2, 0.8))
 
@@ -413,18 +443,14 @@ p_nycomps_best_worst <- p_nycomps_best_worst %>%
                  size = 0.25,
                  data = best_worst_segments %>% 
                      summarize_at(vars(cumedist), funs(min, max))) +
-    geom_text(aes(x = .08, y = mean, label = round(diff) %>% paste0("%")),
+    geom_text(aes(x = .085, y = mean, label = round(diff) %>% paste0("%")),
               size = 5*5/14,
               data = best_worst_segments %>%
                   summarize_at(vars(cumedist), funs(diff(range(.*100)), mean))) +
     geom_step(aes(group = type), linetype = "dotted") +
     geom_step(aes(color = conf_grp), alpha = 0.5,
               data = nycomps_pfam_all_outcomes) +
-    geom_point(aes(color = conf_grp), size = 0.3) +
-    # geom_text(aes(x = 0.75, y = 0.16 + ifelse(is.na(conf_grp), -.05, conf_grp/10),
-    #               label = proport, color = conf_grp),
-    #           size = 5*5/14,
-    #           data = get_labels(nycomps_pfam_best_vector)) +
+    geom_point(aes(color = conf_grp), size = 0.25) +
     geom_text(aes(x = 0.85, y = cumedist, label = label),
               vjust = -.3, size = 5*5/14,
               data = best_worst_labels) +
@@ -455,14 +481,16 @@ format_auc <- function(auc, lower95, upper95, k = 1L)
 
 format_cnt <- function(pos_count, count, k = 0L)
     paste0(specify_decimal(pos_count/count*100, k), "%/", count)
+```
 
+```
 p_nycomps_selected_families <- nycomps_pfam_outcomes %>%
     filter(grp != "All Genes", grp != "All Outcomes",
            attr_value %in% names(pfams_of_interest)) %>%
     semi_join(nycomps_pfam_best_vector, by = c("grp", "attr_value")) %>%
     ggplot() +
     geom_point(aes(x = attr_value, y = score, color = outcome), size = 0.25,
-               position = position_beeswarm(dodge.width = .5, cex = 3)) +
+               position = position_quasirandom(dodge.width = .5, cex = 3)) +
     geom_text(
         aes(x = attr_value, y = 2.3,
             label = paste(grp, format_cnt(pos_count, count), sep = "\n")),
@@ -491,108 +519,115 @@ p_nycomps_selected_families$layout %<>%
 ggdraw(p_nycomps_selected_families)
 ```
 
-
-# single vector families selected
 ```{r}
-p_single_vector_fam <- c("PF05425.10",  "PF02667.11")
-
-p_single_vector_fam <- nycomps_pfam_outcomes %>%
-    filter(grp != "All Genes", grp != "All Outcomes",
-           attr_value %in% p_single_vector_fam) %>%
-    mutate(attr_value = pfams_of_interest[attr_value]) %>%
-    ggplot(aes(x = paste(attr_value, grp, sep = "\n"),
-               y = score)) +
-    geom_point(aes(color = outcome), size = 0.25,
-               position = position_beeswarm(dodge.width = .5, cex = 3)) +
-    geom_text(aes(y = 1, label = label), size = 5*5/14, vjust = 2,
-              data = nycomps_pfam_auc %>%
-                  filter(grp != "All Genes", grp != "All Outcomes",
-                         attr_value %in% p_single_vector_fam) %>%
-                  ungroup %>%
-                  mutate(label = format_auc(auc, lower95, upper95),
-                         attr_value = pfams_of_interest[attr_value])) +
-    scale_color_manual(values = c(`TRUE` = "#A10F1C", `FALSE` = "#A4A5A5")) +
-    scale_x_discrete(expand = c(0, 0)) +
-    ylab(expression("SVM" ^ "rank"*~"score")) +
-    coord_flip() + # ylim = c(-5.11, 1.4)
-    theme(legend.position = "None",
-          axis.title = element_blank(),
-          plot.margin = unit(c(0, 0, 0, 0), "pt"))
-
-p_single_vector_fam %<>% ggplotGrob()
-
-p_single_vector_fam$layout %<>%
-    mutate_rows(name == "panel", clip = "off")
-
-ggdraw(p_single_vector_fam)
-```
-
-
-```{r}
-p_nycomps_families_vectors <- nycomps_pfam_auc %>%
-    filter(attr_value %in% c("PF01061.21", "PF07690.13"),
-           grp != "All Outcomes", grp != "All Genes") %>%
+make_family_plot <- function(df, plot_all = TRUE) {
+    data <- df %>%
+    filter(grp != "All Outcomes", grp != "All Genes") %>%
     group_by(attr_value) %>%
     # enforce that a confidence interval exists
     filter(!is.na(lower95)) %>%
     # find min and max AUC conditions
     filter(auc %in% c(min(auc), max(auc)))
 
-p_nycomps_families_vectors %<>%
-    bind_rows(nycomps_pfam_auc %>%
-              filter(grp == "All Outcomes") %>%
-              semi_join(p_nycomps_families_vectors, by = "attr_value")) %>%
-    ungroup %>%
-    mutate(label = format_auc(auc, lower95, upper95),
-           attr_label = pfams_of_interest[attr_value],
-           xlabel = paste(attr_value, grp, sep = "\n")) %>%
-    arrange(attr_value, grp == "All Outcomes", auc)
+    if (plot_all)
+        data %<>%
+            bind_rows(nycomps_pfam_auc %>%
+                      filter(grp == "All Outcomes") %>%
+                      semi_join(data, by = "attr_value"))
+    
+    data %<>%
+        ungroup %>%
+        mutate(label = paste0(format_cnt(pos_count, count), "\n",
+                              format_auc(auc, lower95, upper95)),
+               attr_label = pfams_of_interest[attr_value],
+               xlabel = paste(attr_label, grp, sep = "\n")) %>%
+        arrange(attr_value, grp == "All Outcomes", auc)
+        
+    to_plot <- nycomps_pfam_outcomes %>%
+        inner_join(data)
+    
+     ggplot(to_plot, aes(x = paste(attr_label, grp, sep = "\n"), y = score)) +
+        geom_point(aes(color = outcome), size = 0.25,
+                   position = position_quasirandom(dodge.width = .5)) +
+        geom_text(aes(y = max(to_plot$score) + diff(range(to_plot$score)) * .1,
+                      label = label),
+                  size = 5*5/14, data = data) +
+        scale_color_manual(values = c(`TRUE` = "#A10F1C",
+                                      `FALSE` = "#A4A5A5")) +
+        scale_x_discrete(expand = c(0, 0),
+                         limits = data$xlabel) +
+        ylab(expression("SVM" ^ "rank"*~"score")) +
+        coord_flip() +
+        theme(legend.position = "None",
+              axis.title.y = element_blank(),
+              plot.margin = unit(c(0, 0, 0, 0), "pt"))
+}
+```
 
-p_nycomps_families_vectors <- nycomps_pfam_outcomes %>%
-    semi_join(p_nycomps_families_vectors) %>%
-   # mutate(attr_value = pfams_of_interest[attr_value]) %>%
-    ggplot(aes(x = paste(attr_value, grp, sep = "\n"), y = score)) +
-    geom_point(aes(color = outcome), size = 0.25,
-               position = position_beeswarm(dodge.width = .5, cex = 2)) +
-    geom_text(aes(y = 1.4, label = label), size = 5*5/14, vjust = 2,
-              data = p_nycomps_families_vectors) +
-    scale_color_manual(values = c(`TRUE` = "#A10F1C", `FALSE` = "#A4A5A5")) +
-    scale_x_discrete(expand = c(0, 0),
-                     # labels = pfams_of_interest,
-                     limits = p_nycomps_families_vectors$xlabel) +
-    ylab(expression("SVM" ^ "rank"*~"score")) +
-    coord_flip() +
-    theme(legend.position = "None",
-          axis.title.y = element_blank(),
-          plot.margin = unit(c(0, 0, 0, 0), "pt"))
-
-p_nycomps_families_vectors %<>% ggplotGrob()
-
-p_nycomps_families_vectors$layout %<>%
+# single vector families selected
+```{r}
+p_single <- nycomps_pfam_auc %>%
+    filter(attr_value %in% c("PF05425.10",  "PF02667.11")) %>%
+    {make_family_plot(., plot_all = FALSE) +
+         theme(axis.title.x = element_blank())} %>%
+    ggplotGrob
+    
+p_single$layout %<>%
     mutate_rows(name == "panel", clip = "off")
 
-ggdraw(p_nycomps_families_vectors)
+ggdraw(p_single)
+```
+
+```{r}
+p_mfs <- nycomps_pfam_auc %>%
+    filter(attr_value == "PF07690.13") %>%
+    {make_family_plot(.) +
+         theme(axis.title.x = element_blank())} %>%
+    ggplotGrob
+    
+p_mfs$layout %<>%
+    mutate_rows(name == "panel", clip = "off")
+
+ggdraw(p_mfs)
+```
+
+```{r}
+p_abc2 <- nycomps_pfam_auc %>%
+    filter(attr_value == "PF01061.21") %>%
+    make_family_plot %>%
+    ggplotGrob
+    
+p_abc2$layout %<>%
+    mutate_rows(name == "panel", clip = "off")
+
+ggdraw(p_abc2)
 ```
 
 
 ```{r}
-f_features <- ggdraw() +
+f_families <- ggdraw() +
     plot_grid(p_hmm_acc, p_nycomps_summary, p_nycomps_best_worst,
               labels = letters[1:3], label_size = 8,
-              align = "hv", rel_widths = c(2, 3, 3), nrow = 1) %>%
-    draw_plot(x = 0, y = .75, width = 1, height = .25) +
-    plot_grid(p_single_vector_fam, p_nycomps_families_vectors,
-              labels = letters[4:5], label_size = 8,
-              align = "v", rel_heights = c(2, 6), ncol = 1) %>%
-    draw_plot(x = 0, y = 0, width = 1, height = .75)
+              align = "none", rel_widths = c(2, 3, 3), nrow = 1L) %>%
+    draw_plot(x = 0, y = .70, width = 1, height = .30) +
+    plot_grid(p_single, p_mfs, p_abc2,
+              labels = letters[4:6], label_size = 8, vjust = 0,
+              align = "v", rel_heights = c(2, 3, 3), ncol = 1L) %>%
+    draw_plot(x = 0, y = 0, width = 1, height = .70)
 
-#if (write_out == TRUE) {
+f_families %<>% ggplotGrob
+
+# dont clip d labels
+f_families$grobs[[4L]]$children[[3L]]$children$layout$layout %<>%
+    mutate_rows(name == "panel", clip = "off")
+
+if (write_out == TRUE) {
     save_plot(filename = "plots/fig5.pdf",
-              plot = f_features,
-              base_width = uconv(183L, "mm", "in", "Length"),
-              base_height = uconv(160, "mm", "in", "Length"))
-#}
-f_features
+              plot = f_families,
+              base_width = uconv(136, "mm", "in", "Length"),
+              base_height = uconv(136, "mm", "in", "Length"))
+}
+ggdraw(f_families)
 ```
 
 ```{r session}
