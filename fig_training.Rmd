@@ -121,9 +121,9 @@ p1_daley_fluman <- ggplot(ecoli_daley_fluman) +
     xlab("Normalized folded protein") +
     theme(axis.title.x = element_text(size = 7L,
                                       color = brewer.pal(3, "Dark2")[3]),
-              axis.title.y = element_text(size = 7L,
-                                          color = brewer.pal(3, "Dark2")[1]),
-              plot.margin = unit(c(0L, 0L, 0L, .5), "mm"))
+          axis.title.y = element_text(size = 7L,
+                                      color = brewer.pal(3, "Dark2")[1]),
+          plot.margin = unit(c(0L, 0L, 0L, .5), "mm"))
 
 p1_daley_fluman
 ```
