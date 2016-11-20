@@ -330,6 +330,15 @@ nycomps_pfam_outcomes_auc <- nycomps_pfam_auc %>%
               by = c("attr_value" = "hmm_acc"))
 ```
 
+## Considering multiple comparison adjustments:
+In the case here, we don't actually drop anything out in the process, so it
+seems within the FCR framework adjustment is not necesary (i.e., R == m). See:
+Benjamini, Y., and D. Yekutieli. “False Discovery Rate-Adjusted Multiple
+Confidence Intervals for Selected Parameters.” Journal of the American
+Statistical Association 100, no. 469 (2005): 71–81.
+https://en.wikipedia.org/wiki/False_coverage_rate
+http://stats.stackexchange.com/a/148273/62183
+
 # ecdf nycomps all outcomes - min max vectors
 ```{r}
 nycomps_pfam_all_outcomes <- nycomps_pfam_auc %>%
@@ -368,7 +377,7 @@ p_nycomps_summary <- nycomps_pfam_all_outcomes %>%
     geom_step(linetype = "dotted") +
     geom_segment(aes(x = min_auc, xend = max_auc, yend = cumedist),
                  alpha = 0.25, size = 0.25) +
-    geom_point(aes(color = conf_grp), size = 0.25) +
+    geom_point(aes(color = conf_grp), size = 0.15) +
     geom_text(aes(x = 0.06,
                   y = 0.85 + ifelse(is.na(conf_grp), -.05, conf_grp/10),
                   label = proport, color = conf_grp),
@@ -448,9 +457,9 @@ p_nycomps_best_worst <- p_nycomps_best_worst %>%
               data = best_worst_segments %>%
                   summarize_at(vars(cumedist), funs(diff(range(.*100)), mean))) +
     geom_step(aes(group = type), linetype = "dotted") +
-    geom_step(aes(color = conf_grp), alpha = 0.5,
+    geom_step(aes(color = lower95), alpha = 0.5,
               data = nycomps_pfam_all_outcomes) +
-    geom_point(aes(color = conf_grp), size = 0.25) +
+    geom_point(aes(color = lower95), size = 0.25) +
     geom_text(aes(x = 0.85, y = cumedist, label = label),
               vjust = -.3, size = 5*5/14,
               data = best_worst_labels) +
