@@ -32,7 +32,7 @@ library(parallel)
 
 library(foreach)
 library(doMC)
-registerDoMC(cores = 20L)
+registerDoMC(cores = 4L)
 #
 # library(doParallel)
 # registerDoParallel(cl)
@@ -232,11 +232,11 @@ p_hmm_acc$layout$clip <- "off"
 
 # legend - remove keystones and change label colors
 for (idx in 4:11)
-    p_hmm_acc$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
+    p_hmm_acc$grobs[[15L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
 
-p_hmm_acc$grobs[[8L]]$grobs[[1L]][[1L]][[13L]]$gp$col <-
+p_hmm_acc$grobs[[15L]]$grobs[[1L]][[1L]][[13L]]$gp$col <-
     brewer.pal(3L, "Dark2")[[2L]]
-p_hmm_acc$grobs[[8L]]$grobs[[1L]][[1L]][[14L]]$gp$col <-
+p_hmm_acc$grobs[[15L]]$grobs[[1L]][[1L]][[14L]]$gp$col <-
     brewer.pal(3L, "Dark2")[[3L]]
 
 ggdraw(p_hmm_acc)
@@ -345,7 +345,7 @@ nycomps_pfam_all_outcomes <- nycomps_pfam_auc %>%
     #                          ifelse(lower95 <= 0.5, 0.5, 1)))
 
 nycomps_pfam_all_outcomes %>%
-    filter(min_auc < 0.5, max_auc > 0.5) %>%
+    filter(min_auc < 0.5, max_auc > 0.5)
 
 nycomps_pfam_worst_vector %>%
     group_by(attr_value) %>%
@@ -617,9 +617,9 @@ f_families <- ggdraw() +
 
 f_families %<>% ggplotGrob
 
-# dont clip d labels
-f_families$grobs[[4L]]$children[[3L]]$children$layout$layout %<>%
-    mutate_rows(name == "panel", clip = "off")
+# # dont clip d labels
+# f_families$grobs[[4L]]$children[[3L]]$children$layout$layout %<>%
+#     mutate_rows(name == "panel", clip = "off")
 
 if (write_out == TRUE) {
     save_plot(filename = "plots/fig5.pdf",

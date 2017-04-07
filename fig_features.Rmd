@@ -720,6 +720,135 @@ if (write_out) {
 }
 ```
 
+
+## feature importances to e coli data
+```{r training_imp}
+data <- training_env$ecoli_training %>%
+    left_join(training_env$daley_allstats, by = "id") %>%
+    filter(normalized, !is.na(score)) %>%
+    group_by(cterm)
+
+# data is allstats with outcomes (grouped)
+group_stat <- function(exp_data, feat_grp, SUMMARY_FUN, ...) {
+    feat_grp %>%
+        do({
+            feat_df <- .
+            keep_feats <- feat_df[, 'old_name'] %>% unlist
+
+            exp_data %>%
+                do({
+                    data_df <- .
+                    data_df$score <- data_df %>%
+                        select(one_of(keep_feats)) %>%
+                        svmpredict()
+                    
+                    SUMMARY_FUN(data_df, ...)
+                })
+            
+        })
+}
+
+ecoli_all <- group_stat(
+    group_by(data, cterm), svmweights,
+    boot_perm, fn_prefix = "__", cores = 4, count = 5050, force = TRUE)
+
+ecoli_protnuc <- group_stat(
+    group_by(data, cterm), group_by(svmweights, prot_nuc),
+    boot_perm, fn_prefix = "__", cores = 4, count = 5050, force = TRUE)
+
+ecoli_cate <- group_stat(
+    group_by(data, cterm), group_by(svmweights, category),
+    boot_perm, fn_prefix = "__", cores = 4, count = 5050, force = TRUE)
+
+small_all <- group_stat(
+    small_scale, svmweights,
+    calc_auc_roc, grouping_col = 'dataset')
+
+small_protnuc <- group_stat(
+    small_scale, group_by(svmweights, prot_nuc),
+    calc_auc_roc, grouping_col = 'dataset')
+
+small_cate <- group_stat(
+    small_scale, group_by(svmweights, category),
+    calc_auc_roc, grouping_col = 'dataset')
+```
+
+```{r ec_protnuc}
+ecoli_protnuc %<>%
+    ungroup %>%
+    mutate(cterm = factor(cterm, levels = c("fluman", "out", "in")))
+ecoli_all %<>%
+    ungroup %>%
+    mutate(cterm = factor(cterm, levels = c("fluman", "out", "in")))
+
+ggplot() +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    geom_pointrange(aes(x = "IMProve",
+                        y = t0, ymin = bca_low, ymax = bca_high,
+                        color = cterm, group = cterm),
+                    position = position_dodge(width = 0.5),
+                    size = 0.5, fatten = 0.5,
+                    data = ecoli_all) +
+    geom_pointrange(aes(x = prot_nuc,
+                        y = t0, ymin = bca_low, ymax = bca_high,
+                        color = cterm, group = cterm),
+                    position = position_dodge(width = 0.5),
+                    size = 0.5, fatten = 0.5,
+                    data = ecoli_protnuc) +
+    ylab("Spearman's rho") +
+    scale_color_manual(values = setNames(brewer.pal(3, "Dark2"),
+                                         c("in", "out", "fluman"))) +
+    # scale_y_continuous(expand = c(0, 0), limits = c(.16, .86),
+    #                    labels = function(x) x*100) +
+    scale_x_discrete(limits = c("Nucleotide", "Protein", "IMProve"),
+                     labels = c(Nucleotide = "Nucleotide\nOnly",
+                                Protein = "Protein\nOnly",
+                                IMProve = "IMProve\nScore")) +
+    coord_flip() +
+    theme(legend.position = "none",
+          axis.text.y = element_text(
+              color = c(brewer.pal(7, "Dark2")[c(5, 7)], "#000000")),
+          axis.title.y = element_blank(),
+          plot.margin = unit(rep(0, 4), "pt"))
+```
+
+
+```{r ec_cate}
+ecoli_all %<>%
+    ungroup %>%
+    mutate(cterm = factor(cterm, levels = c("fluman", "out", "in")))
+ecoli_cate %<>%
+    ungroup %>%
+    mutate(cterm = factor(cterm, levels = c("fluman", "out", "in")))
+
+ggplot() +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    geom_pointrange(aes(x = "IMProve",
+                        y = t0, ymin = bca_low, ymax = bca_high,
+                        color = cterm, group = cterm),
+                    position = position_dodge(width = 0.5),
+                    size = 0.5, fatten = 0.5,
+                    data = ecoli_all) +
+    geom_pointrange(aes(x = category,
+                        y = t0, ymin = bca_low, ymax = bca_high,
+                        color = cterm, group = cterm),
+                    position = position_dodge(width = 0.5),
+                    size = 0.5, fatten = 0.5,
+                    data = ecoli_cate) +
+    ylab("Spearman's rho") +
+    scale_color_manual(values = setNames(brewer.pal(3, "Dark2"),
+                                         c("in", "out", "fluman"))) +
+    # scale_y_continuous(expand = c(0, 0), limits = c(.16, .86),
+    #                    labels = function(x) x*100) +
+    scale_x_discrete(limits = names(category_color)) +
+    coord_flip() +
+    theme(axis.text.y = element_text(color = category_color),
+          axis.title.y = element_blank(),
+          strip.text = element_blank(),
+          strip.background = element_blank(),
+          plot.margin = unit(rep(0, 4), "pt"))
+```
+
 ```{r session}
 if (write_out)
     save.image("fig_features.Rdata")
