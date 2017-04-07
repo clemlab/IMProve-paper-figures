@@ -21,6 +21,7 @@ library(dplyrExtras)
 library(pROC)
 library(ggbeeswarm)
 library(cowplot)
+library(viridis)
 library(RColorBrewer)
 theme_set(theme_cowplot(font_size = 7L))
 
@@ -275,8 +276,7 @@ p_nycomps_summary <- nycomps_pfam_outcomes_auc %>%
     scale_y_continuous(limits = c(-.01, 1.01), expand = c(0, 0),
                        labels = function(x)
                            paste0(specify_decimal(x*100, 0L), "%")) +
-    scale_color_continuous(low = "#A4A5A5", high = "#A10F1C",
-                           na.value = "black", guide = "none") +
+    scale_color_viridis(end = 0.7, direction = -1, guide = "none") +
     theme(legend.title = element_blank(),
           legend.position = c(0.2, 0.8))
 
@@ -291,6 +291,21 @@ ggdraw(p_nycomps_summary)
 # confidence groups
 ```{r}
 get_ecdf_labels(nycomps_pfam_outcomes_auc)
+```
+
+# write out table
+```{r}
+nycomps_pfam_outcomes_auc %>%
+    select(attr_value, hmm_name, count, pos_count, neg_count,
+           auc, lower95, upper95) %>%
+    rename(`Pfam ID` = attr_value,
+           `Pfam Name` = hmm_name,
+           `Expression Trial Count` = count,
+           `Positive Outcomes` = pos_count,
+           `Negative Outcomes` = neg_count,
+           `Lower Bound 95% CI` = lower95,
+           `Upper Bound 95% CI` = upper95) %>%
+    write_csv("forward-families/Table S4 - Family Performances")
 ```
 
 ```{r}
@@ -383,7 +398,7 @@ f_families$grobs[[7L]]$children[[3L]]$children$layout$layout %<>%
     mutate_rows(name == "panel", clip = "off")
 
 if (write_out == TRUE) {
-    save_plot(filename = "plots/fig5.pdf",
+    save_plot(filename = "plots/fig5_3panel.pdf",
               plot = f_families,
               base_width = uconv(89, "mm", "in", "Length"),
               base_height = 2.5)

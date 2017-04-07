@@ -28,6 +28,12 @@ registerDoMC(cores = 4L)
 # devtools::install("myutils")
 library(myutils)
 
+library(multidplyr)
+create_cluster(20L) %>%
+    cluster_library("tidyverse") %>%
+    cluster_library("myutils") %>%
+    set_default_cluster()
+ 
 write_out = TRUE
 ```
 
@@ -163,17 +169,15 @@ daley_allstats_transformed <-
 ### Join outcomes with features and write datasets in $SVM^{light}$ format
 ```{r}
 daley_to_train <- daley_outcomes_exp %>%
-    mutate(qid = grouping %>% as.character %>% factor %>% as.numeric) %>%
-    arrange(qid) %>%
-    mutate(qid = paste0("qid:", qid)) %>%
-    select(id, outcome, qid) %>%
+    group_by(grouping) %>%
+    select(cterm, id, outcome, grouping) %>%
     # This join means that genes without any features (i.e. gene sequence not
     # a part of the training set) will still be trained on
-    left_join(daley_allstats_transformed, by = "id") %>%
-    select(-id)
+    left_join(daley_allstats_transformed, by = "id")
 
-daley_svmlight_fn <-
-    write_dataset(daley_to_train, "training/daley_gfp_phoa")
+daley_svmlight_fn <- daley_to_train %>%
+    select(-cterm, -id) %>%
+    write_dataset("training/daley_gfp_phoa")
 ```
 
 ### Train linear SVM models against the raw Daley, Rapp, et al.
@@ -195,31 +199,40 @@ junk <- foreach(thisparam = tunegrid) %dopar% {
 ### Test each model
 against the Training (Daley, Rapp, et al.) as well as Fluman, et al. datasets
 ```{r test_models}
-feat_names <- daley_to_train %>% select(-outcome, -qid) %>% colnames
+feat_names <- daley_to_train %>%
+    ungroup %>%
+    select(-cterm, -grouping, -id, -outcome) %>%
+    colnames
 
 model_template <- gsub(".svmlight", ".train.%PARAM%.model", daley_svmlight_fn)
 
+test_model <- function(model, data, xtrans = NULL) {
+    data$score <- prediction_fn(data, xtrans = xtrans, model)
+
+    data %>%
+        group_by(cterm, grouping) %>%
+        partition(cterm, grouping) %>%
+        do(ConDis_fast(.$score, .$outcome)) %>%
+        collect() %>%
+        group_by(cterm) %>%
+        summarize(total = sum(valid_count),
+                  kendall = sum(con_dis)/total) %>%
+        ungroup %>%
+        bind_cols(model %>% t %>% as_data_frame %>%
+                      bind_rows(., ., .))
+}
+
 training_performance <-
     foreach(thisparam = tunegrid,
-            .combine = bind_rows, .multicombine = TRUE) %dopar% {
+            .combine = bind_rows, .multicombine = TRUE) %do% {
 
     filename <- gsub("%PARAM%", thisparam, model_template)
     model <- read_svmlight_model(filename, feat_names)
 
-    daley_allstats_transformed %>%
-        mutate(scores =
-                   prediction_fn(daley_allstats,
-                                 xtrans = daley_preprocess_params, model)) %>%
-        select(id, scores) %>%
-        right_join(ecoli_training, by = "id") %>%
-        calc_performance(score_col = "scores",
-                         outcome_col = "outcome",
-                         subgrp_col = "grouping",
-                         group_col = "cterm") %>%
-        mutate(param = thisparam) %>%
-        left_join(model %>% as.list %>% data.frame %>%
-                      mutate(param = thisparam),
-                  id = "param")
+    ecoli_training %>%
+        left_join(daley_allstats, by = "id") %>%
+        test_model(model, ., daley_preprocess_params) %>%
+        mutate(param = thisparam)
 }
 ```
 
@@ -238,7 +251,7 @@ best_performance <- training_performance %>%
     filter(param == best_performance$param)
 
 best_performance %>%
-    select(cterm, concor, disconcor, total, kendall, param)
+    select(cterm, total, kendall, param)
 ```
 
 ```
@@ -256,13 +269,18 @@ best_performance %>%
 ## predict on training dataset
 ```{r}
 svmpredict <- partial(prediction_fn,
-                      xtrans = daley_preprocess_params,
+                      xtrans = model_env$daley_preprocess_params,
                       weights = svm_model, .lazy = FALSE)
 
+svm_model <- model_env$svm_model
+svm_model["40deltaG"] <- svm_model["X40deltaG"]
+svm_model["40freqens"] <- svm_model["X40freqens"]
+svm_model <- svm_model[!(names(svm_model) %in% c("X40freqens", "X40deltaG"))]
+
 ecoli_training <- daley_allstats %>%
-        mutate(score = svmpredict(daley_allstats)) %>%
-        select(id, score) %>%
-        left_join(ecoli_training, ., by = "id")
+    mutate(score = svmpredict(daley_allstats)) %>%
+    select(id, score) %>%
+    left_join(ecoli_training, ., by = "id")
 ```
 
 ## Remove temporary files and save session
