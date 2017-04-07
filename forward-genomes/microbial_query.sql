@@ -29,7 +29,7 @@ FROM
     swap.mbgd_geneseq ON swap.mbgd2pfam.sp_name = swap.mbgd_geneseq.sp_name
         AND swap.mbgd2pfam.gene = swap.mbgd_geneseq.gene
 WHERE
-    complete_proteomes.auto_proteome IN (9 , 36,
+    complete_proteomes.auto_proteome IN (9, 36,
         84,
         369,
         444,

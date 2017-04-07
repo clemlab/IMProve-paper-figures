@@ -9,6 +9,7 @@ output: html_document
 Load all libraries necessary for subsequent data munging and plotting.
 Some defaults are set here to make things easier throughout.
 ```{r libraries}
+library(magrittr)
 library(tidyverse)
 library(dplyrExtras)
 
@@ -64,9 +65,10 @@ nycomps_features <- bind_rows(
     select(-gi)
 
 nycomps_features$score <- svmpredict(nycomps_features)
-nycomps_features$score_nornass <-
-    svmpredict(nycomps_features %>% select(-avgRNAss, -minRNAss,
-                                           -q25RNAss, -q75RNAss, -maxRNAss))
+
+nycomps_features$score_nornass <- nycomps_features %>%
+    select(-avgRNAss, -minRNAss, -q25RNAss, -q75RNAss, -maxRNAss) %>%
+    svmpredict
 
 nycomps_all_outcomes <- read_csv("large-scale/nycomps_outcomes.csv") %>%
     rename(id = X1,

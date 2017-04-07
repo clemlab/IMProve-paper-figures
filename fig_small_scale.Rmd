@@ -30,15 +30,15 @@ library(myutils)
 
 library(parallel)
 # currently provisioned resources
-cl <- c("brnode05", "brnode06", "brnode07") %>%
-    rep(40) %>%
-    makeCluster()
+# cl <- c("brnode05", "brnode06", "brnode07") %>%
+#     rep(40) %>%
+#     makeCluster()
 
-library(doParallel)
-registerDoParallel(cl)
+# library(doParallel)
+# registerDoParallel(cl)
 
-# library(doMC)
-# registerDoMC(cores = 20L)
+library(doMC)
+registerDoMC(cores = 20L)
 
 # if TRUE, then data will be written to file
 write_out = TRUE
