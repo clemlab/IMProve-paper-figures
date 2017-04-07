@@ -11,17 +11,19 @@ Some defaults are set here to make things easier throughout.
 ```{r libraries}
 library(tidyverse)
 library(dplyrExtras)
+library(magrittr)
 
 library(gridExtra)
 # `uconv` for unit conversion
 library(datamart)
+library(RColorBrewer)
 library(cowplot)
 theme_set(theme_cowplot(font_size = 7))
 
 # devtools::install("myutils")
 library(myutils)
 library(doMC)
-registerDoMC(cores = 20L)
+registerDoMC(cores = 4L)
 
 # if TRUE, then data will be written to file
 write_out = TRUE
@@ -184,7 +186,7 @@ nycomps_nornass_auc <-
                        "score_nornass")
 
 if (write_out)
-    write.csv(nycomps_auc_noRNAss, file = "nycomps_nonupack_auc.csv",
+    write.csv(nycomps_nornass_auc, file = "nycomps_nonupack_auc.csv",
               row.names = FALSE)
 ```
 
@@ -218,27 +220,32 @@ if (write_out)
 
 p2_posmix_ppv_prep %>%
     filter(find_closest(threshold_percentiles, 0.75),
-           type == "ppv") %>%
-    distinct(threshold_percentiles, ppv, min_ppv) %>%
-    transmute(`Enrichment at 75th percentile` = ppv - min_ppv)
+           type == "ppv") %>% 
+    distinct(threshold_percentiles, thresholds, ppv, min_ppv) %>%
+    mutate(`Enrichment at 75th percentile` = ppv - min_ppv)
 
 p2_posmix_ppv_prep %>%
     filter(find_closest(thresholds, 0.5),
-           type == "ppv") %>%
-    distinct(thresholds, ppv, min_ppv) %>%
+           type == "ppv") %>% 
+    distinct(threshold_percentiles, thresholds, ppv, min_ppv) %>%
     mutate(additional_expressed =
                (ppv - min_ppv) * nrow(nycomps_gene_outcomes))
+
+
 ```
 
 ```{r nycomps_posmix_histogram}
+p2_posmix_histogram_meds <- nycomps_gene_outcomes %>%
+    group_by(posmix_outcome) %>%
+    summarize(med = median(score))
+
 p2_posmix_histogram <- ggplot(nycomps_gene_outcomes) +
-    geom_histogram(aes(x = score, fill = posmix_outcome,
-                       order = -as.numeric(posmix_outcome)),
+    geom_histogram(aes(x = score, fill = posmix_outcome),
                    binwidth = fd_bw(nycomps_gene_outcomes$score),
                    alpha = 1, position = "identity") +
-    geom_vline(xintercept = nycomps_gene_outcomes$score %>%
-                   quantile(0.75, names = FALSE),
-               linetype = "dashed") +
+    # geom_vline(xintercept = nycomps_gene_outcomes$score %>%
+    #                quantile(0.75, names = FALSE),
+    #            linetype = "dashed") +
     scale_x_continuous(expand = c(0, 0),
                        breaks = nycomps_breaks, limits = nycomps_xscale) +
     scale_y_continuous(expand = c(0, 0)) +
@@ -252,14 +259,39 @@ p2_posmix_histogram <- ggplot(nycomps_gene_outcomes) +
           legend.position = c(0.08, 0.85),
           plot.margin = unit(c(0, 0, 0, 0), "in"))
 
+# # plot medians
+# p2_posmix_histogram <- p2_posmix_histogram +
+#     geom_segment(aes(x = med, y = 0, xend = med, yend = 10),
+#                  data = p2_posmix_histogram_meds) +
+#     geom_segment(aes(x = `FALSE`, y = 5, xend = `TRUE`, yend = 5),
+#                  data = spread(p2_posmix_histogram_meds, posmix_outcome, med))
+        
+# for ratios
+p2_posmix_ratio_data <- ggplot_build(p2_posmix_histogram)$data[[1]]  %>%
+    select(fill, x, count) %>%
+    spread(fill, count) %>%
+    rename(`pos` = `#A10F1C`, `neg` = `#A4A5A5`) %>%
+    mutate(total = pos + neg,
+           ratio = pos / neg,
+           pos_pct = pos / total,
+           pos_pct_hist_scale = max(c(pos, neg)) * pos_pct)
+
+p2_posmix_histogram <- p2_posmix_histogram +
+    geom_line(aes(x = x, y = pos_pct_hist_scale),
+              data = filter(p2_posmix_ratio_data, total > 20)) +
+    scale_y_continuous(expand = c(0, 0),
+        sec.axis = sec_axis(
+            trans = ~ . / max(p2_posmix_ratio_data$total) * 100,
+            name = 'Percent Positive'))
+
 p2_posmix_histogram %<>% ggplotGrob
 
 # legend - remove keystones and change label colors
 for (idx in 4:6)
-    p2_posmix_histogram$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
+    p2_posmix_histogram$grobs[[15L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
 
-p2_posmix_histogram$grobs[[8L]]$grobs[[1L]][[1L]][[7L]]$gp$col <- "#A4A5A5"
-p2_posmix_histogram$grobs[[8L]]$grobs[[1L]][[1L]][[8L]]$gp$col <- "#A10F1C"
+p2_posmix_histogram$grobs[[15L]]$grobs[[1L]][[1L]][[7L]]$gp$col <- "#A4A5A5"
+p2_posmix_histogram$grobs[[15L]]$grobs[[1L]][[1L]][[8L]]$gp$col <- "#A10F1C"
 
 if (write_out)
     ggdraw(p2_posmix_histogram)
@@ -362,12 +394,12 @@ p_nycomps_cterm$layout %<>%
 
 # hide key
 for (idx in 4:11)
-    p_nycomps_cterm$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
+    p_nycomps_cterm$grobs[[15L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
 
 # fix colors of C-terminal labels in legend
-p_nycomps_cterm$grobs[[8L]]$grobs[[1L]]$grobs[[13L]]$gp$col <-
+p_nycomps_cterm$grobs[[15L]]$grobs[[1L]]$grobs[[13L]]$gp$col <-
     brewer.pal(3, "Dark2")[[1]]
-p_nycomps_cterm$grobs[[8L]]$grobs[[1L]]$grobs[[14L]]$gp$col <-
+p_nycomps_cterm$grobs[[15L]]$grobs[[1L]]$grobs[[14L]]$gp$col <-
     brewer.pal(3, "Dark2")[[2]]
 
 ggdraw(p_nycomps_cterm)
