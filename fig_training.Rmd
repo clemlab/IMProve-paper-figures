@@ -284,7 +284,7 @@ p1_ecoli_xy <- training_env$ecoli_training %>%
     scale_x_continuous(expand = c(.01, 0.01)) +
     scale_color_manual(values = brewer.pal(3, "Dark2")) +
     ylab("Mean Normalized Activity") +
-    xlab(expression("SVM" ^ "rank"*~"score")) +
+    xlab(expression("IMProve score")) +
     theme(legend.position = "None",
           strip.text = element_blank(),
           plot.margin = unit(c(0L, 0L, 0L, 0L), "mm")) +

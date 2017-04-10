@@ -125,7 +125,7 @@ p3_archaea_sdspage <- archaea_outcomes %>%
     scale_y_continuous(expand = c(0, 0), limits = c(0, 40)) +
     scale_x_continuous(expand = c(0, 0), limits = c(-3.2, -1)) +
     ylab("Percentage of\nMembrane Protein") +
-    xlab(expression("SVM" ^ "rank"*~"score")) +
+    xlab(expression("IMProve score")) +
     scale_color_manual(values = brewer.pal(3, "Dark2")) +
     theme(axis.title = element_blank(),
           plot.margin = unit(c(1, 0, 2, 0), "mm")) +
@@ -166,7 +166,7 @@ p3_archaea_western <- ggplot(p3_archaea_western_data) +
              data = filter(p3_archaea_western_data, group != "no")) +
     annotate("text", x = -2.9, y = 5.6, label = "Archaeal Transporters",
              size = 7*5/14, fontface = "bold") +
-    xlab(expression("SVM" ^ "rank"*~"score")) +
+    xlab(expression("IMProve score")) +
     ylab("Count") +
     scale_fill_manual(values = c("#A10F1C", "#AD665D"), na.value = "black") +
     scale_y_continuous(expand = c(0, 0), limits = c(-6.1, 6),
@@ -412,7 +412,7 @@ p3_gpcr <- ggplot(filter(lundstrom_outcomes,
         values = setNames(c('#A4A5A5', '#AC7B74', '#AA4F46', '#A10F1C'),
                           c("No", "Low", "Medium", "High"))) +
     scale_x_discrete(expand = c(0, 0)) +
-    ylab(expression("SVM" ^ "rank"*~"score")) +
+    ylab(expression("IMProve score")) +
     coord_flip() +
     theme(legend.position = "None")
 
@@ -596,7 +596,7 @@ p3_hpylori <- ggplot(hpylori_outcomes) +
                          na.value = "black") +
     scale_x_continuous(breaks = c(-8:1), expand = c(0.01, 0.01)) +
     scale_y_continuous(breaks = seq(0, 3, 0.5), expand = c(0.02, 0.02)) +
-    xlab(expression("SVM" ^ "rank"*~"score")) +
+    xlab(expression("IMProve score")) +
     ylab("Reported Outcome") +
     theme(legend.position = "None",
               axis.title.y = element_blank(),
@@ -696,7 +696,7 @@ p3_tmaritima <- ggplot(tmaritima_outcomes) +
              size = 7*5/14, fontface = "bold.italic") +
     scale_color_gradient(low = "#A4A5A5", high = "#A10F1C",
                          na.value = "black") +
-    xlab(expression("SVM" ^ "rank"*~"score")) +
+    xlab(expression("IMProve score")) +
     theme(legend.position = "None",
               axis.title = element_blank())
 
@@ -793,7 +793,7 @@ p3_surade <- ggplot(surade_outcomes) +
     scale_x_continuous(breaks = seq(-4, 1, 0.5)) +
     scale_color_gradient(low = "#A4A5A5", high = "#A10F1C",
                          na.value = "black") +
-    xlab(expression("SVM" ^ "rank"*~"score")) +
+    xlab(expression("IMProve score")) +
     ylab("Dot Density") +
     theme(legend.position = "None",
           axis.title.y = element_blank())
