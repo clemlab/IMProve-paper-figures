@@ -262,8 +262,8 @@ svmpredict <- partial(prediction_fn,
                       xtrans = daley_preprocess_params,
                       weights = svm_model, .lazy = FALSE)
 
-svm_model["40deltaG"] <- svm_model["X40deltaG"]
-svm_model["40freqens"] <- svm_model["X40freqens"]
+# svm_model["40deltaG"] <- svm_model["X40deltaG"]
+# svm_model["40freqens"] <- svm_model["X40freqens"]
 # svm_model <- svm_model[!(names(svm_model) %in% c("X40freqens", "X40deltaG"))]
 
 ecoli_training <- daley_allstats %>%
