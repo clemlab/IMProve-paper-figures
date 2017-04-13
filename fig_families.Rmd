@@ -394,8 +394,8 @@ f_families <- ggdraw() +
 f_families %<>% ggplotGrob
 
 # dont clip d labels
-f_families$grobs[[7L]]$children[[3L]]$children$layout$layout %<>%
-    mutate_rows(name == "panel", clip = "off")
+# f_families$grobs[[7L]]$children[[3L]]$children$layout$layout %<>%
+#     mutate_rows(name == "panel", clip = "off")
 
 if (write_out == TRUE) {
     save_plot(filename = "plots/fig5_3panel.pdf",
