@@ -29,11 +29,11 @@ registerDoMC(cores = 4L)
 library(myutils)
 
 library(multidplyr)
-create_cluster(20L) %>%
+create_cluster(4L) %>%
     cluster_library("tidyverse") %>%
     cluster_library("myutils") %>%
     set_default_cluster()
- 
+
 write_out = TRUE
 ```
 
@@ -185,7 +185,7 @@ data over a set of C values
 ```{r train_models}
 tunegrid <- 4 # 2 ^ seq(-5L, 5L)
 
-binary <- "/ul/saladi/apps/svm_rank/svm_rank_learn"
+binary <- "/ul/saladi/apps/svm_rank/1.00/svm_rank_learn"
 args <- paste("-c %PARAM% -t 0 -m 4000",
               daley_svmlight_fn,
               gsub(".svmlight", ".train.%PARAM%.model", daley_svmlight_fn))
@@ -216,7 +216,7 @@ test_model <- function(model, data, xtrans = NULL) {
         collect() %>%
         group_by(cterm) %>%
         summarize(total = sum(valid_count),
-                  kendall = sum(con_dis)/total) %>%
+                  kendall = sum(con - dis)/total) %>%
         ungroup %>%
         bind_cols(model %>% t %>% as_data_frame %>%
                       bind_rows(., ., .))
@@ -224,14 +224,15 @@ test_model <- function(model, data, xtrans = NULL) {
 
 training_performance <-
     foreach(thisparam = tunegrid,
-            .combine = bind_rows, .multicombine = TRUE) %do% {
+            .combine = bind_rows, .multicombine = TRUE) %dopar% {
 
     filename <- gsub("%PARAM%", thisparam, model_template)
     model <- read_svmlight_model(filename, feat_names)
 
-    ecoli_training %>%
-        left_join(daley_allstats, by = "id") %>%
-        test_model(model, ., daley_preprocess_params) %>%
+    df <- ecoli_training %>%
+        left_join(daley_allstats, by = "id")
+    
+    test_model(model = model, data = df, xtrans = daley_preprocess_params) %>%
         mutate(param = thisparam)
 }
 ```
@@ -244,7 +245,7 @@ best_performance <- training_performance %>%
     head(1)
 
 svm_model <- best_performance %>%
-    select(-cterm, -concor, -disconcor, -total, -kendall, -param) %>%
+    select(-cterm, -total, -kendall, -param) %>%
     unlist
 
 best_performance <- training_performance %>%
@@ -269,13 +270,13 @@ best_performance %>%
 ## predict on training dataset
 ```{r}
 svmpredict <- partial(prediction_fn,
-                      xtrans = model_env$daley_preprocess_params,
+                      xtrans = daley_preprocess_params,
                       weights = svm_model, .lazy = FALSE)
 
-svm_model <- model_env$svm_model
-svm_model["40deltaG"] <- svm_model["X40deltaG"]
-svm_model["40freqens"] <- svm_model["X40freqens"]
-svm_model <- svm_model[!(names(svm_model) %in% c("X40freqens", "X40deltaG"))]
+# svm_model <- model_env$svm_model
+# svm_model["40deltaG"] <- svm_model["X40deltaG"]
+# svm_model["40freqens"] <- svm_model["X40freqens"]
+# svm_model <- svm_model[!(names(svm_model) %in% c("X40freqens", "X40deltaG"))]
 
 ecoli_training <- daley_allstats %>%
     mutate(score = svmpredict(daley_allstats)) %>%
