@@ -209,7 +209,7 @@ p2_posmix_ppv <- ggplot(p2_posmix_ppv_prep) +
                        labels = function(x) x*100) +
     scale_y_continuous(expand = c(0, 0), limits = c(0, .6001),
                        breaks = seq(0, 1, .2), labels = function(x) x*100) +
-    xlab(expression("Percentile SVM" ^ "rank"*~"score")) +
+    xlab(expression("Percentile IMProve score")) +
     ylab("PPV") +
     scale_color_manual(values = c("#A4A5A5","#A10F1C")) +
     theme(legend.position = "None",
@@ -230,8 +230,6 @@ p2_posmix_ppv_prep %>%
     distinct(threshold_percentiles, thresholds, ppv, min_ppv) %>%
     mutate(additional_expressed =
                (ppv - min_ppv) * nrow(nycomps_gene_outcomes))
-
-
 ```
 
 ```{r nycomps_posmix_histogram}
@@ -252,7 +250,7 @@ p2_posmix_histogram <- ggplot(nycomps_gene_outcomes) +
     scale_fill_manual(values = c("#A4A5A5","#A10F1C"),
                       labels = c("Not Expressed", "Expressed")) +
     ylab("Count") +
-    xlab(expression("SVM" ^ "rank"*~"score")) +
+    xlab(expression("IMProve score")) +
     theme(legend.key = element_blank(),
           legend.key.size = unit(0.25, "cm"),
           legend.title = element_blank(),
@@ -305,7 +303,7 @@ p2_posmix_roc_label <- filter(nycomps_auc, group == "posmix",
            lower95 = specify_decimal(lower95*100),
            upper95 = specify_decimal(upper95*100),
            ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')"),
-           count = paste0(pos_count, "/" ,count)
+           count = fmt_cnt(pos_count,count)
            )
 
 p2_posmix_roc <- nycomps_gene_outcomes %>%
@@ -318,7 +316,7 @@ p2_posmix_roc <- nycomps_gene_outcomes %>%
     geom_path(aes(x = 1 - specificities, y = sensitivities)) +
     annotate(geom = "text", x = .70, y = .19,
              label = p2_posmix_roc_label$count,
-             size = 6*5/14, parse = TRUE) +
+             size = 6*5/14) +
     annotate(geom = "text", x = .70, y = .10,
              label = p2_posmix_roc_label$ci,
              size = 6*5/14, parse = TRUE) +

@@ -6,9 +6,9 @@ Nucleotide,Overall Codon Usage,codonW 1.4.2,CpG,CpG
 Nucleotide,tRNA Adaptation Index,codonR,tAI,tAI
 Nucleotide,Codon Pair Score,"Code from Coleman, et al., 2008",CPS,CPS
 Nucleotide,Codon Pair Score,"Code from Coleman, et al., 2008",CPSpL,CPSpL
-Nucleotide,Overall RNA Structure,RNAfold 2.1.10,freqens,freqens
-Nucleotide,Overall RNA Structure,RNAfold 2.1.10,X40deltaG,X40deltaG
-Nucleotide,Overall RNA Structure,RNAfold 2.1.10,X40freqens,X40freqens
+Nucleotide,Overall RNA Structure,RNAfold 2.1.9,freqens,freqens
+Nucleotide,Overall RNA Structure,RNAfold 2.1.9,X40deltaG,X40deltaG
+Nucleotide,Overall RNA Structure,RNAfold 2.1.9,X40freqens,X40freqens
 Protein,Overall Disorder,DisEMBL 1.4,hotloops,hotloops
 Protein,Overall Disorder,RONN 3.1,avgRONN,avgRONN
 Protein,Overall Disorder,RONN 3.1,q25RONN,q25RONN
@@ -37,7 +37,7 @@ Protein,Hydrophobicity,Custom,HYDallTMs,HYDallTMs
 Protein,Hydrophobicity,"T. Hessa, et al., 2007",delG1stTM,delG1stTM
 Protein,Hydrophobicity,"T. Hessa, et al., 2007",delGallTMs,delGallTMs
 Protein,Hydrophobicity,Custom,nterm_hydGES,nterm_hydOCT
-Nucleotide,5' Codon Usage,Biopython,avgCU,avgCU
+Nucleotide,Overall Codon Usage,Biopython,avgCU,avgCU
 Nucleotide,5' Codon Usage,Biopython,avgCU_first40,avgCU_first40
 Nucleotide,5' Codon Usage,Biopython,avgCU_first20,avgCU_first20
 Nucleotide,5' Codon Usage,Biopython,minCU_win5,avgCU_first5

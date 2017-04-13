@@ -121,9 +121,9 @@ p1_daley_fluman <- ggplot(ecoli_daley_fluman) +
     xlab("Normalized folded protein") +
     theme(axis.title.x = element_text(size = 7L,
                                       color = brewer.pal(3, "Dark2")[3]),
-              axis.title.y = element_text(size = 7L,
-                                          color = brewer.pal(3, "Dark2")[1]),
-              plot.margin = unit(c(0L, 0L, 0L, .5), "mm"))
+          axis.title.y = element_text(size = 7L,
+                                      color = brewer.pal(3, "Dark2")[1]),
+          plot.margin = unit(c(0L, 0L, 0L, .5), "mm"))
 
 p1_daley_fluman
 ```
@@ -235,13 +235,11 @@ ecoli_xy_cor <- training_env$ecoli_training %>%
 ecoli_roc <- training_env$ecoli_training %>%
     filter(normalized, !is.na(score)) %>%
     group_by(cterm) %>%
-    do(calc_auc_roc(., grouping_col = "cterm", outcome_col = "outcome",
-                    score_col = "score", method = "roc"))
+    do(calc_auc_roc(., grouping_col = "cterm", method = "roc"))
 ecoli_auc <- training_env$ecoli_training %>%
     filter(normalized, !is.na(score)) %>%
     group_by(cterm) %>%
-    do(calc_auc_roc(., grouping_col = "cterm", outcome_col = "outcome",
-                    score_col = "score", method = "auc"))
+    do(calc_auc_roc(., grouping_col = "cterm", method = "auc"))
 ```
 
 
@@ -284,7 +282,7 @@ p1_ecoli_xy <- training_env$ecoli_training %>%
     scale_x_continuous(expand = c(.01, 0.01)) +
     scale_color_manual(values = brewer.pal(3, "Dark2")) +
     ylab("Mean Normalized Activity") +
-    xlab(expression("SVM" ^ "rank"*~"score")) +
+    xlab(expression("IMProve score")) +
     theme(legend.position = "None",
           strip.text = element_blank(),
           plot.margin = unit(c(0L, 0L, 0L, 0L), "mm")) +
