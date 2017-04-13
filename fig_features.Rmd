@@ -8,41 +8,41 @@ output: html_document
 ## Load libraries
 Load all libraries necessary for subsequent data munging and plotting.
 Some defaults are set here to make things easier throughout.
-```{r libraries}
+```{r setup}
 # if TRUE, then data will be written to file
 write_out = FALSE
+library(datamart) # `uconv` for unit conversion
 
 library(iterators)
-library(magrittr)
 library(tidyverse)
+library(magrittr)
 library(dplyrExtras)
 
 library(caret)
 library(pROC)
-library(datamart) # `uconv` for unit conversion
-library(cowplot)
+
 library(corrplot)
 library(RColorBrewer)
 library(viridis)
+
+library(cowplot)
 theme_set(theme_cowplot(font_size = 7))
 
 library(parallel)
-# currently provisioned resources
-# cl <- c("brnode05", "brnode07", "brnode08") %>%
-#     rep(20) %>%
-#     c(rep("brnode11", 44)) %>%
-#     makeCluster()
-
+library(multidplyr)
 library(foreach)
 library(doMC)
-registerDoMC(cores = 20L)
-#
-# library(doParallel)
-# registerDoParallel(cl)
 
 # devtools::install("myutils")
+## ggcorr modified from GGally package
 library(myutils)
-## ggcorr modified from ggcorr package
+
+# set up parallel processing
+registerDoMC(cores = 20L)
+create_cluster(10L) %>%
+    cluster_library("tidyverse") %>%
+    cluster_library("myutils") %>%
+    set_default_cluster()
 ```
 
 ### Load data from training process
@@ -72,6 +72,21 @@ auc_w_ci <- partial(ci.auc, direction = "<",
                     # progress = "none",
                     # parallel = TRUE
                     )
+
+transform_features <- function(ref_feat, weights) {
+    # scale and center features
+    feat_weights <- setNames(weights$weight, as.character(weights$old_name))
+        
+    trans_feat <- preprocess_vars(ref_feat, model_env$daley_preprocess_params)
+    # reorder vector
+    feat_weights <- feat_weights[colnames(trans_feat)]
+    for (i in seq_along(trans_feat))
+        set(trans_feat, j = i, value = trans_feat[[i]] * feat_weights[i])
+
+    trans_feat[is.na(trans_feat)] <- 0
+
+    trans_feat
+}
 ```
 
 ## Load SVM weights and calculate correlations
@@ -94,36 +109,15 @@ svmweights <- model_env$svm_model %>%
     enframe(name = "old_name", value = "weight") %>%
     mutate(abs_weight = abs(weight),
            rel = weight / mean(weight)) %>%
-    inner_join(read_csv("training/feature_key.csv"), by = "old_name")
+    inner_join(read_csv("training/feature_key.csv"), by = "old_name") #%>%
+    # mutate_rows(old_name == "X40deltaG", old_name = "40deltaG") %>%
+    # mutate_rows(old_name == "X40freqens", old_name = "40freqens")
 ```
 
 ## Calculate feature correlations
 Calculates the Pearson correlation coefficients between each feature within a
 reference dataset, i.e. all forward predicted genomes.
 ```{r feature_correlation}
-# correlation matrix for forward predicted genomes
-nycomps_cor <- nycomps_env$nycomps_features %>%
-    select(-score, -score_nornass) %>%
-    preprocess_vars(model_env$daley_preprocess_params) %>%
-    rename_feats
-
-# significance test for correlation matrix
-# from corrplot::corplot-intro vignette
-nycomps_cor_mtest <- nycomps_cor %>%
-    cor.mtest
-
-nycomps_cor %<>%
-    cor(use = "pairwise.complete.obs")
-
-# boxes for groupings/orderings
-svmweights <- nycomps_dendro %>%
-    cutree(k = 11) %>%
-    data.frame %>%
-    rownames_to_column %>%
-    right_join(svmweights, by = c("rowname" = "feature")) %>%
-    rename_(cluster = as.name("."),
-            feature = "rowname")
-
 # Add feature groupings back to feature weights dataframe
 # with manual category summary information (i.e. number of
 # features that compose the grouping).
@@ -152,6 +146,8 @@ category_color <- svmweights %>%
 # correlations between feature groups after adding by feature weights
 ```{r}
 p_feat_category_corr <- nycomps_env$nycomps_features %>%
+    # rename(`40deltaG` = X40deltaG,
+    #        `40freqens` = X40freqens) %>%
     semi_join(nycomps_env$nycomps_gene_outcomes, "id")
 
 p_feat_category_corr <- p_feat_category_corr %>%
@@ -165,8 +161,7 @@ p_feat_category_corr <- p_feat_category_corr %>%
     spread(category, value) %>%
     ungroup
 
-p_feat_category_corr <-
-    p_feat_category_corr[, names(category_color)] %>%
+p_feat_category_corr <- p_feat_category_corr[, names(category_color)] %>%
     ggcorr(method = c("pairwise.complete.obs", "pearson"),
            hjust = 1, size = 2,
            diagColors = svmweights %>%
@@ -234,20 +229,6 @@ ggdraw(p_weight_man_sum)
 
 ## plot AUC within NYCOMPS with subsets of features
 ```{r nycomps_subsets}
-transform_features <- function(ref_feat, weights) {
-    # scale and center features
-    feat_weights <- setNames(weights$weight, as.character(weights$old_name))
-    trans_feat <- preprocess_vars(ref_feat, model_env$daley_preprocess_params)
-    # reorder vector
-    feat_weights <- feat_weights[colnames(trans_feat)]
-    for (i in seq_along(trans_feat))
-        set(trans_feat, j = i, value = trans_feat[[i]] * feat_weights[i])
-
-    trans_feat[is.na(trans_feat)] <- 0
-
-    trans_feat
-}
-
 calc_auc_feat_subsets <-
     function(use_feat_col, order_name, ref_feat, ref_eval, weights) {
         order_fun <- switch(order_name,
@@ -272,6 +253,7 @@ calc_auc_feat_subsets <-
                     select(old_name) %>%
                     unlist(use.names = FALSE) %>%
                     as.character
+                # write(use_feats, stderr())
 
                 # prediction
                 preds <- trans_feat[, use_feats, drop = FALSE] %>% rowSums
@@ -311,7 +293,9 @@ feat_subset_auc <- feat_subset_combos %>%
             use_feat_col = .$use_feat_col,
             order_name = .$order_name,
             ref_feat = nycomps_env$nycomps_gene_outcomes %>%
-                left_join(nycomps_env$nycomps_features, by = "id"),
+                left_join(nycomps_env$nycomps_features, by = "id"), # %>%
+                # rename(`40deltaG` = X40deltaG,
+                #        `40freqens` = X40freqens),
             ref_eval = nycomps_env$nycomps_gene_outcomes$posmix_outcome,
             weights = svmweights)
         }) %>%
@@ -327,7 +311,9 @@ feat_subset_auc <- feat_subset_combos %>%
             use_feat_col = .$use_feat_col,
             order_name = .$order_name,
             ref_feat = nycomps_env$nycomps_all_outcomes %>%
-                left_join(nycomps_env$nycomps_features, by = "id"),
+                left_join(nycomps_env$nycomps_features, by = "id"), # %>%
+                # rename(`40deltaG` = X40deltaG,
+                #        `40freqens` = X40freqens),
             ref_eval = nycomps_env$nycomps_all_outcomes$plasmid_outcome == 1,
             weights = svmweights)
         }) %>%
@@ -339,7 +325,9 @@ feat_subset_auc <- nycomps_env$nycomps_all_outcomes %>%
     rename(dataset = plasmid_name) %>%
     group_by(dataset) %>%
     do({
-        df_feat <- left_join(., nycomps_env$nycomps_features, by = "id")
+        df_feat <- left_join(., nycomps_env$nycomps_features, by = "id") # %>%
+                # rename(`40deltaG` = X40deltaG,
+                #        `40freqens` = X40freqens)
         feat_subset_combos %>%
             rowwise() %>%
             do({
@@ -390,21 +378,21 @@ feature_order <- feat_subset_auc %>%
            use_feat_col == "feature") %>%
     arrange(desc(as.numeric(auc))) %$%
     unlist(iter, use.names = FALSE) %>%
-    c("SVMrank Score", .) %>%
+    c("IMProve Score", .) %>%
     factor(., ., ordered = TRUE)
 
 feat_subset_auc %>%
     filter(order_name == "eq", use_feat_col == "feature",
            dataset != "posmix", dataset != "vectors") %>%
- #   bind_rows(model_auc %>% mutate(iter = "SVMrank Score")) %>%
+ #   bind_rows(model_auc %>% mutate(iter = "IMProve Score")) %>%
     mutate(iter = factor(iter, feature_order, ordered = TRUE)) %>%
     ggplot() +
     geom_hline(yintercept = 0.5, linetype = "dashed") +
-    geom_pointrange(aes(x = "SVMrank Score",
+    geom_pointrange(aes(x = "IMProve Score",
                         y = auc, ymin = lower95, ymax = upper95),
                     color = "lightgray", size = 0.5, fatten = 0.5,
                     data = model_auc %>% filter(dataset != "posmix")) +
-    geom_pointrange(aes(x = "SVMrank Score",
+    geom_pointrange(aes(x = "IMProve Score",
                         y = auc, ymin = lower95, ymax = upper95),
                     color = "#A10F1C", size = 1, fatten = 1,
                     data = model_auc %>% filter(dataset == "posmix")) +
@@ -428,8 +416,7 @@ feat_subset_auc %>%
 
 ```{r}
 category_color %<>%
-    c(`SVMrank Score` = "#000000", .) %>%
-    rev
+    c(`IMProve Score` = "#000000")
 
 make_incl_excl <- function(df)
     df %>%
@@ -437,11 +424,11 @@ make_incl_excl <- function(df)
            dataset != "posmix", dataset != "vectors") %>%
     ggplot() +
     geom_hline(yintercept = 0.5, linetype = "dashed") +
-    geom_pointrange(aes(x = "SVMrank Score",
+    geom_pointrange(aes(x = "IMProve Score",
                         y = auc, ymin = lower95, ymax = upper95),
                     color = "lightgray", size = 0.5, fatten = 0.5,
                     data = model_auc %>% filter(dataset != "posmix")) +
-    geom_pointrange(aes(x = "SVMrank Score",
+    geom_pointrange(aes(x = "IMProve Score",
                         y = auc, ymin = lower95, ymax = upper95),
                     color = "#A10F1C", size = 1, fatten = 1,
                     data = model_auc %>% filter(dataset == "posmix")) +
@@ -478,8 +465,9 @@ p_category_excl <- feat_subset_auc %>%
     draw_plot_label("Excluding Single\nCategory", x = .02, y = .92,
                     fontface = "bold", size = 6, hjust = 0, vjust = 0)
 
-p_category_incl
-p_category_excl
+
+ggdraw(p_category_incl)
+ggdraw(p_category_excl)
 ```
 
 
@@ -519,13 +507,13 @@ p_auc_protnuc <- p_auc_protnuc %>%
     filter(dataset != 'vectors', dataset != 'posmix') %>%
     ggplot() +
     geom_hline(yintercept = 0.5, linetype = "dashed") +
-    geom_pointrange(aes(x = "SVMrank",
+    geom_pointrange(aes(x = "IMProve",
                         y = auc, ymin = lower95, ymax = upper95,
                         group = dataset),
                     position = position_dodge(width = 0.5),
                     color = "lightgray", size = 0.5, fatten = 0.5,
                     data = model_auc %>% filter(dataset != "posmix")) +
-    geom_pointrange(aes(x = "SVMrank",
+    geom_pointrange(aes(x = "IMProve",
                         y = auc, ymin = lower95, ymax = upper95),
                     color = "#A10F1C", size = 1, fatten = 1,
                     data = model_auc %>% filter(dataset == "posmix")) +
@@ -539,10 +527,10 @@ p_auc_protnuc <- p_auc_protnuc %>%
     ylab("AUC") +
     scale_y_continuous(expand = c(0, 0), limits = c(.16, .86),
                        labels = function(x) x*100) +
-    scale_x_discrete(limits = c("Nucleotide", "Protein", "SVMrank"),
+    scale_x_discrete(limits = c("Nucleotide", "Protein", "IMProve"),
                      labels = c(Nucleotide = "Nucleotide\nOnly",
                                 Protein = "Protein\nOnly",
-                                SVMrank = "SVMrank\nScore")) +
+                                IMProve = "IMProve\nScore")) +
     coord_flip() +
     theme(legend.position = "none",
           axis.text.y = element_text(
@@ -572,7 +560,10 @@ fluman_asd <- training_env$daley_allstats %>%
     mutate(construct = "WT") %>%
     bind_rows(fluman_asd)
 
-fluman_asd$score <- svmpredict(fluman_asd)
+fluman_asd$score <- fluman_asd %>%
+    # rename(`40deltaG` = X40deltaG,
+    #        `40freqens` = X40freqens) %>%
+    svmpredict
 
 fluman_asd <- read_csv("forward-genomes/fig6-analysis.csv") %>%
     filter(band == "FOLDED") %>%
@@ -588,7 +579,7 @@ fluman_asd <- read_csv("forward-genomes/fig6-analysis.csv") %>%
 # fluman asd plotting
 ```{r fluman_asd_plotting}
 metrics_of_interest <- data.frame(
-    row.names = c("SD-like Sites",  "Folded Protein", "SVMrank Score"),
+    row.names = c("SD-like Sites",  "Folded Protein", "IMProve Score"),
     colors = c("#e7298a", "#7570b3", "#e6ab02"),
     short = c("totalSDsites", "outcome", "score")) %>% t
 
@@ -615,18 +606,18 @@ p4_fluman_asd <- fluman_asd %>%
 p4_fluman_asd %<>% ggplotGrob()
 
 # remove keystones and set legend text label colors
-
-for (idx in c(4L, 6L, 8L))
-    p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
-
-p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[9L]]$gp$col <-
-    metrics_of_interest['colors', 'SD-like Sites']
-
-p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[10L]]$gp$col <-
-    metrics_of_interest['colors', 'Folded Protein']
-
-p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[11L]]$gp$col <-
-    metrics_of_interest['colors', 'SVMrank Score']
+# for (idx in c(4L, 6L, 8L))
+#     #p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
+#     p4_fluman_asd[[1]][[15]][[1]][[1]][[idx]]
+# 
+# p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[9L]]$gp$col <-
+#     metrics_of_interest['colors', 'SD-like Sites']
+# 
+# p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[10L]]$gp$col <-
+#     metrics_of_interest['colors', 'Folded Protein']
+# 
+# p4_fluman_asd$grobs[[8L]]$grobs[[1L]]$grobs[[11L]]$gp$col <-
+#     metrics_of_interest['colors', 'IMProve Score']
 
 ggdraw(p4_fluman_asd)
 ```
@@ -649,20 +640,20 @@ p5_weight_importance <-
     draw_plot(
         plot_grid(p_weight_protnuc, p_auc_protnuc, p4_fluman_asd, nrow = 1L,
                   align = "h", rel_widths = c(2, 2, 1),
-                  labels = letters[5:7], label_size = 8, vjust = 0.5),
+                  labels = LETTERS[5:7], label_size = 8, vjust = 0.5),
         x = 0, y = 0, width = 1, height = .2) +
-    plt_lab(x = 0, y = 1, label = "a") +
-    plt_lab(x = .31, y = 1, label = "b") +
-    plt_lab(x = 0, y = .71, label = "c") +
-    plt_lab(x = 0.53, y = .71, label = "d")
+    plt_lab(x = 0, y = 1, label = "A") +
+    plt_lab(x = .31, y = 1, label = "B") +
+    plt_lab(x = 0, y = .71, label = "C") +
+    plt_lab(x = 0.53, y = .71, label = "D")
     # plt_lab(x = 0, y = .22, label = "e") +
     # plt_lab(x = 0.53, y = .22, label = "f")
 
 p5_weight_importance %<>% ggplotGrob
 
-# dont clip e, f, g labels
-p5_weight_importance$grobs[[4L]]$children[[5L]]$children$layout$layout %<>%
-    mutate_rows(name == "panel", clip = "off")
+# # dont clip e, f, g labels
+# p5_weight_importance$grobs[[4L]]$children[[5L]]$children$layout$layout %<>%
+#     mutate_rows(name == "panel", clip = "off")
 
 if (write_out) {
     save_plot(filename = "plots/fig6_fluman.pdf", plot = p5_weight_importance,
@@ -672,58 +663,149 @@ if (write_out) {
 ggdraw(p5_weight_importance)
 ```
 
-## clustering of entire forward genomes
- `corrplot` is used to generate plot the correlation matrix becuase it more
-feature-rich than equvilient ggplot-compatible packages. As a result, the panel
-is saved and stiched together with the others after-the-fact using Adobe
-Illustrator.
-```{r plot_big_clustering}
-if (write_out)
-    pdf("plots/forward_corr.pdf", width = 10, height = 10)
-# `corrplot` returns the correlation matrix re-ordered after clustering as
-# plotted. Save this for the weights plot (chunk below).
-forward_cor_clust <-
-    corrplot(forward_cor, col = viridis(100),
-             method = "square", plotCI = "n",
-             order = "hclust", hclust.method = "complete",
-             p.mat = forward_cor_mtest[[1]], sig.level = 0.05, insig = "blank",
-             lowCI.mat = forward_cor_mtest[[2]],
-             uppCI.mat = forward_cor_mtest[[3]],
-             tl.cex = .5, tl.col = "black", tl.srt = 45)
-if (write_out)
-    dev.off()
+```{r plot_big_corr}
+p_feat_corr_labels <- svmweights %>%
+    group_by(prot_nuc, category) %>%
+    summarize(catweight = sum(weight)) %>%
+    left_join(svmweights %>%
+                  select(feature, category, weight),
+              by = "category") %>%
+    ungroup %>%
+    arrange(catweight, weight) %>%
+    mutate_rows(prot_nuc == "Nucleotide",
+                prot_nuc_col = brewer.pal(5, "Dark2")[[5]]) %>%
+    mutate_rows(prot_nuc == "Protein",
+                prot_nuc_col = brewer.pal(7, "Dark2")[[7]]) %>%
+    mutate_rows(feature == "X40deltaG", feature = "40deltaG") %>%
+    mutate_rows(feature == "X40freqens", feature = "40freqens")
+
+p_feat_corr_category <- p_feat_corr_labels %>%
+    mutate(rank = row_number()) %>%
+    group_by(prot_nuc, category) %>%
+    (function(df)
+        df %>%
+         filter(weight == min(weight)) %>%
+         rename(lower_rank = rank) %>%
+         inner_join(df %>%
+                        filter(weight == max(weight)) %>%
+                        rename(upper_rank = rank),
+                    by = "category")) %>%
+    ungroup %>%
+    transmute(prot_nuc = prot_nuc.x,
+              category, lower_rank, upper_rank) %>%
+    rowwise() %>%
+    mutate(avg_rank = mean(c(lower_rank, upper_rank))) %>%
+    ungroup
+
+p_feat_corr <- nycomps_env$nycomps_features %>%
+    rename(`40deltaG` = X40deltaG,
+           `40freqens` = X40freqens) %>%
+    select(-score, -score_nornass) %>%
+    preprocess_vars(model_env$daley_preprocess_params) %>%
+    rename_feats %>%
+    cor(use = "pairwise.complete.obs") %>%
+    as.data.frame %>%
+    rownames_to_column(var = "x") %>%
+    gather(y, cor, -x) %>%
+    # adapted from ggcorr
+    ggplot(aes()) +
+    geom_tile(aes(x = x, y = y, fill = cor), color = "white") +
+    geom_rect(aes(xmin = lower_rank - 0.5, ymin = lower_rank - 0.5,
+                  xmax = upper_rank + 0.5, ymax = upper_rank + 0.5),
+              color = "black", fill = NA,
+              data = p_feat_corr_category) +
+    geom_segment(aes(x = 89.9, y = lower_rank,
+                     xend = 89.9, yend = upper_rank),
+              color = "black",
+              data = p_feat_corr_category) +
+    geom_segment(aes(x = lower_rank, y = 89,
+                     xend = upper_rank, yend = 89),
+              color = "black",
+              data = p_feat_corr_category) + 
+    geom_text(aes(x = 89.9, y = avg_rank, label = category, color = prot_nuc),
+              size = 5*5/14, nudge_x = 1, hjust = "left",
+              data = p_feat_corr_category %>%
+                  mutate(category = gsub(" ", "\n", category))) +
+    geom_text(aes(x = avg_rank, y = 89, label = category, color = prot_nuc),
+              size = 5*5/14,
+              data = p_feat_corr_category) +
+    labs(x = NULL, y = NULL, fill = "Pearson's r") +
+    coord_equal() +
+    scale_x_discrete(limits = p_feat_corr_labels$feature) +
+    scale_y_discrete(limits = p_feat_corr_labels$feature) +
+    scale_color_manual(values = p_feat_corr_labels %>%
+                           distinct(prot_nuc_col, prot_nuc) %$%
+                           setNames(prot_nuc_col, prot_nuc),
+                       guide = FALSE) +
+    scale_fill_gradient2(breaks = c(-1, 0, 1),
+                         limits = c(-1, 1),
+                         guide = guide_colourbar(title.position = "top",
+                                                 title.hjust = 0.5,
+                                                 nbin = 100,
+                                                 raster = FALSE,
+                                                 direction = "horizontal",
+                                                 ticks = FALSE)) +
+    theme(aspect.ratio = 1,
+          axis.text.x = element_text(color = p_feat_corr_labels$prot_nuc_col,
+                                     angle = 45, hjust = 1, vjust = 1),
+          axis.text.y = element_blank(),
+            #element_text(color = p_feat_corr_labels$prot_nuc_col),
+          panel.background = element_blank(),
+          legend.position = c(.5, 1.2),
+          legend.key.height = unit(5, "pt"),
+          legend.key.width = unit(10, "pt"),
+          plot.margin = unit(rep(0, 4), "pt"))
+
+p_feat_corr %<>% ggplot_build %>% ggplot_gtable
+p_feat_corr$layout$clip <- "off"
+
+ggdraw(p_feat_corr)
 ```
 
 ## Plot weights
 This block plots the weights for the SVM model trained in the order of the
 hclust clustering of the correlation matrix (plotted directly above).
 ```{r plot_weights}
-feat_order <- dimnames(forward_cor_clust)[[1]] %>% rev
-p_svmweights <- svmweights %>%
-    # these were not calculated across the full forward genomes set
-    filter(!(feature %in% c("avgRNAss", "minRNAss", "maxRNAss",
-                            "q75RNAss", "q25RNAss"))) %>%
-    mutate(feature =
-               factor(feature, labels = feat_order, levels = feat_order)) %>%
-    na.omit %>%
-    ggplot() +
+p_svmweights <- ggplot(p_feat_corr_labels) +
     geom_bar(aes(x = feature, y = weight), stat = "identity") +
-    ylab(expression("SVM" ^ "rank"*~"score")) +
+    scale_x_discrete(limits = p_feat_corr_labels$feature) +
+    draw_label(x = -2, y = 0, label = "Weight", size = 6) +
     coord_flip() +
-    theme(axis.title.y = element_blank())
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.text.y = element_text(color = p_feat_corr_labels$prot_nuc_col),
+          axis.line.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          plot.margin = unit(rep(0, 4), "pt"))
+
+p_svmweights %<>% ggplot_build %>% ggplot_gtable
+p_svmweights$layout$clip <- "off"
+
+ggdraw(p_svmweights)
+
+#rm(p_feat_corr_labels, p_feat_corr_category)
+```
+
+### Plot all features
+```{r}
+# vertical alignment, based on tutorial from
+# https://cran.r-project.org/web/packages/cowplot/vignettes/plot_grid.html
+p_s3_corr <- plot_grid(p_svmweights, p_feat_corr,
+                       rel_widths = c(1, 5), nrow = 1, align = "h")
 
 if (write_out) {
-    save_plot("plots/svmweights.pdf", p_svmweights,
-              base_height = 10, base_width = 3)
-} else {
-    p_svmweights
+    save_plot(filename = "plots/figS3_feature_correlations.pdf", plot = p_s3_corr,
+          base_width = 9,
+          base_height = 8)
 }
+
+p_svmweights
 ```
 
 
 ## feature importances to e coli data
 ```{r training_imp}
-data <- training_env$ecoli_training %>%
+training_data <- training_env$ecoli_training %>%
     left_join(training_env$daley_allstats, by = "id") %>%
     filter(normalized, !is.na(score)) %>%
     group_by(cterm)
@@ -748,58 +830,57 @@ group_stat <- function(exp_data, feat_grp, SUMMARY_FUN, ...) {
         })
 }
 
-ecoli_all <- group_stat(
-    group_by(data, cterm), svmweights,
-    boot_perm, fn_prefix = "__", cores = 4, count = 5050, force = TRUE)
+boot_perm_partial <- partial(boot_perm, fn_prefix = "__",
+                             cores = 4, count = 5050, force = TRUE)
 
-ecoli_protnuc <- group_stat(
-    group_by(data, cterm), group_by(svmweights, prot_nuc),
-    boot_perm, fn_prefix = "__", cores = 4, count = 5050, force = TRUE)
+ecoli_all <- training_data %>%
+    group_stat(svmweights, boot_perm_partial)
 
-ecoli_cate <- group_stat(
-    group_by(data, cterm), group_by(svmweights, category),
-    boot_perm, fn_prefix = "__", cores = 4, count = 5050, force = TRUE)
+ecoli_protnuc <- training_data %>%
+    group_stat(svmweights %>% group_by(prot_nuc), boot_perm_partial)
 
-small_all <- group_stat(
-    small_scale, svmweights,
-    calc_auc_roc, grouping_col = 'dataset')
+ecoli_cate <- training_data %>%
+    group_stat(svmweights %>% group_by(category), boot_perm_partial)
 
-small_protnuc <- group_stat(
-    small_scale, group_by(svmweights, prot_nuc),
-    calc_auc_roc, grouping_col = 'dataset')
+ecoli_all_auc <- training_data %>%
+    mutate(grp = "ecoli") %>%
+    group_stat(svmweights,
+               calc_auc_roc, grouping_col = "grp", method = "auc")
 
-small_cate <- group_stat(
-    small_scale, group_by(svmweights, category),
-    calc_auc_roc, grouping_col = 'dataset')
+ecoli_protnuc_auc <- training_data %>%
+    mutate(grp = "ecoli") %>%
+    group_stat(svmweights %>% group_by(prot_nuc),
+               calc_auc_roc, grouping_col = "grp", method = "auc")
+
+small_all <- small_scale %>%
+    group_stat(svmweights, calc_auc_roc, grouping_col = 'dataset')
+
+small_protnuc <- small_scale %>%
+    group_stat(svmweights %>% group_by(prot_nuc),
+               calc_auc_roc, grouping_col = 'dataset')
+
+small_cate <- small_scale %>%
+    group_stat(svmweights %>% group_by(category),
+               calc_auc_roc, grouping_col = 'dataset')
 ```
 
 ```{r ec_protnuc}
-ecoli_protnuc %<>%
+p_ec_kendall <- ecoli_all %>%
+    mutate(prot_nuc = "IMProve") %>%
+    bind_rows(ecoli_protnuc) %>%
     ungroup %>%
-    mutate(cterm = factor(cterm, levels = c("fluman", "out", "in")))
-ecoli_all %<>%
-    ungroup %>%
-    mutate(cterm = factor(cterm, levels = c("fluman", "out", "in")))
-
-ggplot() +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-    geom_pointrange(aes(x = "IMProve",
-                        y = t0, ymin = bca_low, ymax = bca_high,
-                        color = cterm, group = cterm),
+    mutate(cterm = factor(cterm, levels = c("fluman", "out", "in"))) %>%
+    ggplot(aes(x = prot_nuc, y = t0, ymin = bca_low, ymax = bca_high)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "darkgrey") +
+    geom_pointrange(aes(color = cterm, group = cterm),
                     position = position_dodge(width = 0.5),
-                    size = 0.5, fatten = 0.5,
-                    data = ecoli_all) +
-    geom_pointrange(aes(x = prot_nuc,
-                        y = t0, ymin = bca_low, ymax = bca_high,
-                        color = cterm, group = cterm),
-                    position = position_dodge(width = 0.5),
-                    size = 0.5, fatten = 0.5,
-                    data = ecoli_protnuc) +
+                    size = 0.5, fatten = 0.5) +
     ylab("Spearman's rho") +
     scale_color_manual(values = setNames(brewer.pal(3, "Dark2"),
                                          c("in", "out", "fluman"))) +
-    # scale_y_continuous(expand = c(0, 0), limits = c(.16, .86),
-    #                    labels = function(x) x*100) +
+    scale_y_continuous(expand = c(0, 0),
+                       breaks = seq(-.6, .6, .2) %>% round(1),
+                       limits = c(-.6, .6)) +
     scale_x_discrete(limits = c("Nucleotide", "Protein", "IMProve"),
                      labels = c(Nucleotide = "Nucleotide\nOnly",
                                 Protein = "Protein\nOnly",
@@ -810,44 +891,203 @@ ggplot() +
               color = c(brewer.pal(7, "Dark2")[c(5, 7)], "#000000")),
           axis.title.y = element_blank(),
           plot.margin = unit(rep(0, 4), "pt"))
+
+ggdraw(p_ec_kendall)
 ```
 
 
-```{r ec_cate}
-ecoli_all %<>%
-    ungroup %>%
-    mutate(cterm = factor(cterm, levels = c("fluman", "out", "in")))
-ecoli_cate %<>%
-    ungroup %>%
-    mutate(cterm = factor(cterm, levels = c("fluman", "out", "in")))
+```{r train_all_auc}
+ecoli_protnuc_auc %<>%
+    mutate(group = factor(cterm, levels = c("in", "out", "fluman"),
+                          ordered = TRUE))
 
-ggplot() +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-    geom_pointrange(aes(x = "IMProve",
-                        y = t0, ymin = bca_low, ymax = bca_high,
-                        color = cterm, group = cterm),
+p_ec_auc_base <- ecoli_all_auc %>%
+    ggplot(aes(x = outcome_percentile, y = auc, color = cterm)) +
+    geom_hline(yintercept = .5, linetype = "dashed", color = "darkgrey") +
+    geom_line(linetype = "dotdash", alpha = 0.75) +
+    scale_y_continuous(expand = c(0L, 0L), breaks = seq(0, 1, .1),
+                       limits = c(.03, .97),
+                       labels = function(x) x*100) +
+    scale_x_continuous(expand = c(0L, 0L), breaks = seq(0L, 1L, .25),
+                       limits = c(0, 1),
+                       labels = function(x) x*100) +
+    ylab("AUC") +
+    xlab("Activity Percentile Rank") +
+    scale_color_manual(values = setNames(brewer.pal(3, "Dark2"),
+                                         c("in", "out", "fluman")),
+                       guide = FALSE) +
+    theme(strip.background = element_blank(),
+          plot.margin = unit(rep(0, 4), "pt"))
+
+p_ec_auc_prot <- p_ec_auc_base +
+    geom_line(aes(x = outcome_percentile, y = auc, color = cterm),
+              data = ecoli_protnuc_auc %>% filter(prot_nuc == "Protein")) +
+    annotate("text", x = .1, y = .9, label = "Protein", vjust = "left",
+              size = 7*5/14, fontface = "bold", color = "#A6761D")
+
+p_ec_auc_nuc <- p_ec_auc_base +
+    geom_line(aes(x = outcome_percentile, y = auc, color = cterm),
+              data = ecoli_protnuc_auc %>% filter(prot_nuc == "Nucleotide")) +
+    annotate("text", x = .1, y = .9, label = "Nucleotide", vjust = "left",
+              size = 7*5/14, fontface = "bold", color = "#66A61E") +
+    theme(axis.title.y = element_blank(),
+          axis.text.y = element_blank(),
+          plot.margin = unit(c(0, 0, 0, 10), "pt"))
+
+plot_grid(p_ec_auc_prot, p_ec_auc_nuc, nrow = 1)
+```
+
+```{r ec_cate}
+p_ec_cate <- ecoli_all %>%
+    mutate(category = "IMProve Score") %>%
+    bind_rows(ecoli_cate) %>%
+    ungroup %>%
+    mutate(cterm = factor(cterm, levels = c("fluman", "out", "in"))) %>%
+    ggplot(aes(x = category, y = t0, ymin = bca_low, ymax = bca_high)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "darkgrey") +
+    geom_pointrange(aes(color = cterm, group = cterm),
                     position = position_dodge(width = 0.5),
-                    size = 0.5, fatten = 0.5,
-                    data = ecoli_all) +
-    geom_pointrange(aes(x = category,
-                        y = t0, ymin = bca_low, ymax = bca_high,
-                        color = cterm, group = cterm),
-                    position = position_dodge(width = 0.5),
-                    size = 0.5, fatten = 0.5,
-                    data = ecoli_cate) +
+                    size = 0.5, fatten = 0.5) +
     ylab("Spearman's rho") +
     scale_color_manual(values = setNames(brewer.pal(3, "Dark2"),
-                                         c("in", "out", "fluman"))) +
-    # scale_y_continuous(expand = c(0, 0), limits = c(.16, .86),
-    #                    labels = function(x) x*100) +
+                                         c("in", "out", "fluman")),
+                       guide = FALSE) +
+    scale_y_continuous(expand = c(0, 0),
+                       breaks = seq(-.6, .6, .2) %>% round(1),
+                       limits = c(-.6, .6)) +
     scale_x_discrete(limits = names(category_color)) +
     coord_flip() +
     theme(axis.text.y = element_text(color = category_color),
           axis.title.y = element_blank(),
-          strip.text = element_blank(),
-          strip.background = element_blank(),
           plot.margin = unit(rep(0, 4), "pt"))
+
+ggdraw(p_ec_cate)
 ```
+
+### small scale feature plotting
+```{r small_scale_plots}
+p_small_protnuc <- small_protnuc %>%
+    bind_rows(small_all %>% mutate(prot_nuc = "IMProve")) %>%
+    ungroup %>%
+    mutate(dataset = factor(dataset,
+                            levels = c("surade", "tmaritima", "hpylori",
+                                       "lundstrom_ec", "tcross", "archaea"),
+                            labels = c("Microbial\nSecondary\nTransporters", "T. maritima", "H. pylori",
+                                       "Mammalian\nGPCRs\n(E. coli)", "M. tuberculosis", "Archaeal\nTransporters")),
+           prot_nuc = factor(prot_nuc,
+                             levels = c("Nucleotide", "Protein", "IMProve"))) %>%
+    ggplot() +
+    geom_hline(aes(yintercept = .5), linetype = "dashed", color = "darkgrey") +
+    geom_pointrange(aes(x = dataset,
+                        y = auc, ymin = lower95, ymax = upper95,
+                        color = prot_nuc, group = prot_nuc),
+                    position = position_dodge(width = 0.5),
+                    size = 0.5, fatten = 0.5,) +
+    ylab("AUC") +
+    coord_flip() +
+    scale_y_continuous(expand = c(0, 0), breaks = seq(0, 1, .25),
+                       limits = c(0, 1), labels = function(x){x*100}) +
+    scale_color_manual(
+        values = setNames(c("#000000", brewer.pal(7, "Dark2")[c(5, 7)]),
+                          c("IMProve", "Nucleotide", "Protein")),
+        guide = FALSE) +
+    theme(axis.title.y = element_blank(),
+          axis.text.y = element_text(face = c("plain", "italic", "italic",
+                                              "plain", "italic", "plain")),
+          plot.margin = unit(rep(0, 4), "pt"))
+
+ggdraw(p_small_protnuc)
+```
+
+```{r ec_small_compile}
+p_s4_feats <-
+    ggdraw() +
+    plot_grid(p_ec_kendall, p_ec_auc_prot, p_ec_auc_nuc,
+              align = "h", nrow = 1,
+              labels = LETTERS[1:3], label_size = 8, vjust = 0.5) %>%
+    draw_plot(x = 0, y = .51, width = 1, height = 0.49) +
+    plot_grid(p_ec_cate, p_small_protnuc,
+              nrow = 1, align = "h",
+              labels = LETTERS[4:5], label_size = 8, vjust = 0.5) %>%
+    draw_plot(x = 0, y = 0, width = 1, height = 0.5)
+
+# p_s4_feats %<>% ggplotGrob
+
+if (write_out) {
+    save_plot(filename = "plots/figS4_feats.pdf", plot = p_s4_feats,
+          base_width = uconv(183, "mm", "in", "Length"),
+          base_height = 5.5)
+}
+ggdraw(p_s4_feats)
+```
+
+### Load data from training process
+```{r, eval = FALSE}
+training_env <- new.env()
+load("training.RData", training_env)
+```
+
+# function to train a single model
+```{r, eval = FALSE}
+train_model(daley_to_train)
+
+train_model <- function(df, tune = 4, ext = tune,
+                        binary = "/ul/saladi/apps/svm_rank/svm_rank_learn") {
+    
+    data_fn <- df %>%
+        select(-cterm, -id) %>%
+        write_dataset(paste0("training/daley_gfp_phoa.", ext))
+    model_fn <- paste0(data_fn, ".model")
+    
+    # train_model
+    args <- paste("-c ", tune, " -t 0 -m 4000", data_fn, model_fn)
+    system2(binary, args, stdout = FALSE)
+    
+    # read model
+    model <- df %>%
+        ungroup %>%
+        select(-cterm, -id, -outcome, -grouping) %>%
+        colnames %>%
+        read_svmlight_model(model_fn, feat_names = .)
+    
+    # delete files
+    file.remove(data_fn, model_fn)
+    
+    model
+}
+
+test_model <- function(model, data, xtrans = NULL) {
+    data$score <- prediction_fn(data, xtrans = xtrans, model)
+
+    data %>%
+        group_by(cterm, grouping) %>%
+        partition(cterm, grouping) %>%
+        do(ConDis_fast(.$score, .$outcome)) %>%
+        collect() %>%
+        group_by(cterm) %>%
+        summarize(total = sum(valid_count),
+                  kendall = sum(con_dis)/total) %>%
+        ungroup %>%
+        bind_cols(model %>% t %>% as_data_frame %>% bind_rows(., ., .))
+}
+```
+
+### Test each model
+against the Training (Daley, Rapp, et al.) as well as Fluman, et al. datasets
+```{r, test_models, eval = FALSE}
+n_models <- 10
+
+models <- seq.int(n_models) %>%
+    foreach(idx = ., .combine = bind_rows, .multicombine = TRUE) %dopar% {
+        df <- daley_to_train %>%
+        #training_env$daley_to_train %>%
+            sample_frac(0.95) %>%
+            train_model() %>%
+            test_model(data = daley_allstats,
+                       xtrans = daley_preprocess_params)
+}
+```
+
 
 ```{r session}
 if (write_out)
