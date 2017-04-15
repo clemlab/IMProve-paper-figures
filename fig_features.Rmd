@@ -10,7 +10,7 @@ Load all libraries necessary for subsequent data munging and plotting.
 Some defaults are set here to make things easier throughout.
 ```{r setup}
 # if TRUE, then data will be written to file
-write_out = FALSE
+
 library(datamart) # `uconv` for unit conversion
 
 library(iterators)
@@ -58,10 +58,16 @@ load("model.RData", model_env)
 svmpredict <- model_env$svmpredict
 ```
 
-### Load NYCOMPS data for prediction function
+### Load NYCOMPS data
 ```{r}
 nycomps_env <- new.env()
-load("large-scale.Rdata", nycomps_env)
+load("large-scale.RData", nycomps_env)
+```
+
+### Load small-scale data
+```{r}
+small_env <- new.env()
+load("small-scale.RData", small_env)
 ```
 
 ### Define auc function for the subsequent calculations
@@ -655,11 +661,10 @@ p5_weight_importance %<>% ggplotGrob
 # p5_weight_importance$grobs[[4L]]$children[[5L]]$children$layout$layout %<>%
 #     mutate_rows(name == "panel", clip = "off")
 
-if (write_out) {
-    save_plot(filename = "plots/fig6_fluman.pdf", plot = p5_weight_importance,
-          base_width = uconv(183, "mm", "in", "Length"),
-          base_height = 5.5)
-}
+save_plot(filename = "plots/fig6_fluman.pdf", plot = p5_weight_importance,
+      base_width = uconv(183, "mm", "in", "Length"),
+      base_height = 5.5)
+
 ggdraw(p5_weight_importance)
 ```
 
@@ -790,16 +795,12 @@ ggdraw(p_svmweights)
 ```{r}
 # vertical alignment, based on tutorial from
 # https://cran.r-project.org/web/packages/cowplot/vignettes/plot_grid.html
-p_s3_corr <- plot_grid(p_svmweights, p_feat_corr,
-                       rel_widths = c(1, 5), nrow = 1, align = "h")
-
-if (write_out) {
-    save_plot(filename = "plots/figS3_feature_correlations.pdf", plot = p_s3_corr,
-          base_width = 9,
-          base_height = 8)
-}
-
-p_svmweights
+plot_grid(p_svmweights, p_feat_corr,
+          rel_widths = c(1, 5), nrow = 1, align = "h") %T>%
+    save_plot(filename = "plots/figS3_feature_correlations.pdf",
+              plot = .,
+              base_width = 9, base_height = 8) %>%
+    ggdraw()
 ```
 
 
@@ -811,7 +812,7 @@ training_data <- training_env$ecoli_training %>%
     group_by(cterm)
 
 # data is allstats with outcomes (grouped)
-group_stat <- function(exp_data, feat_grp, SUMMARY_FUN, ...) {
+group_stat <- function(exp_data, feat_grp, SUMMARY_FUN) {
     feat_grp %>%
         do({
             feat_df <- .
@@ -824,7 +825,8 @@ group_stat <- function(exp_data, feat_grp, SUMMARY_FUN, ...) {
                         select(one_of(keep_feats)) %>%
                         svmpredict()
                     
-                    SUMMARY_FUN(data_df, ...)
+                    data_df %>%
+                        do(SUMMARY_FUN(.))
                 })
             
         })
@@ -843,25 +845,21 @@ ecoli_cate <- training_data %>%
     group_stat(svmweights %>% group_by(category), boot_perm_partial)
 
 ecoli_all_auc <- training_data %>%
-    mutate(grp = "ecoli") %>%
-    group_stat(svmweights,
-               calc_auc_roc, grouping_col = "grp", method = "auc")
+    group_stat(svmweights, calc_auc_roc)
 
 ecoli_protnuc_auc <- training_data %>%
-    mutate(grp = "ecoli") %>%
-    group_stat(svmweights %>% group_by(prot_nuc),
-               calc_auc_roc, grouping_col = "grp", method = "auc")
+    group_stat(svmweights %>% group_by(prot_nuc), calc_auc_roc)
 
-small_all <- small_scale %>%
-    group_stat(svmweights, calc_auc_roc, grouping_col = 'dataset')
+small_scale <- small_env$small_scale %>%
+    group_by(dataset)
 
-small_protnuc <- small_scale %>%
-    group_stat(svmweights %>% group_by(prot_nuc),
-               calc_auc_roc, grouping_col = 'dataset')
+small_all <- group_stat(small_scale, svmweights, calc_auc_roc)
 
-small_cate <- small_scale %>%
-    group_stat(svmweights %>% group_by(category),
-               calc_auc_roc, grouping_col = 'dataset')
+small_protnuc <- group_stat(small_scale,
+                            svmweights %>% group_by(prot_nuc), calc_auc_roc)
+
+small_cate <- group_stat(small_scale,
+                         svmweights %>% group_by(category), calc_auc_roc)
 ```
 
 ```{r ec_protnuc}
@@ -904,13 +902,12 @@ ecoli_protnuc_auc %<>%
 p_ec_auc_base <- ecoli_all_auc %>%
     ggplot(aes(x = outcome_percentile, y = auc, color = cterm)) +
     geom_hline(yintercept = .5, linetype = "dashed", color = "darkgrey") +
-    geom_line(linetype = "dotdash", alpha = 0.75) +
+    #geom_line(linetype = "dotdash", alpha = 0.75) +
     scale_y_continuous(expand = c(0L, 0L), breaks = seq(0, 1, .1),
                        limits = c(.03, .97),
                        labels = function(x) x*100) +
-    scale_x_continuous(expand = c(0L, 0L), breaks = seq(0L, 1L, .25),
-                       limits = c(0, 1),
-                       labels = function(x) x*100) +
+    scale_x_continuous(expand = c(0L, 0L), breaks = seq(0L, 100L, 25),
+                       limits = c(0, 100)) +
     ylab("AUC") +
     xlab("Activity Percentile Rank") +
     scale_color_manual(values = setNames(brewer.pal(3, "Dark2"),
@@ -966,14 +963,27 @@ ggdraw(p_ec_cate)
 
 ### small scale feature plotting
 ```{r small_scale_plots}
-p_small_protnuc <- small_protnuc %>%
-    bind_rows(small_all %>% mutate(prot_nuc = "IMProve")) %>%
-    ungroup %>%
+p_small_protnuc <- small_all %>%
+    group_by(dataset) %>%
+    mutate(prot_nuc = "IMProve") %>%
+    filter(auc == max(auc)) %>%
+    # keep condition that corresponds to overall max AUC
+    bind_rows(semi_join(small_protnuc, .,
+                        by = c("dataset", "outcome"))) %>%
+    ungroup() %>%
     mutate(dataset = factor(dataset,
-                            levels = c("surade", "tmaritima", "hpylori",
-                                       "lundstrom_ec", "tcross", "archaea"),
-                            labels = c("Microbial\nSecondary\nTransporters", "T. maritima", "H. pylori",
-                                       "Mammalian\nGPCRs\n(E. coli)", "M. tuberculosis", "Archaeal\nTransporters")),
+                            levels = c("surade",
+                                       "tmaritima",
+                                       "hpylori",
+                                       "lundstrom_ec",
+                                       "tcross",
+                                       "archaea"),
+                            labels = c("Microbial\nSecondary\nTransporters",
+                                       "T. maritima",
+                                       "H. pylori",
+                                       "Mammalian\nGPCRs\n(E. coli)",
+                                       "M. tuberculosis",
+                                       "Archaeal\nTransporters")),
            prot_nuc = factor(prot_nuc,
                              levels = c("Nucleotide", "Protein", "IMProve"))) %>%
     ggplot() +
@@ -1013,11 +1023,10 @@ p_s4_feats <-
 
 # p_s4_feats %<>% ggplotGrob
 
-if (write_out) {
-    save_plot(filename = "plots/figS4_feats.pdf", plot = p_s4_feats,
-          base_width = uconv(183, "mm", "in", "Length"),
-          base_height = 5.5)
-}
+save_plot(filename = "plots/figS4_feats.pdf", plot = p_s4_feats,
+      base_width = uconv(183, "mm", "in", "Length"),
+      base_height = 5.5)
+    
 ggdraw(p_s4_feats)
 ```
 
@@ -1090,7 +1099,5 @@ models <- seq.int(n_models) %>%
 
 
 ```{r session}
-if (write_out)
-    save.image("fig_features.Rdata")
 sessionInfo()
 ```

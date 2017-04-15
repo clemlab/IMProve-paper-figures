@@ -9,9 +9,6 @@ output: html_document
 Load all libraries necessary for subsequent data munging and plotting.
 Some defaults are set here to make things easier throughout.
 ```{r libraries}
-# if TRUE, then data will be written to file
-write_out = TRUE
-
 library(testthat)
 
 library(gdata) # for `interleave`
@@ -54,7 +51,7 @@ svmpredict <- model_env$svmpredict
 ### Load NYCOMPS data for prediction function
 ```{r}
 nycomps_env <- new.env()
-load("large-scale.Rdata", nycomps_env)
+load("large-scale.RData", nycomps_env)
 ```
 
 # p4 - forward predictions
@@ -80,10 +77,10 @@ forward_preds <-
     ungroup %>%
     select(-fn)
 
-forward_preds <- read_delim("forward-genomes/microbial_query.tsv.gz",
-                            delim = "\t") %>%
+forward_preds <- "forward-genomes/microbial_query.tsv.gz" %>%
+    read_delim(delim = "\t") %>%
     bind_cols(read_csv("forward-genomes/microbial_query.fna.allstats.csv.gz",
-              col_types = feat_col_spec), .) %>%
+                       col_types = feat_col_spec), .) %>%
     rename(group = grouping) %>%
     # Remove duplicate E. coli genome
     filter(species != "Escherichia coli (strain ATCC 33849 / DSM 4235 / NCIB 12045 / K12 / DH1)") %>%
@@ -236,16 +233,18 @@ p4_selected_violin
 
 ```{r fig4_nycomps_nvector_ppv}
 p4_nvector_ppv_prep <- nycomps_env$nycomps_all_outcomes %>%
-    filter(plasmid_name == "N") %>%
-    calc_auc_roc(grouping_col = "plasmid_name", score_col = "score",
-                 outcome_col = "plasmid_outcome", method = "roc") %>%
-    prep_for_polygon
+    filter(plasmid_name == "N") %>% 
+    rename(outcome = plasmid_outcome) %>%
+    calc_auc_roc(method = "roc") %>%
+    arrange(desc(thresholds)) %>%
+    prep_for_polygon() %>%
+    as_tibble
 
 p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) +
     geom_polygon(aes(x = thresholds, y = ppv, group = id, fill = y_greater_min,
                      color = y_greater_min), size = 0.1) +
     geom_path(aes(x = thresholds, y = ppv), size = 0.5,
-              data = filter(p4_nvector_ppv_prep, type != "min_ppv") %>%
+              data = filter(p4_nvector_ppv_prep, type != "min_y") %>%
                      distinct(thresholds, ppv)) +
     geom_hline(aes(yintercept = min(min_ppv)),
                linetype = "dashed", color = "darkgrey", size = 0.5) +
@@ -255,7 +254,7 @@ p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) +
     scale_x_continuous(expand = c(0, 0), breaks = nycomps_env$nycomps_breaks) +
     scale_y_continuous(expand = c(0, 0), limits = c(0, .6),
                        breaks = seq(0, 1, .2), labels = function(x) x*100) +
-    xlab(expression("SVM" ^ "rank"*~"score")) +
+    xlab(expression("IMProve score")) +
     ylab("Positive Predictive Value") +
     scale_color_manual(values = c("#A4A5A5", "#A10F1C")) +
     scale_fill_manual(values = c("#A4A5A5", "#A10F1C")) +
@@ -266,7 +265,7 @@ p4_nvector_ppv
 ```
 
 ## deal with feature distributions
-```{r feature_distributions, cache=TRUE}
+```{r feature_distributions, cache = TRUE}
 all_features <- forward_preds %>%
     mutate(set = "forward") %>%
     select(-score) %>%
@@ -278,7 +277,7 @@ all_features <- forward_preds %>%
                          set = "training") %>%
                   gather(feature, value, -title, -group, -species, -set)) %>%
     bind_rows(nycomps_env$nycomps_features %>%
-                  rename() %>%
+                  #rename() %>%
                   mutate(title = as.character(id),
                          group = "NYCOMPS",
                          species = "nycomps all",
@@ -531,6 +530,8 @@ make_indiv_plot <- function(df) {
                  size = 5, colour = brewer.pal(3L, "Dark2")[[3L]])
 }
 
+setdiff(names(selected), names(all_features))
+
 p4_feat_hist <- all_features %>%
     # necessary to filter for certain features of interest
     ungroup %>%
@@ -566,11 +567,11 @@ pext2 <- ggdraw() +
                fontface = "bold", size = 7, angle = 90)
 
 # RGB by default
-if (write_out)
-    save_plot(filename = "plots/extfig2_names.pdf",
-              plot = pext2,
-              base_width = uconv(183, "mm", "in", "Length"), base_height = 7,
-              dpi = 300)
+
+save_plot(filename = "plots/extfig2_names.pdf",
+          plot = pext2,
+          base_width = uconv(183, "mm", "in", "Length"), base_height = 7,
+          dpi = 300)
 
 pext2
 ```
@@ -590,16 +591,14 @@ p4_main <- ggdraw() +
               x = .72, y = 0, width = .27, height = 1)
 
 # RGB by default
-if (write_out)
-    save_plot(filename = "plots/fig4_fluman_thermo.pdf", plot = p4_main,
-          base_width = uconv(136, "mm", "in", "Length"),
-          base_height = 5.5)
+save_plot(filename = "plots/fig4_fluman_thermo.pdf", plot = p4_main,
+      base_width = uconv(136, "mm", "in", "Length"),
+      base_height = 5.5)
 
 p4_main
 ```
 
 ```{r session}
-if (write_out)
-    save(forward_preds, file = "genomes.RData")
+save(forward_preds, file = "genomes.RData")
 sessionInfo()
 ```

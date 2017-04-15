@@ -25,6 +25,13 @@ library(myutils)
 library(doMC)
 registerDoMC(cores = 4L)
 
+library(multidplyr)
+# set up parallel processing
+create_cluster(10L) %>%
+    cluster_library("tidyverse") %>%
+    cluster_library("myutils") %>%
+    set_default_cluster()
+
 # if TRUE, then data will be written to file
 write_out = TRUE
 ```
@@ -49,19 +56,15 @@ feat_col_spec = cols(.default = col_double(), title = col_character())
 
 # these are actually not the designations
 # they were initially just grouped this way for convenience
-nycomps_features <- bind_rows(
-    read_csv("large-scale/nycomps_only_pos.fna.allstats.csv.gz",
-             col_types = feat_col_spec) %>%
-        bind_cols(read_csv("large-scale/nycomps_only_pos_phobius.phobiuscterm",
-                           col_names = "cterm")),
-    read_csv("large-scale/nycomps_only_neg.fna.allstats.csv.gz",
-             col_types = feat_col_spec) %>%
-       bind_cols(read_csv("large-scale/nycomps_only_neg_phobius.phobiuscterm",
-                           col_names = "cterm")),
-    read_csv("large-scale/nycomps_mixed.fna.allstats.csv.gz",
-             col_types = feat_col_spec) %>%
-        bind_cols(read_csv("large-scale/nycomps_mixed_phobius.phobiuscterm",
-                           col_names = "cterm"))) %>%
+nycomps_features <- c("only_pos", "only_neg", "mixed") %>%
+    paste0("large-scale/nycomps_", .) %>%
+    lapply(function(x) {
+        read_csv(paste0(x, ".fna.allstats.csv.gz"),
+                 col_types = feat_col_spec) %>%
+            bind_cols(read_csv(paste0(x, "_phobius.phobiuscterm"),
+                               col_names = "cterm"))
+        }) %>%
+    bind_rows %>%
     separate(title, c("gi", "id", "name"), convert = TRUE) %>%
     select(-gi)
 
@@ -141,8 +144,7 @@ p2_trial_counts <- nycomps_gene_outcomes %>%
     scale_x_discrete(expand = c(0, 0), drop = FALSE) +
     theme(legend.position = "none")
 
-if (write_out)
-    p2_trial_counts
+p2_trial_counts
 ```
 
 ## NYCOMPS without RNA Secondary Structure predictions
@@ -150,82 +152,89 @@ This block analyzes the effect of not including full sequence-length RNA
 secondary structure calculations on predictive performance on the NYCOMPS
 dataset.
 ```{r nycomps_auc, cache=TRUE}
+# make combos
+nycomps_auc <- nycomps_all_outcomes %>%
+    mutate(cut = "Trials") %>%
+    bind_rows(mutate(., plasmid_name = "all")) %>%
+    bind_rows(nycomps_gene_outcomes %>%
+                  mutate(cut = "Genes")) %>%
+    select(-attempts) %>%
+    bind_rows(mutate(., cterm = "all")) %>%
+    mutate(gene_outcome = as.numeric(gene_outcome)) %>%
+    select(-posmix_outcome) %>%
+    gather(outcome_type, outcome, gene_outcome, plasmid_outcome) %>%
+    filter(!is.na(outcome)) %>%
+    gather(score_type, score, score, score_nornass) %>%
+    mutate(cut = factor(cut),
+           cterm = factor(cterm),
+           plasmid_name = factor(plasmid_name),
+           outcome_type = factor(outcome_type),
+           score_type = factor(score_type)) %>%
+    group_by(cut, cterm, plasmid_name, outcome_type, score_type) %>% 
+    do({calc_auc_roc(., method = "auc")}) %>%
+    ungroup()
 
-calculate_all_aucs <- function(all_outcomes, gene_outcomes, score_col) {
-    calc_auc_plasmid <-
-        partial(calc_auc_roc, score_col = score_col,
-                outcome_col = "plasmid_outcome", method = "auc")
-    calc_auc_gene <- partial(calc_auc_roc, score_col = score_col,
-                             outcome_col = "posmix_outcome", method = "auc")
+nycomps_auc %>%
+    write_csv("nycomps_all_auc.csv")
 
-    bind_rows(calc_auc_plasmid(all_outcomes, grouping_col = "plasmid_name"),
-              calc_auc_plasmid(all_outcomes %>% mutate(all = "all"),
-                         grouping_col = "all"),
-              calc_auc_gene(gene_outcomes %>% mutate(posmix = "posmix"),
-                            grouping_col = "posmix")) %>%
-        mutate(group = paste(group, "all")) %>%
-        bind_rows(
-            calc_auc_plasmid(all_outcomes %>%
-                                 mutate(cterm = paste("all", cterm)),
-                         grouping_col = "cterm"),
-            calc_auc_gene(gene_outcomes %>%
-                              mutate(cterm = paste("posmix", cterm)),
-                         grouping_col = "cterm"),
-            calc_auc_plasmid(all_outcomes %>%
-                             mutate(plasmid_cterm = paste(plasmid_name, cterm)),
-                         grouping_col = "plasmid_cterm")
-        ) %>%
-        separate(group, into = c("group", "cterm"), sep = " ")
-    }
-
-nycomps_auc <-
-    calculate_all_aucs(nycomps_all_outcomes, nycomps_gene_outcomes, "score")
-
-nycomps_nornass_auc <-
-    calculate_all_aucs(nycomps_all_outcomes, nycomps_gene_outcomes,
-                       "score_nornass")
-
-if (write_out)
-    write.csv(nycomps_nornass_auc, file = "nycomps_nonupack_auc.csv",
-              row.names = FALSE)
+# Remove No RNAss AUC
+nycomps_auc %<>%
+    filter(score_type == "score") %>%
+    select(-score_type)
 ```
 
 ```{r nycomps_posmix_ppv}
 p2_posmix_ppv_prep <- nycomps_gene_outcomes %>%
-    mutate(posmix = "posmix") %>%
-    calc_auc_roc(grouping_col = "posmix", score_col = "score",
-                 outcome_col = "posmix_outcome", method = "roc") %>%
-    prep_for_polygon
+    rename(outcome = gene_outcome) %>%
+    calc_auc_roc(method = "roc") %>%
+    group_by(outcome) %>%
+    arrange(desc(thresholds)) %>%
+    do(prep_for_polygon(.)) %>%
+    as_tibble
 
-p2_posmix_ppv <- ggplot(p2_posmix_ppv_prep) +
+p2_posmix_ppv <- p2_posmix_ppv_prep %>%
+    filter(outcome == "mix") %>%
+    ggplot() +
     geom_polygon(aes(x = threshold_percentiles, y = ppv, group = id,
-                     fill = y_greater_min, color = y_greater_min), size = 0.1) +
+                     fill = y_greater_min, color = y_greater_min), size = 0.01) +
     geom_path(aes(x = threshold_percentiles, y = ppv), size = 0.25,
-              data = filter(p2_posmix_ppv_prep, type != "min_ppv") %>%
-                     distinct(threshold_percentiles, ppv)) +
-    geom_hline(aes(yintercept = min(min_ppv)),
-               linetype = "dashed", color = "darkgrey", size = 0.5) +
+              data = p2_posmix_ppv_prep %>%
+                  filter(#outcome == "mix",
+                         type != "min_y") %>%
+                  distinct(threshold_percentiles, ppv)) +
+    geom_hline(aes(yintercept = min_ppv),
+               linetype = "dashed", color = "darkgrey", size = 0.5,
+               data = p2_posmix_ppv_prep %>%
+                   filter(#outcome == "mix",
+                          type == "ppv") %>%
+                   arrange(thresholds) %>%
+                   summarize(min_ppv = ppv[[1]])) +
     scale_x_continuous(expand = c(0, 0), limits = c(0, 1),
                        labels = function(x) x*100) +
     scale_y_continuous(expand = c(0, 0), limits = c(0, .6001),
                        breaks = seq(0, 1, .2), labels = function(x) x*100) +
     xlab(expression("Percentile IMProve score")) +
     ylab("PPV") +
-    scale_color_manual(values = c("#A4A5A5","#A10F1C")) +
-    theme(legend.position = "None",
-          plot.margin = unit(c(1/16, 1/16, 1/16, 0), "in"))
+    scale_color_manual(values = setNames(c("#A4A5A5", "#A10F1C"),
+                                         c(FALSE, TRUE)),
+                       guide = FALSE) +
+    scale_fill_manual(values = setNames(c("#A4A5A5", "#A10F1C"),
+                                         c(FALSE, TRUE)),
+                       guide = FALSE) +
+    theme(plot.margin = unit(c(1/16, 1/16, 1/16, 0), "in"))
 
-if (write_out)
-    p2_posmix_ppv
+p2_posmix_ppv
 
 p2_posmix_ppv_prep %>%
-    filter(find_closest(threshold_percentiles, 0.75),
+    filter(#outcome == "mix",
+           find_closest(threshold_percentiles, 0.75),
            type == "ppv") %>% 
     distinct(threshold_percentiles, thresholds, ppv, min_ppv) %>%
     mutate(`Enrichment at 75th percentile` = ppv - min_ppv)
 
 p2_posmix_ppv_prep %>%
-    filter(find_closest(thresholds, 0.5),
+    filter(#outcome == "mix",
+           find_closest(thresholds, 0.5),
            type == "ppv") %>% 
     distinct(threshold_percentiles, thresholds, ppv, min_ppv) %>%
     mutate(additional_expressed =
@@ -291,29 +300,30 @@ for (idx in 4:6)
 p2_posmix_histogram$grobs[[15L]]$grobs[[1L]][[1L]][[7L]]$gp$col <- "#A4A5A5"
 p2_posmix_histogram$grobs[[15L]]$grobs[[1L]][[1L]][[8L]]$gp$col <- "#A10F1C"
 
-if (write_out)
-    ggdraw(p2_posmix_histogram)
+ggdraw(p2_posmix_histogram)
 ```
 
 
 ```{r nycomps_posmix_roc}
-p2_posmix_roc_label <- filter(nycomps_auc, group == "posmix",
-                              cterm == "all") %>%
+p2_posmix_roc_label <- nycomps_auc %>%
+    filter(cut == "Genes", cterm == "all", outcome == 2) %>%
     mutate(auc = specify_decimal(auc*100),
            lower95 = specify_decimal(lower95*100),
            upper95 = specify_decimal(upper95*100),
            ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')"),
-           count = fmt_cnt(pos_count,count)
+           count = fmt_cnt(pos_count, count)
            )
 
 p2_posmix_roc <- nycomps_gene_outcomes %>%
-    mutate(posmix = "posmix") %>%
-    calc_auc_roc(score_col = "score", outcome_col = "posmix_outcome",
-                  grouping_col = "posmix", method = "roc") %>%
+    rename(outcome = gene_outcome) %>%
+    calc_auc_roc(method = "roc") %>%
+    group_by(outcome) %>%
+    split_groups() %>%
     ggplot() +
     geom_abline(slope = 1, intercept = 0, linetype = "dashed",
                 color = "darkgrey") +
-    geom_path(aes(x = 1 - specificities, y = sensitivities)) +
+    geom_path(aes(x = 1 - specificities, y = sensitivities,
+                  color = outcome_percentile)) +
     annotate(geom = "text", x = .70, y = .19,
              label = p2_posmix_roc_label$count,
              size = 6*5/14) +
@@ -324,20 +334,20 @@ p2_posmix_roc <- nycomps_gene_outcomes %>%
     scale_x_continuous(expand = c(0, 0), labels = function(x) x*100) +
     xlab("False Positive Rate") +
     ylab("True Positive Rate") +
-    scale_fill_manual(values = c("#A4A5A5","#A10F1C")) +
+    scale_color_continuous(limits = c(0, 100),
+                           low = "#A4A5A5", high = "#A10F1C") +
     theme(aspect.ratio = 1,
           legend.position = "None",
           plot.margin = unit(c(0, 0, 0, 0), "in"))
 
-if (write_out)
-    p2_posmix_roc
+p2_posmix_roc
 ```
 
 ```{r}
 p_nycomps_cterm <- nycomps_auc %>%
-    filter(group != "posmix") %>%
+    filter(cut == "Trials") %>%
     mutate(
-        group = factor(group,
+        plasmid_name = factor(plasmid_name,
                levels = c("all",
                           "N", "C",
                           "C_LDAO", "MSGC.24",
@@ -356,10 +366,10 @@ p_nycomps_cterm <- p_nycomps_cterm %>%
     mutate_rows(cterm == "NON-CYTOPLASMIC.", lab_y = lab_y - .032) %>%
     ggplot() +
     geom_hline(yintercept = 0.50, color = "darkgrey", linetype = "dashed") +
-    geom_text(aes(x = group, y = lab_y,
+    geom_text(aes(x = plasmid_name, y = lab_y,
                   color = cterm, label = fmt_cnt(pos_count, count)),
               size = 5*5/14) +
-    geom_pointrange(aes(x = group, ymin = upper95, y = auc, ymax = lower95,
+    geom_pointrange(aes(x = plasmid_name, ymin = upper95, y = auc, ymax = lower95,
                         group = cterm, color = cterm),
                     fatten = 0.5,
                     position = position_dodge(width = 0.5)) +
@@ -373,7 +383,7 @@ p_nycomps_cterm <- p_nycomps_cterm %>%
     scale_x_discrete(expand = c(0, 0),
                      limits = p_nycomps_cterm %>%
                          filter(cterm == "all") %>%
-                         arrange(desc(count)) %$% unlist(group)) +
+                         arrange(desc(count)) %$% unlist(plasmid_name)) +
     scale_y_continuous(expand = c(0, 0),
                        labels = function(x) x*100) +
     coord_cartesian(ylim = c(0.45, .885)) +
@@ -438,15 +448,15 @@ if (write_out == TRUE) {
     save_plot(filename = "plots/fig2_newE.pdf",
               plot = p2_main,
               base_width = uconv(136, "mm", "in", "Length"))
-} else {
-    ggdraw(p2_main)
 }
+
+ggdraw(p2_main)
 ```
 
 ```{r session}
 if (write_out)
     save(nycomps_features, nycomps_all_outcomes, nycomps_gene_outcomes,
          nycomps_xscale, nycomps_breaks,
-         file = "large-scale.Rdata", compression_level = 9)
+         file = "large-scale.RData", compression_level = 9)
 sessionInfo()
 ```

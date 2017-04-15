@@ -38,11 +38,9 @@ write_out = TRUE
 ```{r}
 model_env <- new.env()
 load("model.RData", model_env)
-svmpredict <- function(feature_df) {
-    feature_df %>%
-        prediction_fn(model_env$daley_preprocess_params,
-                      model_env$svm_model)
-}
+svmpredict <- function(feature_df)
+    prediction_fn(feature_df, model_env$daley_preprocess_params,
+                  model_env$svm_model)
 ```
 
 ## archaea
@@ -62,7 +60,8 @@ archaea_outcomes <- read_csv("small-scale/archaea_S1.outcomes.csv",
     left_join(archaea_outcomes, by = "Protein") %>%
     filter(Measurement %in% c('WB/Gel',
                               'Scanning Densitometry of SDS-PAGE (%)'),
-           !is.na(Outcome))
+           !is.na(Outcome)) %>%
+    rename(outcome = Outcome)
 
 # Key for Archaea Outcomes:
 # "None", "WB-only", "1-10% of MP", ">10% of MP"
@@ -80,12 +79,12 @@ p3_archaea_sdspage_errbars <- archaea_outcomes %>%
     group_by(Protein, score) %>%
     filter(n() > 1) %>%
     summarize(count = n(),
-              sds_max = max(Outcome),
-              sds_min = min(Outcome))
+              sds_max = max(outcome),
+              sds_min = min(outcome))
 
 p3_archaea_bs <- archaea_outcomes %>%
     filter(Measurement == 'Scanning Densitometry of SDS-PAGE (%)') %>%
-    boot_perm(x_col = "score", y_col = "Outcome",
+    boot_perm(x_col = "score", y_col = "outcome",
               fn_prefix = "small-scale/archaea", count = 10 ^ 6,
               cores = 20, force = FALSE) %>%
     mutate(t0 = specify_decimal(t0, k = 2L),
@@ -99,17 +98,17 @@ p3_archaea_sdspage <- archaea_outcomes %>%
     filter(Measurement == 'Scanning Densitometry of SDS-PAGE (%)') %>%
     # Don't plot points for values shown by the "error bars"
     anti_join(p3_archaea_sdspage_errbars %>%
-                  gather(type, Outcome, sds_max:sds_min)) %>%
+                  gather(type, outcome, sds_max:sds_min)) %>%
     # Repeat of this one outcome in the middle of an error bar
     # spread them apart a tiny bit for visualization
-    mutate_rows(Protein == "Hbor39700", Vector == "pET52b(+)", Outcome == 12,
-                Outcome = Outcome + 0.2) %>%
-    mutate_rows(Protein == "Hbor39700", Vector == "pTTQ18", Outcome == 12,
-                Outcome = Outcome - 0.2) %>%
+    mutate_rows(Protein == "Hbor39700", Vector == "pET52b(+)", outcome == 12,
+                outcome = outcome + 0.2) %>%
+    mutate_rows(Protein == "Hbor39700", Vector == "pTTQ18", outcome == 12,
+                outcome = outcome - 0.2) %>%
     ggplot() +
     geom_vline(xintercept = archaea_median - .015,
                linetype = "dashed", color = "black", size = 0.5) +
-    geom_point(aes(x = score, y = Outcome),
+    geom_point(aes(x = score, y = outcome),
                color = "#A10F1C", size = 3, shape = 95) +
     geom_errorbar(aes(x = score, ymin = sds_min, ymax = sds_max),
                   color = "#A10F1C", size = 0.27, width = 0.04,
@@ -131,9 +130,9 @@ p3_archaea_sdspage
 p3_archaea_western_data <- archaea_outcomes %>%
     filter(Measurement != 'Scanning Densitometry of SDS-PAGE (%)') %>%
     group_by(Protein, score) %>%
-    summarise(no = -sum(Outcome == 0L),
-              wb = sum(Outcome == 1L),
-              sdspage = sum(Outcome > 1L)) %>%
+    summarise(no = -sum(outcome == 0L),
+              wb = sum(outcome == 1L),
+              sdspage = sum(outcome > 1L)) %>%
     gather(group, count, no:sdspage) %>%
     filter(count != 0L) %>%
     # adjustments for visualization so bars are distinct
@@ -184,31 +183,29 @@ format_pos_count <- function(df) {
 ```{r}
 archaea_auc <- archaea_outcomes %>%
     filter(Measurement != "Scanning Densitometry of SDS-PAGE (%)") %>%
-    mutate_rows(Outcome == 10L, Outcome = 5L) %>%
-    rename(outcome = Outcome) %>%
-    calc_auc_roc(grouping_col = "Measurement",
-                 method = "auc") %>%
+    mutate_rows(outcome == 10L, outcome = 5L) %>%
+    calc_auc_roc(method = "auc") %>%
     ungroup %>%
     mutate(auc = specify_decimal(auc*100),
            lower95 = specify_decimal(lower95*100),
            upper95 = specify_decimal(upper95*100),
            ci = paste0(auc, "~(", lower95, "-", upper95, ")")) %>%
-    mutate_rows(outcome_threshold == 5L, y = .16) %>%
-    mutate_rows(outcome_threshold == 1L, y = .07)
+    mutate_rows(outcome == 5L, y = .16) %>%
+    mutate_rows(outcome == 1L, y = .07)
 
 p3_archaea_roc <- archaea_outcomes %>%
     filter(Measurement != "Scanning Densitometry of SDS-PAGE (%)") %>%
-    mutate_rows(Outcome == 10L, Outcome = 5L) %>%
-    rename(outcome = Outcome) %>%
-    calc_auc_roc(grouping_col = "Measurement",
-                 method = "roc") %>%
-    ggplot() +
+    mutate_rows(outcome == 10L, outcome = 5L) %>%
+    calc_auc_roc(method = "roc") %>%
+    group_by(outcome) %>%
+    split_groups() %>%
+    ggplot(aes(color = outcome_percentile)) +
     geom_abline(slope = 1, intercept = 0,
                 linetype = "dashed", color = "black") +
-    geom_path(aes(x = 1 - specificities, y = sensitivities,
-                  color = factor(outcome_threshold))) +
-    geom_text(aes(x = .65, y = y, label = ci,
-                  color = factor(outcome_threshold)),
+    geom_path(aes(x = 1 - specificities, y = sensitivities)) +
+    geom_point(aes(x = 1 - best_spec, y = best_sens), color = "black",
+               data = archaea_auc) +
+    geom_text(aes(x = .65, y = y, label = ci),
               size = 5*5/14, parse = TRUE, data = archaea_auc) +
     annotate(geom = "text", x = .65, y = .24,
              label = format_pos_count(archaea_auc),
@@ -216,7 +213,8 @@ p3_archaea_roc <- archaea_outcomes %>%
     xlab("False Positive Rate") +
     ylab("True Positive Rate") +
     ggtitle("Archaeal Transporters") +
-    scale_color_manual(values = setNames(c("#AD665D", "#A10F1C"), c(1L, 5L))) +
+    scale_color_continuous(limits = c(0, 100),
+                           low = "#A4A5A5", high = "#A10F1C") +
     scale_y_continuous(expand = c(0, 0), breaks = c(0, .5, 1),
                        limits = c(0, 1), labels = function(x){x*100}) +
     scale_x_continuous(expand = c(0, 0), breaks = c(0, .5, 1),
@@ -309,38 +307,33 @@ p3_mt
 ```{r}
 tcross_auc <- tcross_outcomes %>%
     filter(fraction == "MEM") %>%
-    mutate(outcome = as.numeric(outcome)) %>%
-    calc_auc_roc(grouping_col = "fraction",
-                 method = "auc") %>%
+   # mutate(outcome = as.numeric(outcome)) %>%
+    calc_auc_roc(method = "auc") %>%
     mutate(auc = specify_decimal(auc*100),
            lower95 = specify_decimal(lower95*100),
            upper95 = specify_decimal(upper95*100),
            ci = paste0(auc, "~(", lower95, "-", upper95, ")")) %>%
-    mutate_rows(outcome_threshold == 3L, y = .16) %>%
-    mutate_rows(outcome_threshold == 2L, y = .07)
+    mutate_rows(outcome == "CB", y = .16) %>%
+    mutate_rows(outcome == "WB", y = .07)
 
 p3_mt_roc <- tcross_outcomes %>%
     filter(fraction == "MEM") %>%
-    mutate(outcome = as.numeric(outcome)) %>%
-    calc_auc_roc(grouping_col = "fraction",
-                 method = "roc") %>%
-    ungroup %>%
-    ggplot() +
+    calc_auc_roc(method = "roc") %>%
+    group_by(outcome) %>%
+    split_groups() %>%
+    ggplot(aes(color = outcome_percentile)) +
     geom_abline(slope = 1, intercept = 0,
                 linetype = "dashed", color = "black") +
-    geom_path(aes(x = 1 - specificities, y = sensitivities,
-                  color = factor(outcome_threshold))) +
-    geom_text(aes(x = .65, y = y, label = ci,
-                  color = factor(outcome_threshold)),
+    geom_path(aes(x = 1 - specificities, y = sensitivities)) +
+    geom_point(aes(x = 1 - best_spec, y = best_sens), color = "black",
+               data = tcross_auc) +
+    geom_text(aes(x = .65, y = y, label = ci),
               size = 5*5/14, parse = TRUE, data = tcross_auc) +
     annotate(geom = "text", x = .65, y = .25,
              label = format_pos_count(tcross_auc),
              size = 5*5/14, parse = TRUE) +
-    scale_color_manual(values = ggplot_build(p3_mt)$data[[2]] %>%
-                           arrange(desc(-group)) %>%
-                           select(colour) %>%
-                           unique %>% unlist %>% unname %>% tail(-1),
-                       na.value = "black") +
+    scale_color_continuous(limits = c(0, 100),
+                           low = "#A4A5A5", high = "#A10F1C") +
     ylab("True Positive Rate") +
     xlab("False Positive Rate") +
     ggtitle("M. tuberculosis") +
@@ -396,7 +389,8 @@ p3_gpcr <- lundstrom_outcomes %>%
     filter(host %in% c("E. coli", "P. pastoris")) %>%
     mutate(host = factor(host, levels = c("P. pastoris", "E. coli"))) %>%
     ggplot() +
-    geom_quasirandom(aes(x = host, y = score, color = outcome),
+    geom_quasirandom(aes(x = host, y = score,
+                         color = as.numeric(outcome), group = outcome),
                      dodge.width = .7, varwidth = TRUE, size = 1) +
     geom_segment(aes(y = median, yend = median, x = 1.5, xend = 2.5),
                  size = 0.5, linetype = "dashed",
@@ -404,9 +398,7 @@ p3_gpcr <- lundstrom_outcomes %>%
     geom_segment(aes(y = median, yend = median, x = 0.5, xend = 1.5),
                  size = 0.5, linetype = "dashed",
                  data = filter(lundstrom_median, host == "P. pastoris")) +
-    scale_color_manual(
-        values = setNames(c('#A4A5A5', '#AC7B74', '#AA4F46', '#A10F1C'),
-                          c("No", "Low", "Medium", "High"))) +
+    scale_color_continuous(low = "#A4A5A5", high = "#A10F1C") +
     scale_x_discrete(expand = c(0, 0)) +
     ylab(expression("IMProve score")) +
     coord_flip() +
@@ -445,10 +437,10 @@ ggdraw(p3_gpcr_main)
 ```{r}
 lundstrom_auc <- lundstrom_outcomes %>%
     filter(host %in% c("E. coli", "P. pastoris")) %>%
-    mutate(outcome = as.numeric(outcome)) %>%
-    calc_auc_roc(grouping_col = "host") %>%
-    ungroup %>%
-    arrange(host, -outcome_threshold) %>%
+    group_by(host) %>%
+    do(calc_auc_roc(., method = "auc")) %>%
+    ungroup() %>%
+    arrange(host, -outcome_percentile) %>%
     mutate(auc = specify_decimal(auc*100),
            lower95 = specify_decimal(lower95*100),
            upper95 = specify_decimal(upper95*100),
@@ -468,21 +460,20 @@ lundstrom_auc_counts <- lundstrom_auc %>%
 
 p3_gpcr_roc <- lundstrom_outcomes %>%
     filter(host %in% c("E. coli", "P. pastoris")) %>%
-    mutate(outcome = as.numeric(outcome)) %>%
-    calc_auc_roc(grouping_col = "host", method = "roc") %>%
-    ggplot() +
+    group_by(host) %>%
+    do(calc_auc_roc(., method = "roc")) %>%
+    group_by(host, outcome) %>%
+    split_groups() %>%
+    ggplot(aes(color = outcome_percentile)) +
     geom_abline(slope = 1, intercept = 0,
                 linetype = "dashed", color = "black") +
-    geom_path(aes(x = 1 - specificities, y = sensitivities,
-                  color = factor(outcome_threshold))) +
-    geom_text(aes(x = x, y = y, label = ci,
-                  color = factor(outcome_threshold)),
+    geom_path(aes(x = 1 - specificities, y = sensitivities)) +
+    geom_point(aes(x = 1 - best_spec, y = best_sens), color = "black",
+           data = lundstrom_auc) +
+    geom_text(aes(x = x, y = y, label = ci),
               parse = TRUE, size = 5*5/14, data = lundstrom_auc) +
-    geom_text(aes(x = x, y = 0.34, label = label), parse = TRUE,
-              size = 5*5/14, data = lundstrom_auc_counts) +
-    scale_color_manual(
-        values = setNames(c('#AC7B74', '#AA4F46', '#A10F1C'),
-                          c('2', '3', '4'))) +
+    geom_text(aes(x = x, y = 0.34, label = label), color = "black",
+              parse = TRUE, size = 5*5/14, data = lundstrom_auc_counts) +
     ylab("True Positive Rate") +
     xlab("False Positive Rate") +
     ggtitle("Mammalian GPCRs") +
@@ -490,6 +481,9 @@ p3_gpcr_roc <- lundstrom_outcomes %>%
                        limits = c(0, 1), labels = function(x) x*100) +
     scale_x_continuous(expand = c(0, 0), breaks = c(0, .5, 1),
                        limits = c(0, 1), labels = function(x) x*100) +
+    scale_color_continuous(limits = c(0, 100),
+                           low = "#A4A5A5", high = "#A10F1C",
+                           na.value = "white") +
     theme(legend.position = "None",
           aspect.ratio = 1,
           axis.title = element_text(size = 6),
@@ -588,7 +582,7 @@ p3_hpylori <- ggplot(hpylori_outcomes) +
                size = 0.75, position = position_quasirandom(varwidth = TRUE)) +
     annotate("text", x = -6.5, y = 3.25, label = "H. pylori",
              size = 7*5/14, fontface = "bold.italic") +
-    scale_color_gradient(low = "#A4A5A5", high = "#A10F1C",
+    scale_color_continuous(low = "#A4A5A5", high = "#A10F1C",
                          na.value = "black") +
     scale_x_continuous(breaks = c(-8:1), expand = c(0.01, 0.01)) +
     scale_y_continuous(breaks = seq(0, 3, 0.5), expand = c(0.02, 0.02)) +
@@ -603,16 +597,28 @@ p3_hpylori
 
 
 ```{r}
+hpylori_auc <- hpylori_outcomes %>%
+    calc_auc_roc(method = "auc") %>%
+    arrange(-outcome_percentile) %>%
+    mutate(auc = specify_decimal(auc*100),
+           lower95 = specify_decimal(lower95*100),
+           upper95 = specify_decimal(upper95*100),
+           ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')"),
+           x = rep(.5, 6),
+           y = c(.60, .50, .40, .30, .20, .10))
+
 p3_hpylori_roc <- hpylori_outcomes %>%
-    mutate(group = "group") %>%
-    calc_auc_roc(grouping_col = "group", method = "roc") %>%
-    ggplot() +
+    calc_auc_roc(method = "roc") %>%
+    group_by(outcome) %>%
+    split_groups() %>%
+    ggplot(aes(color = outcome_percentile)) +
     geom_abline(slope = 1, intercept = 0,
                 linetype = "dashed", color = "black") +
-    geom_path(aes(x = 1 - specificities, y = sensitivities,
-                  color = factor(outcome_threshold)), size = 0.25) +
-    scale_color_manual(
-        values = colorRampPalette(c("#A4A5A5", "#A10F1C"))(7)[2:7]) +
+    geom_path(aes(x = 1 - specificities, y = sensitivities), size = 0.25) +
+    geom_point(aes(x = 1 - best_spec, y = best_sens), color = "black",
+               data = hpylori_auc) +
+    scale_color_continuous(limits = c(0, 100),
+                           low = "#A4A5A5", high = "#A10F1C") +
     ylab("True Positive Rate") +
     xlab("False Positive Rate") +
     ggtitle("H. pylori") +
@@ -626,30 +632,15 @@ p3_hpylori_roc <- hpylori_outcomes %>%
               axis.title = element_text(size = 6))
 
 p3_hpylori_roc
-```
-
-```{r}
-hpylori_auc <- hpylori_outcomes %>%
-    mutate(group = "group") %>%
-    calc_auc_roc(grouping_col = "group", method = "auc") %>%
-    ungroup %>%
-    arrange(-outcome_threshold) %>%
-    mutate(auc = specify_decimal(auc*100),
-           lower95 = specify_decimal(lower95*100),
-           upper95 = specify_decimal(upper95*100),
-           ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')"),
-           x = rep(.5, 6),
-           y = c(.60, .50, .40, .30, .20, .10))
 
 p3_hpylori_auc <- ggplot(hpylori_auc) +
-    geom_text(aes(x = x, y = y, label = ci,
-                  color = factor(outcome_threshold)),
+    geom_text(aes(x = x, y = y, label = ci, color = outcome_percentile),
               parse = TRUE, size = 5*5/14) +
     annotate(geom = "text", x = .5, y = .70,
              label = format_pos_count(hpylori_auc),
              size = 5*5/14, parse = TRUE) +
-    scale_color_manual(
-        values = colorRampPalette(c("#A4A5A5", "#A10F1C"))(7)[2:7]) +
+    scale_color_continuous(limits = c(0, 100),
+                           low = "#A4A5A5", high = "#A10F1C") +
     scale_x_continuous(expand = c(0, 0), limits = c(0, 1)) +
     theme_void() + 
     theme(legend.position = "None",
@@ -697,12 +688,10 @@ p3_tmaritima
 ```
 
 ```{r}
-koth_auc <- tmaritima_outcomes %>%
-    mutate(outcome = as.numeric(outcome),
-           group = "group") %>%
-    calc_auc_roc(grouping_col = "group", method = "auc") %>%
+tmaritima_auc <- tmaritima_outcomes %>%
+    calc_auc_roc(method = "auc") %>%
     ungroup %>%
-    arrange(-outcome_threshold) %>%
+    arrange(-outcome_percentile) %>%
     mutate(auc = specify_decimal(auc*100),
            lower95 = specify_decimal(lower95*100),
            upper95 = specify_decimal(upper95*100),
@@ -710,25 +699,25 @@ koth_auc <- tmaritima_outcomes %>%
            y = c(.16, .07))
 
 p3_tmaritima_roc <- tmaritima_outcomes %>%
-    mutate(outcome = as.numeric(outcome),
-           group = "group") %>%
-    calc_auc_roc(grouping_col = "group", method = "roc") %>%
-    ggplot() +
+    calc_auc_roc(method = "roc") %>%
+    group_by(outcome) %>%
+    split_groups() %>%
+    ggplot(aes(color = outcome_percentile)) +
     geom_abline(slope = 1, intercept = 0,
                 linetype = "dashed", color = "black") +
-    geom_path(aes(x = 1 - specificities, y = sensitivities,
-                  color = factor(outcome_threshold))) +
-    geom_text(aes(x = .65, y = y, label = ci,
-                  color = factor(outcome_threshold)),
-              parse = TRUE, size = 5*5/14, data = koth_auc) +
+    geom_path(aes(x = 1 - specificities, y = sensitivities)) +
+    geom_text(aes(x = .65, y = y, label = ci),
+              parse = TRUE, size = 5*5/14, data = tmaritima_auc) +
+    geom_point(aes(x = 1 - best_spec, y = best_sens), color = "black",
+               data = tmaritima_auc) +
     annotate(geom = "text", x = .65, y = .24,
-             label = format_pos_count(koth_auc),
+             label = format_pos_count(tmaritima_auc),
              size = 5*5/14, parse = TRUE) +
-    scale_color_manual(values = c("#AD665D", "#A10F1C"),
-                       na.value = "black") +
     ylab("True Positive Rate") +
     xlab("False Positive Rate") +
     ggtitle("T. maritima") +
+    scale_color_continuous(limits = c(0, 100),
+                           low = "#A4A5A5", high = "#A10F1C") +
     scale_y_continuous(expand = c(0, 0), breaks = c(0, .5, 1),
                        limits = c(0, 1), labels = function(x){x*100}) +
     scale_x_continuous(expand = c(0, 0), breaks = c(0, .5, 1),
@@ -764,7 +753,9 @@ surade_outcomes <- read_csv("small-scale/surade.060915.outcomes.csv",
                            levels = c("pTTQ18-A", "pTTQ18-C",
                                       "pQE-A", "pQE-C",
                                       "pBAD-A", "pBAD-C",
-                                      "pNZ-A", "pNZ-C"))) %>%
+                                      "pNZ-A", "pNZ-C")),
+           Outcome = factor(Outcome, ordered = TRUE)) %>%
+    rename(outcome = Outcome) %>%
     # Only consider, pET variety vectors in E. coli
     filter(Vector %in% c("E. coli pTTQ18-A", "E. coli pTTQ18-C",
                          "E. coli pQE-A", "E. coli pQE-C")) %>%
@@ -779,14 +770,14 @@ surade_median <- surade_outcomes %>%
 ```{r surade_plotting}
 p3_surade <- ggplot(surade_outcomes) +
     geom_vline(xintercept = surade_median, linetype = "dashed") +
-    geom_quasirandom(aes(x = score, y = factor(Outcome), color = Outcome),
+    geom_quasirandom(aes(x = score, y = outcome, color = as.numeric(outcome)),
                      varwidth = TRUE, width = 0.3, size = 0.75) +
     annotate("text", x = -2.7, y = 3.36,
              label = "Microbial Secondary Transporters",
              size = 7*5/14, fontface = "bold") +
     scale_x_continuous(breaks = seq(-4, 1, 0.5)) +
-    scale_color_gradient(low = "#A4A5A5", high = "#A10F1C",
-                         na.value = "black") +
+    scale_color_continuous(low = "#A4A5A5", high = "#A10F1C",
+                           na.value = "black") +
     xlab(expression("IMProve score")) +
     ylab("Dot Density") +
     theme(legend.position = "None",
@@ -797,38 +788,35 @@ p3_surade
 
 ```{r}
 surade_auc <- surade_outcomes %>%
-    mutate(group = "pETonly") %>%
-    rename(outcome = Outcome) %>%
-    calc_auc_roc(grouping_col = "group", method = "auc") %>%
-    ungroup %>%
-    arrange(-outcome_threshold) %>%
+    calc_auc_roc(method = "auc") %>%
+    arrange(-outcome_percentile) %>%
     mutate(auc = specify_decimal(auc*100),
            lower95 = specify_decimal(lower95*100),
            upper95 = specify_decimal(upper95*100),
            ci = paste0("'", auc, "'~(", lower95, "-", upper95, ")")) %>%
-    mutate_rows(outcome_threshold == 10, y = 0.07) %>%
-    mutate_rows(outcome_threshold == 100, y = 0.16)
+    mutate_rows(outcome_percentile == 10, y = 0.07) %>%
+    mutate_rows(outcome_percentile == 100, y = 0.16)
 
 p3_surade_roc <- surade_outcomes %>%
-    mutate(group = "pETonly") %>%
-    rename(outcome = Outcome) %>%
-    calc_auc_roc(grouping_col = "group", method = "roc") %>%
-    ggplot() +
+    calc_auc_roc(method = "roc") %>%
+    group_by(outcome) %>%
+    split_groups() %>%
+    ggplot(aes(color = outcome_percentile)) +
     geom_abline(slope = 1, intercept = 0,
                 linetype = "dashed", color = "black") +
-    geom_path(aes(x = 1 - specificities, y = sensitivities,
-                  color = factor(outcome_threshold))) +
-    geom_text(aes(x = .65, y = y, label = ci, color = factor(outcome_threshold)),
+    geom_path(aes(x = 1 - specificities, y = sensitivities)) +
+        geom_point(aes(x = 1 - best_spec, y = best_sens), color = "black",
+               data = surade_auc) +
+    geom_text(aes(x = .65, y = y, label = ci),
               parse = TRUE, size = 5*5/14, data = surade_auc) +
     annotate(geom = "text", x = .65, y = .24,
              label = format_pos_count(surade_auc),
              size = 5*5/14, parse = TRUE) +
-    scale_color_manual(
-        values = colorRampPalette(c("#A4A5A5", "#A10F1C"))(3)[2:3],
-        na.value = "black") +
     ylab("True Positive Rate") +
     xlab("False Positive Rate") +
     ggtitle("Microbial\nsecondary transporters") +
+    scale_color_continuous(limits = c(0, 100),
+                           low = "#A4A5A5", high = "#A10F1C") +
     scale_y_continuous(expand = c(0, 0), breaks = c(0, .5, 1),
                        limits = c(0, 1), labels = function(x){x*100}) +
     scale_x_continuous(expand = c(0, 0), breaks = c(0, .5, 1),
@@ -870,10 +858,10 @@ p3_extended
 small_scale <- bind_rows(
     archaea_outcomes %>%
         filter(Measurement == "WB/Gel") %>%
-        mutate_rows(Outcome == 10, Outcome = 5) %>%
+        mutate_rows(outcome == 10, outcome = 5) %>%
         mutate(dataset = "archaea") %>%
         select(-`E. coli strain`, -Vector, -Measurement) %>%
-        rename(title = Protein, outcome = Outcome),
+        rename(title = Protein),
     tcross_outcomes %>%
         filter(fraction == "MEM") %>%
         select(-cloned, -host, -fraction) %>%
@@ -896,14 +884,12 @@ small_scale <- bind_rows(
                outcome = as.numeric(outcome) - 1),
     surade_outcomes %>%
         select(-Vector) %>%
-        rename(title = `GI number`,
-               outcome = Outcome) %>%
-        mutate(dataset = "surade")
+        rename(title = `GI number`) %>%
+        mutate(dataset = "surade",
+               outcome = as.numeric(outcome) - 1)
     )
 
 
-if (write_out)
-    save.image("fig_small_scale.RData")
-
+save(small_scale, file = "small-scale.RData")
 sessionInfo()
 ```

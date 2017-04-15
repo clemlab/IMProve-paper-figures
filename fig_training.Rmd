@@ -186,32 +186,7 @@ p1_table$grobs[ind][[1L]][["gp"]]$font <- 1L
 ind <- find_cell(p1_table, 7L, 1L, "rowhead-fg")
 p1_table$grobs[ind][[1L]][["gp"]]$font <- 1L
 
-if (!write_out)
-    ggdraw(p1_table)
-```
-
-
-# train a linear models for fun (might take this out for the publication)
-```
-lm_data <- ecoli_training_norm %>%
-    filter(cterm != "fluman") %>%
-    select(id, outcome) %>%
-    inner_join(daley_allstats_transformed, by = "id") %>%
-    select(-id)
-lm_data[is.na(lm_data)] <- 0
-lm_fit <- train(outcome ~ ., data = lm_data,
-                 method = "lm")
-lm_data$scores <- predict(lm_fit, lm_data)
-cor(lm_data$outcome, lm_data$scores)
-
-fluman_data <- ecoli_training_norm %>%
-    filter(cterm == "fluman") %>%
-    select(id, outcome) %>%
-    inner_join(daley_allstats_transformed, by = "id") %>%
-    select(-id)
-fluman_data[is.na(fluman_data)] <- 0
-fluman_data$scores <- predict(lm_fit, fluman_data)
-cor(fluman_data$outcome, fluman_data$scores)
+ggdraw(p1_table)
 ```
 
 
@@ -228,18 +203,18 @@ ecoli_xy_cor <- training_env$ecoli_training %>%
     group_by(cterm) %>%
     mutate(fn_prefix = paste0("training/ecoli_xy_boot_", cterm)) %>%
     do(boot_perm(., fn_prefix = unique(.$fn_prefix),
-                 count = bs_count, cores = cores, force = TRUE))
+                 count = bs_count, cores = cores, force = FALSE))
 
 # need to calculate AUCs for each activity value
 # but within the "in" and "out" groupings
 ecoli_roc <- training_env$ecoli_training %>%
     filter(normalized, !is.na(score)) %>%
     group_by(cterm) %>%
-    do(calc_auc_roc(., grouping_col = "cterm", method = "roc"))
+    do(calc_auc_roc(., method = "roc"))
 ecoli_auc <- training_env$ecoli_training %>%
     filter(normalized, !is.na(score)) %>%
     group_by(cterm) %>%
-    do(calc_auc_roc(., grouping_col = "cterm", method = "auc"))
+    do(calc_auc_roc(., method = "auc"))
 ```
 
 
@@ -288,12 +263,16 @@ p1_ecoli_xy <- training_env$ecoli_training %>%
           plot.margin = unit(c(0L, 0L, 0L, 0L), "mm")) +
     facet_wrap(~cterm, ncol = 1, scales = "free_y")
 
-p1_ecoli_xy <- ggplotGrob(p1_ecoli_xy)
-p1_ecoli_xy$grobs$axis_l1$children$axis$grobs[[1]]$children[[1]]$label <-
-    c("0", "", "2", "", "4", "6", "8")
+p1_ecoli_xy %<>% ggplot_build
 
-if (!write_out)
-    ggdraw(p1_ecoli_xy)
+for (idx in c(2, 4)) {
+    p1_ecoli_xy$layout$panel_ranges[[1]]$y.labels[[idx]] <- ""
+    p1_ecoli_xy$layout$panel_ranges[[1]]$y.major[[idx]] <- NA
+}
+
+p1_ecoli_xy %<>% ggplot_gtable
+
+ggdraw(p1_ecoli_xy)
 ```
 
 ## Training data: Receiver Operating Characteristics
@@ -305,9 +284,10 @@ interesting behavior on the all-AUC plot (the following figure), but there
 potentially are many others that could be interesting!
 ```{r training_roc}
 ecoli_selected_auc <- ecoli_auc %>%
-    mutate(group = factor(group, levels = c("in", "out", "fluman"),
+    ungroup %>%
+    mutate(cterm = factor(cterm, levels = c("in", "out", "fluman"),
                           ordered = TRUE)) %>%
-    group_by(group) %>%
+    group_by(cterm) %>%
     filter(find_closest(outcome_percentile, c(25L, 75L))) %>%
     mutate(outcome_percentile = outcome_percentile %>% round %>% as.integer,
            auc = specify_decimal(auc*100),
@@ -315,25 +295,26 @@ ecoli_selected_auc <- ecoli_auc %>%
            upper95 = specify_decimal(upper95*100),
            ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')")) %>%
     ungroup %>%
-    arrange(outcome_percentile, group)
+    arrange(outcome_percentile, cterm)
 
 ecoli_selected_counts <- ecoli_selected_auc %>%
     group_by(outcome_percentile) %>%
     summarize(count = paste(pos_count, collapse = ","))
 
 p1_ecoli_roc <- ecoli_roc %>%
-    mutate(group = factor(group, levels = c("in", "out", "fluman"),
+    ungroup %>%
+    mutate(cterm = factor(cterm, levels = c("in", "out", "fluman"),
                           ordered = TRUE)) %>%
-    group_by(group) %>%
+    group_by(cterm) %>%
     filter(find_closest(outcome_percentile, c(25L, 75L))) %>%
     mutate(outcome_percentile =
                outcome_percentile %>% round %>% as.integer) %>%
     ggplot() +
     geom_abline(slope = 1L, intercept = 0L,
                 linetype = "dashed", color = "darkgrey") +
-    geom_path(aes(x = 1 - specificities, y = sensitivities, color = group)) +
-    geom_text(aes(x = .75, y = .8*(.4 - as.numeric(group)/10) - .03,
-                  color = group, label = ci),
+    geom_path(aes(x = 1 - specificities, y = sensitivities, color = cterm)) +
+    geom_text(aes(x = .75, y = .8*(.4 - as.numeric(cterm)/10) - .03,
+                  color = cterm, label = ci),
               size = 5*5/14, parse = TRUE, data = ecoli_selected_auc) +
     geom_text(aes(x = .75, y = .29, label = count),
               size = 5*5/14, parse = FALSE, data = ecoli_selected_counts) +
@@ -349,13 +330,12 @@ p1_ecoli_roc <- ecoli_roc %>%
           strip.background = element_blank())
 
 p1_ecoli_roc <- ggplotGrob(p1_ecoli_roc)
-p1_ecoli_roc$grobs$strip_t1$grobs[[1L]]$children[[2L]]$children[[1L]]$label <-
+p1_ecoli_roc$grobs[[12L]]$grobs[[1L]]$children[[2L]]$children[[1L]]$label <-
     expression(25L ^ "th"*~"percentile")
-p1_ecoli_roc$grobs$strip_t2$grobs[[1L]]$children[[2L]]$children[[1L]]$label <-
+p1_ecoli_roc$grobs[[13L]]$grobs[[1L]]$children[[2L]]$children[[1L]]$label <-
     expression(75L ^ "th"*~"percentile")
 
-if (!write_out)
-    ggdraw(p1_ecoli_roc)
+ggdraw(p1_ecoli_roc)
 ```
 
 # AUC across Expression Cutoffs
@@ -365,21 +345,22 @@ performance, the AUC of the ROCs for each one of these cutoffs is plotted.
 ```{r training_auc}
 # all possible cutoffs with AUCs
 p1_ecoli_auc <- ecoli_auc %>%
-    mutate(group = factor(group, levels = c("in", "out", "fluman"),
+    ungroup %>%
+    mutate(cterm = factor(cterm, levels = c("in", "out", "fluman"),
                           ordered = TRUE)) %>%
-    ggplot(aes(x = outcome_percentile, color = group)) +
+    ggplot(aes(x = outcome_percentile, color = cterm)) +
     geom_hline(aes(yintercept = .5), linetype = "dashed", color = "darkgrey") +
     geom_line(aes(y = auc)) +
     scale_y_continuous(expand = c(0L, 0L), breaks = seq(0, 1, .1),
                        labels = function(x) x*100) +
-    scale_x_continuous(expand = c(0L, 0L), breaks = seq(0L, 100L, 25L)) +
+    scale_x_continuous(expand = c(0L, 0L), breaks = seq(0L, 100L, 25L),
+                       limit = c(0, 100)) +
     ylab("AUC") +
     xlab("Activity Percentile Rank") +
     scale_color_manual(values = brewer.pal(3L, "Dark2")) +
     theme(legend.position = "None")
 
-if (!write_out)
-    p1_ecoli_auc
+p1_ecoli_auc
 ```
 
 ## Compile the plots for the training data figure
@@ -394,7 +375,7 @@ p1_main <- ggdraw() +
     draw_plot(plot_grid(p1_ecoli_roc, p1_ecoli_auc,
                         nrow = 1L, rel_widths = c(1L, 1L)),
               x = 0, y = 0, width = .75, height = .5) +
-    draw_plot_label(letters[1:5],
+    draw_plot_label(LETTERS[1:5],
                     c(0, 0.26, .75, 0, 0.38), c(1, 1, 1, 0.52, 0.52), size = 8L)
 
 if (write_out) {
@@ -402,9 +383,9 @@ if (write_out) {
               plot = p1_main,
               base_width = uconv(183L, "mm", "in", "Length"),
               base_height = 3L)
-} else {
-    p1_main
 }
+
+ggdraw(p1_main)
 ```
 
 ## Save environment for future reference
@@ -451,4 +432,27 @@ table(ecoli_daley_fluman$outcome_var_in > ecoli_daley_fluman$outcome_var_fluman)
 #
 # 22/51
 # [1] 0.4313725
+```
+
+# train a linear models for fun (might take this out for the publication)
+```
+lm_data <- ecoli_training_norm %>%
+    filter(cterm != "fluman") %>%
+    select(id, outcome) %>%
+    inner_join(daley_allstats_transformed, by = "id") %>%
+    select(-id)
+lm_data[is.na(lm_data)] <- 0
+lm_fit <- train(outcome ~ ., data = lm_data,
+                 method = "lm")
+lm_data$scores <- predict(lm_fit, lm_data)
+cor(lm_data$outcome, lm_data$scores)
+
+fluman_data <- ecoli_training_norm %>%
+    filter(cterm == "fluman") %>%
+    select(id, outcome) %>%
+    inner_join(daley_allstats_transformed, by = "id") %>%
+    select(-id)
+fluman_data[is.na(fluman_data)] <- 0
+fluman_data$scores <- predict(lm_fit, fluman_data)
+cor(fluman_data$outcome, fluman_data$scores)
 ```
