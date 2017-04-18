@@ -190,53 +190,100 @@ p2_posmix_ppv_prep <- nycomps_gene_outcomes %>%
     group_by(outcome) %>%
     arrange(desc(thresholds)) %>%
     do(prep_for_polygon(.)) %>%
-    as_tibble
+    as_tibble %>%
+    ungroup() %>%
+    mutate(color = ifelse(y_greater_min, outcome_percentile, 0),
+           outcome = factor(outcome, levels = c("pos", "mix")))
+
+p2_posmix_ppv_prep_best <- p2_posmix_ppv_prep %>%
+   filter(type == "ppv") %>%
+   distinct(ppv, min_ppv, thresholds, threshold_percentiles, outcome) %>%
+   inner_join(nycomps_auc %>%
+                  filter(cut == "Genes", cterm == "all") %>%
+                  mutate(outcome = factor(outcome, levels = c(2, 3),
+                                          labels = c("mix", "pos"))),
+              by = c("outcome", "thresholds" = "best_thresh")) %>%
+    mutate(outcome = factor(as.character(outcome), levels = c("pos", "mix")),
+           percent_imp = (ppv - min_ppv)/min_ppv)
 
 p2_posmix_ppv <- p2_posmix_ppv_prep %>%
-    filter(outcome == "mix") %>%
-    ggplot() +
-    geom_polygon(aes(x = threshold_percentiles, y = ppv, group = id,
-                     fill = y_greater_min, color = y_greater_min), size = 0.01) +
-    geom_path(aes(x = threshold_percentiles, y = ppv), size = 0.25,
+    #filter(outcome == "mix") %>%
+    ggplot(aes(x = threshold_percentiles, y = ppv)) +
+    geom_polygon(aes(group = id, fill = color), size = 0.01) +
+    geom_path(size = 0.25,
               data = p2_posmix_ppv_prep %>%
-                  filter(#outcome == "mix",
-                         type != "min_y") %>%
-                  distinct(threshold_percentiles, ppv)) +
+                  filter(type != "min_y") %>%
+                  distinct(outcome, threshold_percentiles, ppv)) +
+    geom_point(size = 0.5, data = p2_posmix_ppv_prep_best) +
     geom_hline(aes(yintercept = min_ppv),
                linetype = "dashed", color = "darkgrey", size = 0.5,
                data = p2_posmix_ppv_prep %>%
-                   filter(#outcome == "mix",
-                          type == "ppv") %>%
-                   arrange(thresholds) %>%
-                   summarize(min_ppv = ppv[[1]])) +
+                   filter(type != "min_y") %>%
+                   distinct(outcome, min_ppv)) +
     scale_x_continuous(expand = c(0, 0), limits = c(0, 1),
                        labels = function(x) x*100) +
     scale_y_continuous(expand = c(0, 0), limits = c(0, .6001),
                        breaks = seq(0, 1, .2), labels = function(x) x*100) +
     xlab(expression("Percentile IMProve score")) +
     ylab("PPV") +
-    scale_color_manual(values = setNames(c("#A4A5A5", "#A10F1C"),
-                                         c(FALSE, TRUE)),
-                       guide = FALSE) +
-    scale_fill_manual(values = setNames(c("#A4A5A5", "#A10F1C"),
-                                         c(FALSE, TRUE)),
-                       guide = FALSE) +
-    theme(plot.margin = unit(c(1/16, 1/16, 1/16, 0), "in"))
+    scale_fill_continuous(low = "#A4A5A5", high = "#A10F1C",
+                          limits = c(0, 100), guide = FALSE) +
+    theme(plot.margin = unit(rep(0, 4), "in"),
+          strip.background = element_blank(),
+          strip.text = element_blank()) +
+    facet_wrap(~outcome, ncol = 1)
 
 p2_posmix_ppv
+```
 
+```{r}
+p2_posmix_ppv_chg <- p2_posmix_ppv_prep %>% 
+    ungroup() %>%
+    filter(type == "ppv") %>% 
+    mutate(percent_imp = (ppv - min_ppv)/min_ppv) %>%
+    select(threshold_percentiles, percent_imp, outcome_percentile, id) %>% 
+    group_by(outcome_percentile, id) %>%
+    filter(threshold_percentiles == max(threshold_percentiles)) %>%
+    # spread(outcome, ppv) %>%
+    # mutate(ppv_imp = pos/mix) %>%
+    ggplot(aes(x = threshold_percentiles, y = percent_imp)) +
+    geom_line(aes(color = outcome_percentile,
+                  group = outcome_percentile)) +
+    geom_point(size = 0.5, data = p2_posmix_ppv_prep_best) +
+    xlab(expression("Percentile IMProve score")) +
+    ylab("PPV Percent Change") +
+    scale_x_continuous(expand = c(0, 0), limits = c(0, 1),
+                       labels = function(x) x*100) +
+    scale_y_continuous(expand = c(0, 0), # limits = c(0, 2),
+                       #breaks = seq(0, 150, .25),
+                       labels = function(x) x*100,
+                       sec.axis = sec_axis(~ ., labels = function(x) paste0(x, "x"),
+                                           name = "PPV Fold Change")) +
+    scale_color_continuous(low = "#A4A5A5", high = "#A10F1C",
+                           limits = c(0, 100), guide = FALSE) +
+    coord_cartesian(ylim = c(0, 2)) +
+    theme(plot.margin = unit(rep(0, 4), "in"))
+
+p2_posmix_ppv_chg
+```
+
+```{r}
 p2_posmix_ppv_prep %>%
     filter(#outcome == "mix",
-           find_closest(threshold_percentiles, 0.75),
+           find_closest(threshold_percentiles, 0.75) | 
+               thresholds %in% p2_posmix_ppv_prep_best$thresholds,
            type == "ppv") %>% 
-    distinct(threshold_percentiles, thresholds, ppv, min_ppv) %>%
+    distinct(outcome, threshold_percentiles, thresholds, ppv, min_ppv) %>%
+    arrange(desc(threshold_percentiles), outcome) %>%
     mutate(`Enrichment at 75th percentile` = ppv - min_ppv)
 
 p2_posmix_ppv_prep %>%
     filter(#outcome == "mix",
-           find_closest(thresholds, 0.5),
-           type == "ppv") %>% 
-    distinct(threshold_percentiles, thresholds, ppv, min_ppv) %>%
+           find_closest(thresholds, 0.5) | 
+               thresholds %in% p2_posmix_ppv_prep_best$thresholds,
+           type == "ppv") %>%
+    distinct(outcome, threshold_percentiles, thresholds, ppv, min_ppv) %>%
+    arrange(desc(thresholds), outcome) %>%
     mutate(additional_expressed =
                (ppv - min_ppv) * nrow(nycomps_gene_outcomes))
 ```
@@ -246,18 +293,25 @@ p2_posmix_histogram_meds <- nycomps_gene_outcomes %>%
     group_by(posmix_outcome) %>%
     summarize(med = median(score))
 
-p2_posmix_histogram <- ggplot(nycomps_gene_outcomes) +
-    geom_histogram(aes(x = score, fill = posmix_outcome),
-                   binwidth = fd_bw(nycomps_gene_outcomes$score),
+p2_posmix_histogram_bw <- fd_bw(nycomps_gene_outcomes$score)
+
+p2_posmix_histogram <- nycomps_gene_outcomes %>%
+    mutate_rows(gene_outcome == "pos", gene_outcome = "mix") %>%
+    ggplot(aes(x = score)) +
+    geom_histogram(aes(fill = as.numeric(gene_outcome), group = gene_outcome),
+                   binwidth = p2_posmix_histogram_bw,
                    alpha = 1, position = "identity") +
-    # geom_vline(xintercept = nycomps_gene_outcomes$score %>%
-    #                quantile(0.75, names = FALSE),
-    #            linetype = "dashed") +
+    geom_step_hist(color = "#A10F1C",
+                   binwidth = p2_posmix_histogram_bw,
+                   data = nycomps_gene_outcomes %>%
+                       filter(gene_outcome == "pos")) +
+    geom_point(size = 0.5, aes(x = thresholds, y = 0),
+               data = p2_posmix_ppv_prep_best) +
     scale_x_continuous(expand = c(0, 0),
                        breaks = nycomps_breaks, limits = nycomps_xscale) +
     scale_y_continuous(expand = c(0, 0)) +
-    scale_fill_manual(values = c("#A4A5A5","#A10F1C"),
-                      labels = c("Not Expressed", "Expressed")) +
+    scale_fill_continuous(limits = c(1, 3), low = "#A4A5A5", high = "#A10F1C",
+                          guide = FALSE) +
     ylab("Count") +
     xlab(expression("IMProve score")) +
     theme(legend.key = element_blank(),
@@ -277,7 +331,7 @@ p2_posmix_histogram <- ggplot(nycomps_gene_outcomes) +
 p2_posmix_ratio_data <- ggplot_build(p2_posmix_histogram)$data[[1]]  %>%
     select(fill, x, count) %>%
     spread(fill, count) %>%
-    rename(`pos` = `#A10F1C`, `neg` = `#A4A5A5`) %>%
+    rename(`pos` = `#AD665D`, `neg` = `#A4A5A5`) %>%
     mutate(total = pos + neg,
            ratio = pos / neg,
            pos_pct = pos / total,
@@ -297,22 +351,30 @@ p2_posmix_histogram %<>% ggplotGrob
 for (idx in 4:6)
     p2_posmix_histogram$grobs[[15L]]$grobs[[1L]]$grobs[[idx]] <- zeroGrob()
 
-p2_posmix_histogram$grobs[[15L]]$grobs[[1L]][[1L]][[7L]]$gp$col <- "#A4A5A5"
-p2_posmix_histogram$grobs[[15L]]$grobs[[1L]][[1L]][[8L]]$gp$col <- "#A10F1C"
+# p2_posmix_histogram$grobs[[15L]]$grobs[[1L]][[1L]][[7L]]$gp$col <- "#A4A5A5"
+# p2_posmix_histogram$grobs[[15L]]$grobs[[1L]][[1L]][[8L]]$gp$col <- "#A10F1C"
 
 ggdraw(p2_posmix_histogram)
 ```
 
 
 ```{r nycomps_posmix_roc}
+format_pos_count <- function(df) {
+    df %>%
+        arrange(pos_count) %>%
+        summarize(pct = paste0(round(pos_count/count*100), '%', collapse = ", "),
+                  count = count[[1]]) %$%
+        paste0(pct, " / ", count)
+}
+
 p2_posmix_roc_label <- nycomps_auc %>%
-    filter(cut == "Genes", cterm == "all", outcome == 2) %>%
+    filter(cut == "Genes", cterm == "all") %>%
+    arrange(pos_count) %>%
     mutate(auc = specify_decimal(auc*100),
            lower95 = specify_decimal(lower95*100),
            upper95 = specify_decimal(upper95*100),
-           ci = paste0("'", auc, "'~('", lower95, "'-'", upper95, "')"),
-           count = fmt_cnt(pos_count, count)
-           )
+           ci = paste0(auc, " (", lower95, "-", upper95, ")"),
+           y = c(.13, .04))
 
 p2_posmix_roc <- nycomps_gene_outcomes %>%
     rename(outcome = gene_outcome) %>%
@@ -324,12 +386,14 @@ p2_posmix_roc <- nycomps_gene_outcomes %>%
                 color = "darkgrey") +
     geom_path(aes(x = 1 - specificities, y = sensitivities,
                   color = outcome_percentile)) +
-    annotate(geom = "text", x = .70, y = .19,
-             label = p2_posmix_roc_label$count,
+    geom_point(size = 0.5, aes(x = 1 - best_spec, y = best_sens),
+               data = p2_posmix_ppv_prep_best) +
+    annotate(geom = "text", x = .70, y = .22,
+             label = format_pos_count(p2_posmix_roc_label),
              size = 6*5/14) +
-    annotate(geom = "text", x = .70, y = .10,
-             label = p2_posmix_roc_label$ci,
-             size = 6*5/14, parse = TRUE) +
+    geom_text(aes(x = .70, y = y, label = ci, color = outcome_percentile),
+              size = 6*5/14,
+              data = p2_posmix_roc_label) +
     scale_y_continuous(expand = c(0, 0), labels = function(x) x*100) +
     scale_x_continuous(expand = c(0, 0), labels = function(x) x*100) +
     xlab("False Positive Rate") +
@@ -432,31 +496,32 @@ p2_main <- ggdraw() +
              label = paste(plasmid_summary["1"], "\nsuccesses")) +
     annotate("text", x = 0.2, y = 0.8, size = 6*5/14,
              label = paste(plasmid_summary["-1"], "\nfailures")) +
+    draw_plot(plot_grid(p2_posmix_ppv, p2_posmix_ppv_chg, nrow = 1, align = 'h',
+                        labels = LETTERS[2:3], label_size = 8),
+              x = 1/3, y = 0.6775, width = 2/3, height = .3225) +
     draw_plot(
-        plot_grid(p2_posmix_ppv, p2_posmix_histogram,
-                  labels = c("b", "c"), label_size = 8,
-                  ncol = 1, align = "v"),
-        x = 1/3, y = .355, width = 2/3, height = 1 - .355) +
+       # plot_grid(p2_posmix_ppv, 
+                  p2_posmix_histogram,
+                 # labels = c("B", "C"), label_size = 8,
+                  #ncol = 1, align = "v"),
+        x = 1/3, y = .355, width = 2/3, height = .3225) +
     draw_plot(p2_trial_counts, x = 0, y = .37, width = .33, height = .35) +
     draw_plot(p2_posmix_roc, x = -.12, y = 0, width = .5, height = .35) +
     draw_plot(p_nycomps_cterm, x = .27, y = 0, width = .715, height = .38) +
-    draw_plot_label(label = c("a", "d", "e"),
+    draw_plot_label(label = c("A", "F", "G"),
                     x = c(0, 0, .272),
                     y = c(1, .385, .385), size = 8)
 
-if (write_out == TRUE) {
-    save_plot(filename = "plots/fig2_newE.pdf",
-              plot = p2_main,
-              base_width = uconv(136, "mm", "in", "Length"))
-}
+save_plot(filename = "plots/fig2_newE.pdf",
+          plot = p2_main,
+          base_width = uconv(136, "mm", "in", "Length"))
 
 ggdraw(p2_main)
 ```
 
 ```{r session}
-if (write_out)
-    save(nycomps_features, nycomps_all_outcomes, nycomps_gene_outcomes,
-         nycomps_xscale, nycomps_breaks,
-         file = "large-scale.RData", compression_level = 9)
+save(nycomps_features, nycomps_all_outcomes, nycomps_gene_outcomes,
+     nycomps_xscale, nycomps_breaks,
+     file = "large-scale.RData", compression_level = 9)
 sessionInfo()
 ```
