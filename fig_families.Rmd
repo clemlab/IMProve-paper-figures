@@ -458,5 +458,6 @@ ggdraw(f_families)
 ```
 
 ```{r session}
+save.image('fig_families.RData')
 sessionInfo()
 ```
