@@ -20,16 +20,6 @@ library(datamart)
 library(RColorBrewer)
 library(cowplot)
 
-library(doMC)
-registerDoMC(cores = 4L)
-
-library(multidplyr)
-# set up parallel processing
-create_cluster(4L) %>%
-    cluster_library("tidyverse") %>%
-    cluster_library("myutils") %>%
-    set_default_cluster()
-
 # devtools::install("myutils")
 library(myutils)
 ```
@@ -252,6 +242,12 @@ p2_posmix_ppv_prep_best <- p2_posmix_ppv_prep %>%
 
 p2_posmix_ppv <- p2_posmix_ppv_prep %>%
     ggplot(aes(x = threshold_percentiles, y = ppv)) +
+    geom_vline(xintercept = 0.75, color = "#bcbf11") +
+    geom_hline(aes(yintercept = ppv), color = "#bcbf11",
+               data = p2_posmix_ppv_prep %>%
+                   filter(type != "min_y",
+                          find_closest(threshold_percentiles, 0.75)) %>%
+                   distinct(outcome, threshold_percentiles, ppv)) +
     geom_polygon(aes(group = id, fill = color), size = 0.01) +
     geom_path(size = 0.25,
               data = p2_posmix_ppv_prep %>%
@@ -262,12 +258,19 @@ p2_posmix_ppv <- p2_posmix_ppv_prep %>%
                data = p2_posmix_ppv_prep %>%
                    filter(type != "min_y") %>%
                    distinct(outcome, min_ppv)) +
+    geom_text(aes(x = 0.25, y = 0.40, label = text,
+                  color = as.numeric(outcome)),
+              data = data_frame(
+                  outcome = factor(c("pos", "mix")),
+                  text = c("Only positive", "At least one positive"))) +
     scale_x_continuous(limits = c(0, 1),
                        labels = function(x) x*100) +
     scale_y_continuous(limits = c(0, .6001), breaks = seq(0, 1, .2),
                        labels = function(x) x*100) +
     xlab(expression("Percentile IMProve score")) +
     ylab("Positive Predictive Value") +
+    scale_color_continuous(low = "#A4A5A5", high = "#A10F1C",
+                           limits = c(0, 2), guide = FALSE) +
     scale_fill_continuous(low = "#A4A5A5", high = "#A10F1C",
                           limits = c(0, 100), guide = FALSE) +
     theme(strip.text = element_blank()) +
@@ -287,6 +290,13 @@ p2_posmix_ppv_chg <- p2_posmix_ppv_prep %>%
     # spread(outcome, ppv) %>%
     # mutate(ppv_imp = pos/mix) %>%
     ggplot(aes(x = threshold_percentiles, y = percent_imp)) +
+    geom_segment(x = 0.75, xend = 0.75, y = 0, yend = 3, color = "#bcbf11",
+                 linetype = "dashed", size = 0.25) +
+    geom_hline(aes(yintercept = ppv/min_ppv), color = "#bcbf11",
+               data = p2_posmix_ppv_prep %>%
+                   filter(type != "min_y", outcome == "pos",
+                          find_closest(threshold_percentiles, 0.75)) %>%
+                   distinct(outcome, threshold_percentiles, min_ppv, ppv)) +
     geom_line(aes(color = outcome_percentile,
                   group = outcome_percentile)) +
     # geom_point(size = 0.5, data = p2_posmix_ppv_prep_best) +
@@ -303,15 +313,11 @@ p2_posmix_ppv_chg
 
 ```{r}
 p2_posmix_ppv_prep %>%
-    filter(find_closest(thresholds, 0.5) | 
-               find_closest(threshold_percentiles, 0.75) | 
-               find_closest(threshold_percentiles, 0.97) |
-               find_closest(threshold_percentiles, 0.90) |
+    filter(find_closest(thresholds, 0.5) |
+               find_closest(threshold_percentiles, c(0.75, 0.97, 0.90)) |
                find_closest(ppv, min_ppv * 2 %>% unique) |
                thresholds %in% p2_posmix_ppv_prep_best$thresholds,
-               thresholds %in% filter(nycomps_auc, cut == "Genes", cterm == "all") %$%
-                    unlist(best_thresh),
-           type == "ppv") %>% 
+           type == "ppv") %>%
     distinct(outcome, threshold_percentiles, thresholds, ppv, min_ppv) %>%
     arrange(desc(threshold_percentiles), outcome) %>%
     transmute(outcome,
@@ -355,6 +361,7 @@ p2_posmix_histogram <- nycomps_gene_outcomes %>%
     bind_rows(. , mutate(., orig = FALSE) %>% filter(gene_outcome == "pos")) %>%
     mutate_rows(gene_outcome == "pos" & orig != TRUE, gene_outcome = "mix") %>%
     ggplot(aes(x = score)) +
+    geom_vline(xintercept = 0.5, color = "#bcbf11") +
     geom_histogram(aes(fill = as.numeric(gene_outcome), group = gene_outcome),
                    binwidth = p2_posmix_histogram_bw,
                    alpha = 1, position = "identity") +
@@ -383,7 +390,7 @@ p2_posmix_histogram <- nycomps_gene_outcomes %>%
 #                  data = spread(p2_posmix_histogram_meds, posmix_outcome, med))
 
 # for ratios
-p2_posmix_ratio_data <- ggplot_build(p2_posmix_histogram)$data[[1]]  %>%
+p2_posmix_ratio_data <- ggplot_build(p2_posmix_histogram)$data[[2]]  %>%
     select(fill, x, count) %>%
     spread(fill, count) %>%
     rename(pos = `#A10F1C`,
@@ -465,8 +472,6 @@ p2_posmix_roc <- nycomps_gene_outcomes %>%
                   rename(outcome = gene_outcome) %>%
                   filter(outcome != "pos") %>%
                   calc_auc_roc(method = "roc")) +
-    geom_point(size = 0.5, aes(x = 1 - best_spec, y = best_sens),
-               data = p2_posmix_ppv_prep_best) +
     annotate_text(x = .70, y = .22,
                   label = format_pos_count(p2_posmix_roc_label)) +
     geom_text(aes(x = .70, y = y, label = ci, color = outcome_percentile),
@@ -509,10 +514,10 @@ p_nycomps_cterm <- p_nycomps_cterm %>%
     mutate_rows(cterm != "all", lab_y = lab_y - .032) %>%
     mutate_rows(cterm == "NON-CYTOPLASMIC.", lab_y = lab_y - .032) %>%
     ggplot() +
-    geom_hline(yintercept = 0.50, size = 0.25, linetype = "dashed") +
-    geom_text(aes(x = plasmid_name, y = lab_y,
+    geom_hline(yintercept = 0.50) +
+    ggplot2::geom_text(aes(x = plasmid_name, y = lab_y,
                   color = cterm, label = fmt_cnt(pos_count, count)),
-              size = 5*5/14) +
+                  size = 5*5/14) +
     geom_pointrange(aes(x = plasmid_name, ymin = upper95, y = auc, ymax = lower95,
                         group = cterm, color = cterm),
                     fatten = 0.5,
@@ -573,23 +578,19 @@ p2_main <- ggdraw() +
                   label = paste(plasmid_summary["1"], "\nsuccesses")) +
     annotate_text(x = 0.2, y = 0.8,
                   label = paste(plasmid_summary["-1"], "\nfailures")) +
-    draw_plot(plot_grid(p2_posmix_ppv, p2_posmix_ppv_chg, nrow = 1, align = 'h',
-                        labels = LETTERS[2:3], label_size = 8),
+    draw_plot(plot_grid(p2_posmix_ppv, p2_posmix_ppv_chg, nrow = 1,
+                        labels = LETTERS[3:4], label_size = 8),
               x = .28, y = 0.6775, width = 1 - .28, height = .3225) +
-    draw_plot(
-       # plot_grid(p2_posmix_ppv, 
-                  p2_posmix_histogram,
-                 # labels = c("B", "C"), label_size = 8,
-                  #ncol = 1, align = "v"),
-        x = 1/3, y = .355, width = 2/3, height = .3225) +
+    draw_plot(p2_posmix_histogram,
+              x = 1/3, y = .355, width = 2/3, height = .3225) +
     draw_plot(p2_trial_counts, x = 0, y = .37, width = .33, height = .35) +
     draw_plot(p2_posmix_roc, x = -.12, y = 0, width = .5, height = .35) +
     draw_plot(p_nycomps_cterm, x = .27, y = 0, width = .715, height = .38) +
-    draw_plot_label(label = c("A", "F", "G"),
-                    x = c(0, 0, .272),
-                    y = c(1, .385, .385))
+    draw_plot_label(label = c("A", "B", "E", "F", "G"),
+                    x = c(0, 0, .3, 0, .272),
+                    y = c(1, .75, .68, .385, .385))
 
-save_plot(filename = "plots/fig2_newE.pdf",
+save_plot(filename = "plots/fig2.pdf",
           plot = p2_main,
           base_width = uconv(136, "mm", "in", "Length"))
 
