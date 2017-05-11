@@ -9,6 +9,7 @@ output: html_document
 Load all libraries necessary for subsequent data munging and plotting.
 Some defaults are set here to make things easier throughout.
 ```{r libraries}
+library(stringr)
 library(tidyverse)
 library(dplyrExtras)
 library(magrittr)
@@ -18,19 +19,19 @@ library(gridExtra)
 library(datamart)
 library(RColorBrewer)
 library(cowplot)
-theme_set(theme_cowplot(font_size = 7))
 
-# devtools::install("myutils")
-library(myutils)
 library(doMC)
 registerDoMC(cores = 4L)
 
 library(multidplyr)
 # set up parallel processing
-create_cluster(10L) %>%
+create_cluster(4L) %>%
     cluster_library("tidyverse") %>%
     cluster_library("myutils") %>%
     set_default_cluster()
+
+# devtools::install("myutils")
+library(myutils)
 ```
 
 ### Load model data for prediction function
@@ -69,6 +70,44 @@ nycomps_features$score <- svmpredict(nycomps_features)
 nycomps_features$score_nornass <-
     svmpredict(nycomps_features %>% select(-avgRNAss, -minRNAss,
                                            -q25RNAss, -q75RNAss, -maxRNAss))
+
+nycomps_scores <- read_csv("~/ml-datasets/nycomps_targettrack/nycomps_061116.fna.allstats.csv") %>%
+    separate(title, c("id1", "id2", "orfno")) %>%
+    select(-id1, -id2) %>%
+    mutate(orfno = as.integer(orfno))
+
+nycomps_scores$score <- svmpredict(nycomps_scores)
+
+nycomps_actions <- read_csv("large-scale/nycomps-outcomes-all-actions-raw-dump.csv") %>%
+    select(-itemno, -wgwellcoord, -previouswgwellcoord, -orflabid, -labprotocolno,
+           -timestamp, -srcorgno, -labfundno) %>%
+    filter(str_detect(type, "Expressed") |
+               str_detect(type, "0.5 liter prep") |
+               str_detect(type, "LargeScale Production")) %>%
+    left_join(nycomps_scores %>% select(orfno, score), by = "orfno")
+# what is the difference between 0.5 L prep and "Passed to Large-Scale"
+# there are still some that dont have scores (797 genes)
+
+posneg_all <- nycomps_actions %>%
+    mutate(outcome = -1) %>%
+    mutate_rows(action == "Coomassie Negative", outcome = 0) %>%
+    mutate_rows(action == "Coomassie Positive", outcome = 1) %>%
+    filter(outcome != -1) %>%
+    group_by(type) %>%
+    do(calc_auc_roc(.))
+
+genes <- nycomps_actions %>%
+    mutate(outcome = -1) %>%
+    mutate_rows(action == "Coomassie Negative", outcome = 0) %>%
+    mutate_rows(action == "Coomassie Positive", outcome = 1) %>%
+    filter(outcome != -1) %>%
+    group_by(score) %>%
+    summarize(pos = sum(outcome),
+              total = length(outcome),
+              outcome = ifelse(pos == 0, 0, 1)) %>%
+    mutate_rows(pos == total, outcome = 2) %>%
+    ungroup() %>%
+    do(calc_auc_roc(.))
 
 nycomps_all_outcomes <- read_csv("large-scale/nycomps_outcomes.csv") %>%
     rename(id = X1,
@@ -120,26 +159,27 @@ gene_summary <- nycomps_gene_outcomes %>%
 
 p2_trial_counts <- nycomps_gene_outcomes %>%
     mutate(count = factor(attempts, levels = 1:max(attempts),
-                          ordered = TRUE)) %>%
+                          ordered = TRUE),
+           gene_outcome = factor(gene_outcome,
+                                 levels(gene_outcome) %>% rev)) %>%
     ggplot(aes(x = count, fill = gene_outcome)) +
     geom_bar(position = "stack", width = 0.5) +
-    annotate(geom = "text", x = 5, y = 4000, label = "Genes:",
-             size = 6*5/14) +
-    annotate(geom = "text", x = 5, y = 3600,
-             label = paste(gene_summary['pos'], "Expressed"),
-             size = 6*5/14, color = "#A10F1C") +
-    annotate(geom = "text", x = 5, y = 3200,
-             label = paste(gene_summary['mix'], "Mixed Outcomes"),
-             size = 6*5/14, color = "#AD665D") +
-    annotate(geom = "text", x = 5, y = 2800,
-             label = paste(gene_summary['neg'], "Not Expressed"),
-             size = 6*5/14, color = "#A4A5A5") +
+    annotate_text(x = 5, y = 4000, label = "Genes:") +
+    annotate_text(x = 5, y = 3600,
+                  label = paste(gene_summary['pos'], "Expressed"),
+                  color = "#A10F1C") +
+    annotate_text(x = 5, y = 3200,
+                  label = paste(gene_summary['mix'], "Mixed Outcomes"),
+                  color = "#AD665D") +
+    annotate_text(x = 5, y = 2800,
+                  label = paste(gene_summary['neg'], "Not Expressed"),
+                  color = "#A4A5A5") +
     xlab("Number of Trials") +
     ylab("Number of Different Genes") +
-    scale_fill_manual(values = c("#A4A5A5", "#AD665D", "#A10F1C")) +
-    scale_y_continuous(expand = c(0, 0)) +
-    scale_x_discrete(expand = c(0, 0), drop = FALSE) +
-    theme(legend.position = "none")
+    scale_fill_manual(
+        values = c(neg = "#A4A5A5", mix = "#636EBC", pos = "#A10F1C")) +
+    scale_y_continuous() +
+    scale_x_discrete(drop = FALSE)
 
 p2_trial_counts
 ```
@@ -168,8 +208,15 @@ nycomps_auc <- nycomps_all_outcomes %>%
            outcome_type = factor(outcome_type),
            score_type = factor(score_type)) %>%
     group_by(cut, cterm, plasmid_name, outcome_type, score_type) %>% 
-    do({calc_auc_roc(., method = "auc")}) %>%
+    do(calc_auc_roc(., method = "auc")) %>%
     ungroup()
+
+nycomps_gene_outcomes %>%
+    rename(outcome = gene_outcome) %>%
+    group_by(attempts == 1) %>%
+    select(-score_nornass) %>%
+    do(calc_auc_roc(., method = "auc")) %>%
+    ungroup() %>% View
 
 nycomps_auc %>%
     write_csv("nycomps_all_auc.csv")
@@ -204,7 +251,6 @@ p2_posmix_ppv_prep_best <- p2_posmix_ppv_prep %>%
            percent_imp = (ppv - min_ppv)/min_ppv)
 
 p2_posmix_ppv <- p2_posmix_ppv_prep %>%
-    #filter(outcome == "mix") %>%
     ggplot(aes(x = threshold_percentiles, y = ppv)) +
     geom_polygon(aes(group = id, fill = color), size = 0.01) +
     geom_path(size = 0.25,
@@ -213,21 +259,18 @@ p2_posmix_ppv <- p2_posmix_ppv_prep %>%
                   distinct(outcome, threshold_percentiles, ppv)) +
     # geom_point(size = 0.5, data = p2_posmix_ppv_prep_best) +
     geom_hline(aes(yintercept = min_ppv),
-               linetype = "dashed", color = "darkgrey", size = 0.5,
                data = p2_posmix_ppv_prep %>%
                    filter(type != "min_y") %>%
                    distinct(outcome, min_ppv)) +
-    scale_x_continuous(expand = c(0, 0), limits = c(0, 1),
+    scale_x_continuous(limits = c(0, 1),
                        labels = function(x) x*100) +
-    scale_y_continuous(expand = c(0, 0), limits = c(0, .6001),
-                       breaks = seq(0, 1, .2), labels = function(x) x*100) +
+    scale_y_continuous(limits = c(0, .6001), breaks = seq(0, 1, .2),
+                       labels = function(x) x*100) +
     xlab(expression("Percentile IMProve score")) +
-    ylab("PPV") +
+    ylab("Positive Predictive Value") +
     scale_fill_continuous(low = "#A4A5A5", high = "#A10F1C",
                           limits = c(0, 100), guide = FALSE) +
-    theme(plot.margin = unit(rep(0, 4), "in"),
-          strip.background = element_blank(),
-          strip.text = element_blank()) +
+    theme(strip.text = element_blank()) +
     facet_wrap(~outcome, ncol = 1)
 
 p2_posmix_ppv
@@ -244,20 +287,16 @@ p2_posmix_ppv_chg <- p2_posmix_ppv_prep %>%
     # spread(outcome, ppv) %>%
     # mutate(ppv_imp = pos/mix) %>%
     ggplot(aes(x = threshold_percentiles, y = percent_imp)) +
-    geom_hline(yintercept = 1, size = 0.5,
-               linetype = "dashed", color = "darkgrey") +
     geom_line(aes(color = outcome_percentile,
                   group = outcome_percentile)) +
     # geom_point(size = 0.5, data = p2_posmix_ppv_prep_best) +
     xlab(expression("Percentile IMProve score")) +
     ylab("Fold Change in PPV") +
-    scale_x_continuous(expand = c(0, 0), limits = c(0, 1),
-                       labels = function(x) x*100) +
-    scale_y_continuous(expand = c(0, 0)) +
+    scale_x_continuous(limits = c(0, 1), labels = function(x) x*100) +
+    scale_y_continuous() +
     scale_color_continuous(low = "#A4A5A5", high = "#A10F1C",
                            limits = c(0, 100), guide = FALSE) +
-    coord_cartesian(ylim = c(0.9, 6)) +
-    theme(plot.margin = unit(rep(0, 4), "in"))
+    coord_cartesian(ylim = c(1, 6))
 
 p2_posmix_ppv_chg
 ```
@@ -267,7 +306,11 @@ p2_posmix_ppv_prep %>%
     filter(find_closest(thresholds, 0.5) | 
                find_closest(threshold_percentiles, 0.75) | 
                find_closest(threshold_percentiles, 0.97) |
+               find_closest(threshold_percentiles, 0.90) |
+               find_closest(ppv, min_ppv * 2 %>% unique) |
                thresholds %in% p2_posmix_ppv_prep_best$thresholds,
+               thresholds %in% filter(nycomps_auc, cut == "Genes", cterm == "all") %$%
+                    unlist(best_thresh),
            type == "ppv") %>% 
     distinct(outcome, threshold_percentiles, thresholds, ppv, min_ppv) %>%
     arrange(desc(threshold_percentiles), outcome) %>%
@@ -287,10 +330,7 @@ p2_posmix_ppv_prep %>%
 
 ```{r nycomps_posmix_histogram}
 percent_rank_sep <- function(x, all) {
-    data <- lapply(x, function(x) myutils:::perc_rank_single(all, x)) %>% unlist
-    print(x)
-    print(data)
-    data
+    lapply(x, function(x) myutils:::perc_rank_single(all, x)) %>% unlist
 }
 
 p2_posmix_sec_xaxis <-
@@ -324,20 +364,16 @@ p2_posmix_histogram <- nycomps_gene_outcomes %>%
     #                    filter(gene_outcome == "pos")) +
     # geom_point(size = 0.5, aes(x = thresholds, y = 0),
     #            data = p2_posmix_ppv_prep_best) +
-    scale_x_continuous(expand = c(0, 0),
-                       breaks = nycomps_breaks, limits = nycomps_xscale,
+    scale_x_continuous(breaks = nycomps_breaks, limits = nycomps_xscale,
                        sec.axis = p2_posmix_sec_xaxis) +
-    scale_y_continuous(expand = c(0, 0)) +
+    scale_y_continuous() +
     scale_fill_continuous(limits = c(1, 3), low = "#A4A5A5", high = "#A10F1C",
                           guide = FALSE) +
     ylab("Count") +
     xlab(expression("IMProve score")) +
-    theme(legend.key = element_blank(),
-          legend.key.size = unit(0.25, "cm"),
-          legend.title = element_blank(),
+    theme(legend.key.size = unit(0.25, "cm"),
           legend.position = c(0.08, 0.85),
-          axis.title.x.top = element_blank(),
-          plot.margin = unit(c(0, 0, 0, 0), "in"))
+          axis.title.x.top = element_blank())
 
 # # plot medians
 # p2_posmix_histogram <- p2_posmix_histogram +
@@ -370,20 +406,22 @@ p2_posmix_ratio_data <- ggplot_build(p2_posmix_histogram)$data[[1]]  %>%
 #            pos_pct_hist_scale = max(c(pos, neg)) * pos_pct)
 ggplot(p2_posmix_ratio_data, aes(x = x)) +
     geom_point(aes(color = factor(total > 20)), y = -.01) +
-    geom_line(aes(y = pos_pct)) +
+    geom_line(aes(y = pos_pct), color = "#784F36") +
     xlab("IMProve Score") +
-    ylab("Percent Positive") +
+    ylab("Only Positive/Total") +
     scale_y_continuous(labels = function(x) x*100) +
     theme(legend.position = c(.25, .75))
 
 p2_posmix_histogram <- p2_posmix_histogram +
-    geom_line(aes(x = x, y = pos_pct * 550),
+    geom_line(aes(x = x, y = pos_pct * 550), color = "#784F36",
               data = filter(p2_posmix_ratio_data, total > 20)) +
-    scale_y_continuous(expand = c(0, 0),
-        sec.axis = sec_axis(
-            breaks = seq(0, 100, 10),
-            trans = ~ . / 5.5,
-            name = 'Percent Positive'))
+    scale_y_continuous(sec.axis = sec_axis(
+        breaks = seq(0, 100, 10),
+        trans = ~ . / 5.5,
+        name = 'Only Positive/Total')) +
+    theme(legend.position = c(.25, .75),
+          axis.text.y.right = element_text(color = "#784F36"),
+          axis.title.y.right = element_text(color = "#784F36"))
 
 p2_posmix_histogram %<>% ggplot_build
 p2_posmix_histogram$layout$panel_ranges[[1]]$y.sec.labels[seq(2,6,2)] <- ""
@@ -418,40 +456,40 @@ p2_posmix_roc <- nycomps_gene_outcomes %>%
     group_by(outcome) %>%
     split_groups() %>%
     ggplot() +
-    geom_abline(slope = 1, intercept = 0, linetype = "dashed",
-                color = "darkgrey") +
+    geom_abline(slope = 1, intercept = 0) +
     geom_path(aes(x = 1 - specificities, y = sensitivities,
                   color = outcome_percentile)) +
-    geom_path(aes(x = 1 - specificities, y = sensitivities, color = 50),
-              linetype = "dotted",
+    geom_path(aes(x = 1 - specificities, y = sensitivities),
+              linetype = "dashed", color = "#636ebc",
               data = nycomps_gene_outcomes %>%
                   rename(outcome = gene_outcome) %>%
                   filter(outcome != "pos") %>%
                   calc_auc_roc(method = "roc")) +
     geom_point(size = 0.5, aes(x = 1 - best_spec, y = best_sens),
                data = p2_posmix_ppv_prep_best) +
-    annotate(geom = "text", x = .70, y = .22,
-             label = format_pos_count(p2_posmix_roc_label),
-             size = 6*5/14) +
+    annotate_text(x = .70, y = .22,
+                  label = format_pos_count(p2_posmix_roc_label)) +
     geom_text(aes(x = .70, y = y, label = ci, color = outcome_percentile),
-              size = 6*5/14,
               data = p2_posmix_roc_label) +
-    scale_y_continuous(expand = c(0, 0), labels = function(x) x*100) +
-    scale_x_continuous(expand = c(0, 0), labels = function(x) x*100) +
+    scale_y_continuous(labels = function(x) x*100) +
+    scale_x_continuous(labels = function(x) x*100) +
     xlab("False Positive Rate") +
     ylab("True Positive Rate") +
     scale_color_continuous(limits = c(0, 100),
                            low = "#A4A5A5", high = "#A10F1C") +
-    theme(aspect.ratio = 1,
-          legend.position = "None",
-          plot.margin = unit(c(0, 0, 0, 0), "in"))
+    theme(aspect.ratio = 1)
 
 p2_posmix_roc
+
+nycomps_gene_outcomes %>%
+    rename(outcome = gene_outcome) %>%
+    filter(outcome != "pos") %>%
+    calc_auc_roc()
 ```
 
 ```{r}
 p_nycomps_cterm <- nycomps_auc %>%
-    filter(cut == "Trials") %>%
+    filter(cut == "Trials", plasmid_name != "all") %>%
     mutate(
         plasmid_name = factor(plasmid_name,
                levels = c("all",
@@ -471,7 +509,7 @@ p_nycomps_cterm <- p_nycomps_cterm %>%
     mutate_rows(cterm != "all", lab_y = lab_y - .032) %>%
     mutate_rows(cterm == "NON-CYTOPLASMIC.", lab_y = lab_y - .032) %>%
     ggplot() +
-    geom_hline(yintercept = 0.50, color = "darkgrey", linetype = "dashed") +
+    geom_hline(yintercept = 0.50, size = 0.25, linetype = "dashed") +
     geom_text(aes(x = plasmid_name, y = lab_y,
                   color = cterm, label = fmt_cnt(pos_count, count)),
               size = 5*5/14) +
@@ -486,19 +524,16 @@ p_nycomps_cterm <- p_nycomps_cterm %>%
                        labels = c(`all` = "All C-termini",
                                   `CYTOPLASMIC.` = "Cytoplasmic",
                                   `NON-CYTOPLASMIC.` = "Periplasmic")) +
-    scale_x_discrete(expand = c(0, 0),
-                     limits = p_nycomps_cterm %>%
+    scale_x_discrete(limits = p_nycomps_cterm %>%
                          filter(cterm == "all") %>%
                          arrange(desc(count)) %$% unlist(plasmid_name)) +
-    scale_y_continuous(expand = c(0, 0),
-                       labels = function(x) x*100) +
+    scale_y_continuous(labels = function(x) x*100) +
     coord_cartesian(ylim = c(0.45, .885)) +
     theme(legend.position = c(.06, .8),
-          legend.title = element_blank(),
           legend.key.size = unit(0.25, "cm"),
           axis.title.x = element_blank(),
           axis.text.x = element_text(size = 5),
-          plot.margin = unit(c(0,0,21,0), "pt"))
+          plot.margin = unit(c(0, 0, 21, 0), "pt"))
 
 p_nycomps_cterm %<>%
     ggplot_build %>% ggplot_gtable
@@ -530,14 +565,14 @@ plasmid_summary <- nycomps_all_outcomes %>%
     unlist
 
 p2_main <- ggdraw() +
-    annotate("text", x = 0.15, y = 0.95, size = 6*5/14,
-             label = paste(nrow(nycomps_gene_outcomes), "genes")) +
-    annotate("text", x = 0.15, y = 0.875, size = 6*5/14,
-             label = paste(nrow(nycomps_all_outcomes), "expression trials")) +
-    annotate("text", x = 0.1, y = 0.8, size = 6*5/14,
-             label = paste(plasmid_summary["1"], "\nsuccesses")) +
-    annotate("text", x = 0.2, y = 0.8, size = 6*5/14,
-             label = paste(plasmid_summary["-1"], "\nfailures")) +
+    annotate_text(x = 0.15, y = 0.95,
+                  label = paste(nrow(nycomps_gene_outcomes), "genes")) +
+    annotate_text(x = 0.15, y = 0.875,
+                  label = paste(nrow(nycomps_all_outcomes), "expression trials")) +
+    annotate_text(x = 0.1, y = 0.8,
+                  label = paste(plasmid_summary["1"], "\nsuccesses")) +
+    annotate_text(x = 0.2, y = 0.8,
+                  label = paste(plasmid_summary["-1"], "\nfailures")) +
     draw_plot(plot_grid(p2_posmix_ppv, p2_posmix_ppv_chg, nrow = 1, align = 'h',
                         labels = LETTERS[2:3], label_size = 8),
               x = .28, y = 0.6775, width = 1 - .28, height = .3225) +
@@ -552,7 +587,7 @@ p2_main <- ggdraw() +
     draw_plot(p_nycomps_cterm, x = .27, y = 0, width = .715, height = .38) +
     draw_plot_label(label = c("A", "F", "G"),
                     x = c(0, 0, .272),
-                    y = c(1, .385, .385), size = 8)
+                    y = c(1, .385, .385))
 
 save_plot(filename = "plots/fig2_newE.pdf",
           plot = p2_main,
