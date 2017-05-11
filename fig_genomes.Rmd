@@ -11,10 +11,9 @@ Some defaults are set here to make things easier throughout.
 ```{r libraries}
 library(testthat)
 
-library(gdata) # for `interleave`
 library(datamart) # `uconv` for unit conversion
 
-library(plyr) # for `dlply`
+# library(plyr) # for `dlply`
 library(magrittr)
 library(tidyverse)
 library(multidplyr)
@@ -23,16 +22,15 @@ library(dplyrExtras)
 library(RColorBrewer)
 library(ggbeeswarm)
 library(cowplot)
-theme_set(theme_cowplot(font_size = 7))
+
+library(doMC)
+# registerDoMC(cores = 20L)
+
+# create_cluster(20L) %>%
+#     set_default_cluster()
 
 # devtools::install("myutils")
 library(myutils)
-
-library(doMC)
-registerDoMC(cores = 20L)
-
-create_cluster(20L) %>%
-    set_default_cluster()
 ```
 
 ### Load data from training process
@@ -153,8 +151,7 @@ thermophile_species <- c("Aquifex aeolicus",
                          "Thermus thermophilus")
 
 p4_all_violin <- ggplot(forward_preds) +
-    geom_hline(yintercept = forward_ec_thresholds['median'],
-               linetype = "dashed", color = "darkgrey") +
+    geom_hline(yintercept = forward_ec_thresholds['median'], color = "darkgrey") +
     geom_point(aes(x = species, y = median),
                color = "darkgrey", data = forward_tufte_boxplots) +
     geom_text(aes(x = species, y = -6, label = species_count,
@@ -168,13 +165,12 @@ p4_all_violin <- ggplot(forward_preds) +
     geom_violin2(aes(y = score, x = species),
                  color = "black", adjust = 0.3, alpha = 0) +
     coord_flip(ylim = nycomps_env$nycomps_xscale) +
-    ylab(expression("SVM" ^ "rank"*~"score")) +
-    scale_y_continuous(expand = c(0, 0), breaks = nycomps_env$nycomps_breaks) +
-    scale_x_discrete(limits = forward_preds_order) +
+    ylab(expression("IMProve score")) +
+    scale_y_continuous(breaks = nycomps_env$nycomps_breaks) +
+    ggplot2::scale_x_discrete(limits = forward_preds_order) +
     scale_color_manual(values = c("TRUE" = "#ff6600",
                                   "FALSE" = "black")) +
-    theme(legend.position = "none",
-          axis.ticks.y = element_blank(),
+    theme(axis.ticks.y = element_blank(),
           axis.title.y = element_blank(),
           axis.text.y = element_blank(),
           axis.line.y = element_blank())
@@ -219,11 +215,10 @@ p4_selected_violin <- forward_preds %>%
     ylab(expression("SVM" ^ "rank"*~"score")) +
     scale_color_manual(values = c("TRUE" = "#ff6600",
                                   "FALSE" = "black")) +
-    scale_x_discrete(limits = selected_violin_genomes,
-                     breaks = selected_violin_genomes) +
-    scale_y_continuous(expand = c(0, 0), breaks = nycomps_env$nycomps_breaks) +
-    theme(legend.position = "none",
-          axis.ticks.y = element_blank(),
+    ggplot2::scale_x_discrete(limits = selected_violin_genomes,
+                              breaks = selected_violin_genomes) +
+    scale_y_continuous(breaks = nycomps_env$nycomps_breaks) +
+    theme(axis.ticks.y = element_blank(),
           axis.title.y = element_blank(),
           axis.text.y = element_blank(),
           axis.line.y = element_blank())
@@ -236,7 +231,6 @@ p4_nvector_ppv_prep <- nycomps_env$nycomps_all_outcomes %>%
     filter(plasmid_name == "N") %>% 
     rename(outcome = plasmid_outcome) %>%
     calc_auc_roc(method = "roc") %>%
-    arrange(desc(thresholds)) %>%
     prep_for_polygon() %>%
     as_tibble
 
@@ -246,20 +240,17 @@ p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) +
     geom_path(aes(x = thresholds, y = ppv), size = 0.5,
               data = filter(p4_nvector_ppv_prep, type != "min_y") %>%
                      distinct(thresholds, ppv)) +
-    geom_hline(aes(yintercept = min(min_ppv)),
-               linetype = "dashed", color = "darkgrey", size = 0.5) +
+    geom_hline(aes(yintercept = min(min_ppv))) +
     annotate("text", x = -1.7, y = 55, size = 7*5/14,
              label = "Expression in (N) His-FLAG-TEV-", fontface = "bold") +
     coord_cartesian(xlim = nycomps_env$nycomps_xscale) +
-    scale_x_continuous(expand = c(0, 0), breaks = nycomps_env$nycomps_breaks) +
-    scale_y_continuous(expand = c(0, 0), limits = c(0, .6),
-                       breaks = seq(0, 1, .2), labels = function(x) x*100) +
+    scale_x_continuous(breaks = nycomps_env$nycomps_breaks) +
+    scale_y_continuous(limits = c(0, .6), breaks = seq(0, 1, .2),
+                       labels = function(x) x*100) +
     xlab(expression("IMProve score")) +
     ylab("Positive Predictive Value") +
     scale_color_manual(values = c("#A4A5A5", "#A10F1C")) +
-    scale_fill_manual(values = c("#A4A5A5", "#A10F1C")) +
-    theme(legend.position = "None",
-          plot.margin = unit(c(0, 0, 0, 0), "in"))
+    scale_fill_manual(values = c("#A4A5A5", "#A10F1C"))
 
 p4_nvector_ppv
 ```
@@ -544,7 +535,7 @@ p4_feat_hist <- all_features %>%
     mutate_rows(species == "Plasmodium falciparum", group = "pf") %>%
     # to control plot order
     mutate(feature = factor(feature, names(selected))) %>%
-    dlply(.(feature), make_indiv_plot, .parallel = TRUE) %>%
+    plyr::dlply(.(feature), make_indiv_plot, .parallel = TRUE) %>%
     # render final plot
     plot_grid(plotlist = ., align = "hv", ncol = 2L)
 
