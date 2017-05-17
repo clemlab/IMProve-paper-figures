@@ -159,8 +159,8 @@ p2_trial_counts <- nycomps_gene_outcomes %>%
                   label = paste(gene_summary['pos'], "Expressed"),
                   color = "#A10F1C") +
     annotate_text(x = 5, y = 3200,
-                  label = paste(gene_summary['mix'], "Mixed Outcomes"),
-                  color = "#AD665D") +
+                  label = paste(gene_summary['mix'], "Mixed"),
+                  color = "#636EBC") +
     annotate_text(x = 5, y = 2800,
                   label = paste(gene_summary['neg'], "Not Expressed"),
                   color = "#A4A5A5") +
@@ -282,7 +282,7 @@ p2_posmix_ppv
 ```{r}
 p2_posmix_ppv_chg <- p2_posmix_ppv_prep %>% 
     ungroup() %>%
-    filter(type == "ppv") %>% 
+    filter(type == "ppv") %>%
     mutate(percent_imp = ppv/min_ppv) %>%
     select(threshold_percentiles, percent_imp, outcome_percentile, id) %>% 
     group_by(outcome_percentile, id) %>%
