@@ -121,6 +121,10 @@ nycomps_pfam_outcomes <- nycomps_env$nycomps_all_outcomes %>%
     filter(!is.na(outcome)) %>%
     mutate(cut = factor(cut),
            plasmid_name = factor(plasmid_name)) %>%
+    # this join means that genes can be in more than one "training"-group at
+    # the same time, e.g. both part of the "in training" and "not in training"
+    # groups, because a given gene can have more than one pfam where one is
+    # found in the training set and one is not
     left_join(nycomps_pfam, by = "id")
 ```
 
