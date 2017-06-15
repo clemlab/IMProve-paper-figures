@@ -26,22 +26,10 @@ library(RColorBrewer)
 library(viridis)
 
 library(cowplot)
-theme_set(theme_cowplot(font_size = 7, line_size = 0.25))
-
-library(parallel)
-library(multidplyr)
-library(foreach)
-library(doMC)
 
 # devtools::install("myutils")
 ## ggcorr modified from GGally package
 library(myutils)
-
-# set up parallel processing
-create_cluster(4L) %>%
-    cluster_library("tidyverse") %>%
-    cluster_library("myutils") %>%
-    set_default_cluster()
 ```
 
 ### Load data from training process

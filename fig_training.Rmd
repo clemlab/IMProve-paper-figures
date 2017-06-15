@@ -22,12 +22,8 @@ library(RColorBrewer)
 # `uconv` for unit conversion
 library(datamart)
 library(cowplot)
-theme_set(theme_cowplot(font_size = 7))
 
-library(foreach)
-library(doMC)
 cores <- 4L
-registerDoMC(cores = cores)
 
 # devtools::install("myutils")
 library(myutils)

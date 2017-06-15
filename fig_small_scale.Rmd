@@ -20,18 +20,12 @@ library(RColorBrewer)
 library(ggbeeswarm)
 library(datamart) # `uconv` for unit conversion
 library(cowplot)
-theme_set(theme_cowplot(font_size = 7))
 
-library(foreach)
-library(doMC)
-
-# devtools::install("myutils")
-library(myutils)
 library(doMC)
 registerDoMC(cores = 4L)
 
-# if TRUE, then data will be written to file
-write_out = TRUE
+# devtools::install("myutils")
+library(myutils)
 ```
 
 ### Load model data for prediction function
@@ -92,7 +86,7 @@ p3_archaea_bs <- archaea_outcomes %>%
            bca_high = specify_decimal(bca_high, k = 2L)) %>%
     mutate_rows(perm_p < 0.01, t0 = t0 %>% paste0('**')) %>%
     mutate(label = paste0("'", t0, "'~('", bca_low, "'-'", bca_high, "')")) %>%
-    select(label) %>% unlist
+    select(label) %>% unlist()
 
 p3_archaea_sdspage <- archaea_outcomes %>%
     filter(Measurement == 'Scanning Densitometry of SDS-PAGE (%)') %>%
@@ -531,10 +525,8 @@ p3_main <- ggdraw() +
         x = .82, y = .25, width = .16, height = .75) +
     draw_plot(p3_gpcr_roc, x = .815, y = 0, width = .17, height = .5)
 
-if (write_out) {
-    save_plot(filename = "plots/fig3_w_panels.pdf", plot = p3_main,
-              base_width = uconv(183, "mm", "in", "Length"), base_height = 5)
-}
+save_plot(filename = "plots/fig3_w_panels.pdf", plot = p3_main,
+          base_width = uconv(183, "mm", "in", "Length"), base_height = 5)
 
 p3_main
 ```

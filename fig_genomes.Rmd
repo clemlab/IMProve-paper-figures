@@ -226,10 +226,10 @@ p4_selected_violin <- forward_preds %>%
 p4_selected_violin
 ```
 
-```{r fig4_nycomps_nvector_ppv}
-p4_nvector_ppv_prep <- nycomps_env$nycomps_all_outcomes %>%
-    filter(plasmid_name == "N") %>% 
-    rename(outcome = plasmid_outcome) %>%
+```{r fig4_nycomps_genes_ppv}
+p4_nvector_ppv_prep <- nycomps_env$nycomps_gene_outcomes %>%
+   # filter(plasmid_name == "N") %>% 
+    mutate(outcome = gene_outcome == "pos") %>%
     calc_auc_roc(method = "roc") %>%
     prep_for_polygon() %>%
     as_tibble
@@ -243,9 +243,9 @@ p4_nvector_ppv <- ggplot(p4_nvector_ppv_prep) +
     geom_hline(aes(yintercept = min(min_ppv))) +
     annotate("text", x = -1.7, y = 55, size = 7*5/14,
              label = "Expression in (N) His-FLAG-TEV-", fontface = "bold") +
-    coord_cartesian(xlim = nycomps_env$nycomps_xscale) +
+   # coord_cartesian(xlim = nycomps_env$nycomps_xscale) +
     scale_x_continuous(breaks = nycomps_env$nycomps_breaks) +
-    scale_y_continuous(limits = c(0, .6), breaks = seq(0, 1, .2),
+    scale_y_continuous(limits = c(0, .601), breaks = seq(0, 1, .1),
                        labels = function(x) x*100) +
     xlab(expression("IMProve score")) +
     ylab("Positive Predictive Value") +

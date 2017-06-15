@@ -139,6 +139,8 @@ nycomps_overall_auc <- nycomps_pfam_outcomes %>%
 
 # split by category
 nycomps_pfam_auc <- nycomps_pfam_outcomes %>%
+    # group_by(cut, plasmid_name, family, family_type, in_training, id) %>%
+    # summarize() %>%
     group_by(cut, plasmid_name, family, family_type, in_training) %>%
     filter(n() > 1, count_uniq(outcome) > 1, count_uniq(score) > 1) %>%
     do(calc_auc_roc(., method = "auc"))

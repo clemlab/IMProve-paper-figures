@@ -203,7 +203,7 @@ nycomps_auc <- nycomps_all_outcomes %>%
 
 nycomps_gene_outcomes %>%
     rename(outcome = gene_outcome) %>%
-    group_by(attempts == 1) %>%
+    group_by(outcome != "mix") %>%
     select(-score_nornass) %>%
     do(calc_auc_roc(., method = "auc")) %>%
     ungroup() %>% View
@@ -465,31 +465,44 @@ p2_posmix_roc <- nycomps_gene_outcomes %>%
     ggplot() +
     geom_abline(slope = 1, intercept = 0) +
     geom_path(aes(x = 1 - specificities, y = sensitivities,
-                  color = outcome_percentile)) +
+                  color = as.character(outcome))) +
     geom_path(aes(x = 1 - specificities, y = sensitivities),
               linetype = "dashed", color = "#636ebc",
               data = nycomps_gene_outcomes %>%
                   rename(outcome = gene_outcome) %>%
                   filter(outcome != "pos") %>%
                   calc_auc_roc(method = "roc")) +
+    geom_path(aes(x = 1 - specificities, y = sensitivities),
+              linetype = "dashed", color = "#A10F1C",
+              data = nycomps_gene_outcomes %>%
+                  rename(outcome = gene_outcome) %>%
+                  filter(outcome != "mix") %>%
+                  calc_auc_roc(method = "roc")) +
     annotate_text(x = .70, y = .22,
                   label = format_pos_count(p2_posmix_roc_label)) +
-    geom_text(aes(x = .70, y = y, label = ci, color = outcome_percentile),
+    geom_text(aes(x = .70, y = y, label = ci, color = as.character(outcome)),
               data = p2_posmix_roc_label) +
     scale_y_continuous(labels = function(x) x*100) +
     scale_x_continuous(labels = function(x) x*100) +
     xlab("False Positive Rate") +
     ylab("True Positive Rate") +
-    scale_color_continuous(limits = c(0, 100),
-                           low = "#A4A5A5", high = "#A10F1C") +
+    scale_color_manual(values = c('2' = "#636ebc", '3' = "#A10F1C",
+                                  'mix' = "#636ebc", 'pos' = "#A10F1C")) +
     theme(aspect.ratio = 1)
 
 p2_posmix_roc
 
 nycomps_gene_outcomes %>%
     rename(outcome = gene_outcome) %>%
+    filter(outcome != "mix") %>%
+    calc_auc_roc()
+
+nycomps_gene_outcomes %>%
+    rename(outcome = gene_outcome) %>%
     filter(outcome != "pos") %>%
     calc_auc_roc()
+
+ggsave(p2_posmix_roc, filename = "plots/p2_roc.pdf", height = 4, width = 4)
 ```
 
 ```{r}
